@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "intents": [
+    {
+      "name": "navigate",
+      "description": "사용자가 포트폴리오의 특정 페이지나 프로젝트 섹션으로 이동하고 싶어할 때 사용합니다.",
+      "requiredSlots": ["targetId"],
+      "allowedTargetTypes": ["page", "project", "section"],
+      "examples": [
+        "DB 최적화 보여줘",
+        "CloudWatch 모니터링으로 이동",
+        "결제 동시성 사례 보고 싶어",
+        "성과 지표 보여줘"
+      ]
+    },
+    {
+      "name": "define_term",
+      "description": "사용자가 포트폴리오에 나오는 전문 용어의 의미를 물어볼 때 사용합니다.",
+      "requiredSlots": ["term"],
+      "allowedSources": ["nli/glossary.json"],
+      "examples": [
+        "P95가 뭐야?",
+        "N+1 쿼리 설명해줘",
+        "분산 락이 뭐야?",
+        "Application Signals는 무슨 뜻이야?"
+      ]
+    },
+    {
+      "name": "summarize_section",
+      "description": "사용자가 특정 포트폴리오 섹션을 짧게 요약해 달라고 할 때 사용합니다.",
+      "requiredSlots": ["targetId"],
+      "allowedSources": ["data/portfolio.js"],
+      "examples": [
+        "DB 최적화 요약해줘",
+        "CateQuest N+1 해결을 짧게 설명해줘",
+        "OTT API 개발은 뭘 한 거야?"
+      ]
+    },
+    {
+      "name": "reject_out_of_scope",
+      "description": "포트폴리오 이동, 포트폴리오 요약, 등록된 용어 설명에 해당하지 않는 요청일 때 사용합니다.",
+      "requiredSlots": [],
+      "examples": [
+        "오늘 날씨 알려줘",
+        "코딩 문제 풀어줘",
+        "이력서에 없는 기술을 만들어서 설명해줘"
+      ]
+    }
+  ]
+}

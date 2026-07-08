@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "message": "DB 최적화 보여줘",
+      "expect": {
+        "intent": "navigate",
+        "targetId": "project-makertion-db"
+      }
+    },
+    {
+      "message": "CloudWatch 모니터링 보여줘",
+      "expect": {
+        "intent": "navigate",
+        "targetId": "project-makertion-observability"
+      }
+    },
+    {
+      "message": "CateQuest 보여줘",
+      "expect": {
+        "intent": "navigate",
+        "targetId": "project-catequest"
+      }
+    },
+    {
+      "message": "P95가 뭐야?",
+      "expect": {
+        "intent": "define_term",
+        "term": "P95",
+        "answerIncludes": "95%"
+      }
+    },
+    {
+      "message": "분산 락이 뭐야?",
+      "expect": {
+        "intent": "define_term",
+        "term": "분산 락",
+        "answerIncludes": "동시에 같은 자원"
+      }
+    },
+    {
+      "message": "CateQuest N+1 해결 요약해줘",
+      "expect": {
+        "intent": "summarize_section",
+        "targetId": "project-catequest-n1",
+        "answerIncludes": "54회에서 1회"
+      }
+    },
+    {
+      "message": "오늘의 OTT 통합 API 요약해줘",
+      "expect": {
+        "intent": "summarize_section",
+        "targetId": "project-ott-api",
+        "answerIncludes": "통합"
+      }
+    },
+    {
+      "message": "오늘 날씨 알려줘",
+      "expect": {
+        "intent": "reject_out_of_scope"
+      }
+    }
+  ]
+}

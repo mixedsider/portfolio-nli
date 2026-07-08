@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="이은성 백엔드 및 인프라 개발자 포트폴리오. CI/CD, 성능 최적화, 관측성, 백엔드 프로젝트를 소개합니다."
+    />
+    <title>이은성 | Backend & Infra Portfolio</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">본문으로 이동</a>
+
+    <header class="site-header" data-header>
+      <nav class="nav-shell" aria-label="주요 메뉴">
+        <a class="brand-mark" href="#top" aria-label="홈으로 이동">
+          <span class="brand-symbol">LE</span>
+          <span>
+            <strong>Lee EunSung</strong>
+            <small>Backend & Infra</small>
+          </span>
+        </a>
+        <div class="nav-links">
+          <a href="#projects">Projects</a>
+          <a href="#metrics">Metrics</a>
+          <a href="#about">About</a>
+        </div>
+        <a class="nav-contact" href="mailto:mixeddev0812@gmail.com">Contact</a>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section id="top" class="hero-section" aria-labelledby="hero-title">
+        <div class="hero-grid">
+          <div class="hero-copy">
+            <p class="eyebrow">Backend · Infra · Performance · Automation</p>
+            <h1 id="hero-title">
+              <span class="hero-title-line">문제의 흐름을 읽고,</span>
+              <span class="hero-title-line">운영 가능한 구조로 바꾸는 개발자</span>
+            </h1>
+            <p class="hero-summary" data-profile-summary></p>
+            <div class="hero-actions">
+              <a class="primary-action" href="#projects">프로젝트 보기</a>
+              <a class="secondary-action" href="#metrics">성과 지표 보기</a>
+            </div>
+          </div>
+          <aside class="hero-panel" aria-label="프로필 요약">
+            <div class="profile-media">
+              <img src="assets/profile.png" alt="이은성 프로필 사진" />
+            </div>
+            <div class="profile-text">
+              <p class="profile-role" data-profile-role></p>
+              <h2 data-profile-name></h2>
+              <p data-profile-headline></p>
+            </div>
+            <dl class="contact-list" data-contact-list></dl>
+          </aside>
+        </div>
+      </section>
+
+      <section id="metrics" class="section-shell metric-section" aria-labelledby="metrics-title">
+        <div class="section-heading">
+          <p class="eyebrow">Measured Impact</p>
+          <h2 id="metrics-title">숫자로 검증한 개선</h2>
+        </div>
+        <div class="metric-grid" data-metric-grid></div>
+      </section>
+
+      <section id="projects" class="section-shell project-section" aria-labelledby="projects-title">
+        <div class="section-heading split-heading">
+          <div>
+            <p class="eyebrow">Project Cases</p>
+            <h2 id="projects-title">문제, 판단, 결과 중심의 프로젝트</h2>
+          </div>
+          <div class="filter-tabs" data-filter-tabs aria-label="프로젝트 필터"></div>
+        </div>
+        <div class="project-list" data-project-list></div>
+      </section>
+
+      <section id="about" class="section-shell about-section" aria-labelledby="about-title">
+        <div class="about-grid">
+          <div>
+            <p class="eyebrow">About Me</p>
+            <h2 id="about-title">직접 만들고, 검증하고, 공유합니다</h2>
+          </div>
+          <div class="about-columns">
+            <article>
+              <h3>직접 만드는 태도</h3>
+              <p>Claude Code Proxy, VoiceLog처럼 필요한 도구를 직접 만들어 생산성 문제를 풀어갑니다.</p>
+            </article>
+            <article>
+              <h3>근본 원인 중심</h3>
+              <p>장애와 병목을 단편 증상으로 보지 않고 시스템 흐름, 지표, 테스트로 원인을 좁혀갑니다.</p>
+            </article>
+            <article>
+              <h3>학습 공유</h3>
+              <p>한라 LLM 동아리 백엔드 멘토링을 진행하며 배운 내용을 팀과 커뮤니티에 공유합니다.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <aside class="nli-command" aria-label="포트폴리오 자연어 이동">
+      <form class="nli-form" data-nli-form>
+        <label class="sr-only" for="nli-input">포트폴리오에서 찾을 내용</label>
+        <input
+          id="nli-input"
+          type="search"
+          autocomplete="off"
+          placeholder="DB 최적화 보여줘"
+          data-nli-input
+        />
+        <button type="submit" data-nli-submit>이동</button>
+      </form>
+      <p class="nli-status" data-nli-status aria-live="polite"></p>
+    </aside>
+
+    <footer class="site-footer">
+      <p>© 2026 Lee EunSung. Backend & Infra Portfolio.</p>
+      <a href="#top">맨 위로</a>
+    </footer>
+
+    <script src="data/portfolio.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

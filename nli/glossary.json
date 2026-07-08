@@ -1,0 +1,203 @@
+{
+  "version": 1,
+  "terms": [
+    {
+      "term": "NLI",
+      "aliases": ["Natural Language Interface", "자연어 인터페이스", "자연어 UI"],
+      "answer": "NLI는 사용자가 버튼이나 메뉴 대신 자연어로 명령하거나 질문할 수 있게 해주는 인터페이스입니다. 이 포트폴리오에서는 섹션 이동과 용어 설명만 담당합니다.",
+      "relatedTargets": ["projects"]
+    },
+    {
+      "term": "CI",
+      "aliases": ["Continuous Integration", "지속적 통합", "CI 파이프라인"],
+      "answer": "CI는 코드 변경이 들어올 때 빌드, 테스트, 정적 분석을 자동 실행해 문제를 빠르게 찾는 개발 자동화 흐름입니다.",
+      "relatedTargets": ["project-makertion-ci", "project-catequest-ci"]
+    },
+    {
+      "term": "CD",
+      "aliases": ["Continuous Delivery", "Continuous Deployment", "지속적 배포", "배포 자동화"],
+      "answer": "CD는 검증된 코드를 운영 또는 배포 환경에 자동으로 반영하는 흐름입니다. 이 포트폴리오에서는 GitHub Actions와 ARM Runner 기반 배포 자동화 사례가 있습니다.",
+      "relatedTargets": ["project-makertion-cd", "project-catequest-ci"]
+    },
+    {
+      "term": "AI Reviewer",
+      "aliases": ["AI 리뷰어", "Claude Reviewer", "맞춤형 리뷰어"],
+      "answer": "AI Reviewer는 PR 변경 사항을 읽고 코드 흐름, DB 엔티티 변경, 보안 공백 같은 리뷰 포인트를 자동으로 짚어주는 도구입니다.",
+      "relatedTargets": ["project-makertion-ci"]
+    },
+    {
+      "term": "self-hosted runner",
+      "aliases": ["셀프 호스티드 러너", "자가 호스팅 러너", "GitHub Actions runner"],
+      "answer": "self-hosted runner는 GitHub가 제공하는 기본 실행 환경 대신 직접 준비한 서버에서 GitHub Actions 작업을 실행하는 방식입니다. 실행 성능, 네트워크, 아키텍처를 더 세밀하게 제어할 수 있습니다.",
+      "relatedTargets": ["project-makertion-ci", "project-makertion-cd"]
+    },
+    {
+      "term": "ARM Native Runner",
+      "aliases": ["ARM Runner", "ARM 러너", "ARM Native"],
+      "answer": "ARM Native Runner는 ARM 아키텍처 서버에서 CI/CD 작업을 직접 실행하는 러너입니다. x64 에뮬레이션 없이 ARM용 Docker 이미지를 빌드할 수 있어 빌드 시간을 줄일 수 있습니다.",
+      "relatedTargets": ["project-makertion-cd"]
+    },
+    {
+      "term": "CloudWatch",
+      "aliases": ["AWS CloudWatch", "클라우드워치"],
+      "answer": "CloudWatch는 AWS 리소스와 애플리케이션의 로그, 메트릭, 알람을 수집하고 시각화하는 모니터링 서비스입니다.",
+      "relatedTargets": ["project-makertion-observability", "project-makertion-cost"]
+    },
+    {
+      "term": "Application Signals",
+      "aliases": ["CloudWatch Application Signals", "애플리케이션 시그널"],
+      "answer": "Application Signals는 CloudWatch에서 서비스와 API 단위의 요청 수, 지연 시간, 오류율 같은 애플리케이션 지표를 보기 쉽게 제공하는 기능입니다.",
+      "relatedTargets": ["project-makertion-observability"]
+    },
+    {
+      "term": "Observability",
+      "aliases": ["관측성", "모니터링", "운영 관측"],
+      "answer": "관측성은 로그, 메트릭, 트레이스 같은 운영 데이터를 통해 시스템 내부 상태와 장애 원인을 파악할 수 있는 능력입니다.",
+      "relatedTargets": ["project-makertion-observability"]
+    },
+    {
+      "term": "P95",
+      "aliases": ["p95", "95퍼센타일", "95% 응답 속도", "95% 지연 시간"],
+      "answer": "P95는 전체 요청 중 95%가 이 시간 안에 응답했다는 뜻입니다. 평균보다 느린 상위 요청 구간의 사용자 경험을 확인할 때 유용합니다.",
+      "relatedTargets": ["project-makertion-db", "project-makertion-cache"]
+    },
+    {
+      "term": "P90",
+      "aliases": ["p90", "90퍼센타일", "90% 응답 속도"],
+      "answer": "P90은 전체 요청 중 90%가 이 시간 안에 응답했다는 뜻입니다. 일반적인 평균보다 지연 분포를 더 잘 보여줍니다.",
+      "relatedTargets": ["project-makertion-db"]
+    },
+    {
+      "term": "P99",
+      "aliases": ["p99", "99퍼센타일", "99% 응답 속도"],
+      "answer": "P99는 전체 요청 중 99%가 이 시간 안에 응답했다는 뜻입니다. 매우 느린 꼬리 지연을 확인할 때 사용합니다.",
+      "relatedTargets": ["project-makertion-observability"]
+    },
+    {
+      "term": "RPS",
+      "aliases": ["req/sec", "초당 요청 수", "Requests Per Second"],
+      "answer": "RPS는 초당 처리한 요청 수입니다. 웹 API의 처리량을 표현할 때 사용합니다.",
+      "relatedTargets": ["project-makertion-cache"]
+    },
+    {
+      "term": "TPS",
+      "aliases": ["초당 처리량", "Transactions Per Second"],
+      "answer": "TPS는 초당 처리한 트랜잭션 수입니다. 결제나 주문처럼 하나의 업무 단위를 처리하는 성능을 비교할 때 사용합니다.",
+      "relatedTargets": ["project-bookking-lock"]
+    },
+    {
+      "term": "shared_buffers",
+      "aliases": ["PostgreSQL shared_buffers", "공유 버퍼"],
+      "answer": "shared_buffers는 PostgreSQL이 데이터를 메모리에 캐싱하기 위해 사용하는 주요 버퍼 영역입니다. 적절히 조정하면 디스크 I/O를 줄일 수 있습니다.",
+      "relatedTargets": ["project-makertion-db"]
+    },
+    {
+      "term": "work_mem",
+      "aliases": ["PostgreSQL work_mem", "작업 메모리"],
+      "answer": "work_mem은 PostgreSQL에서 정렬, 해시, 조인 같은 작업 하나가 사용할 수 있는 메모리 크기입니다. 너무 작으면 디스크를 사용해 지연이 커질 수 있습니다.",
+      "relatedTargets": ["project-makertion-db"]
+    },
+    {
+      "term": "N+1 쿼리",
+      "aliases": ["N+1", "N plus one", "N+1 문제"],
+      "answer": "N+1 쿼리는 목록을 한 번 조회한 뒤 각 항목의 연관 데이터를 다시 N번 조회해 쿼리가 폭증하는 문제입니다.",
+      "relatedTargets": ["project-catequest-n1"]
+    },
+    {
+      "term": "DTO Projection",
+      "aliases": ["Projection", "DTO 직접 조회", "프로젝션"],
+      "answer": "DTO Projection은 엔티티 전체를 가져오지 않고 API 응답에 필요한 컬럼만 DTO 형태로 직접 조회하는 방식입니다. 읽기 전용 API에서 불필요한 영속성 관리 비용을 줄일 수 있습니다.",
+      "relatedTargets": ["project-catequest-n1"]
+    },
+    {
+      "term": "JPQL",
+      "aliases": ["Java Persistence Query Language"],
+      "answer": "JPQL은 JPA 엔티티를 대상으로 작성하는 객체 지향 쿼리 언어입니다. SQL과 비슷하지만 테이블이 아니라 엔티티와 필드를 기준으로 쿼리합니다.",
+      "relatedTargets": ["project-catequest-n1"]
+    },
+    {
+      "term": "분산 락",
+      "aliases": ["Distributed Lock", "Redis Lock", "분산락"],
+      "answer": "분산 락은 여러 서버나 스레드가 동시에 같은 자원을 수정하지 못하도록 외부 저장소를 이용해 잠금을 거는 방식입니다.",
+      "relatedTargets": ["project-bookking-lock"]
+    },
+    {
+      "term": "Redisson Fair Lock",
+      "aliases": ["Fair Lock", "레디슨 공정 락", "Redis Fair Lock"],
+      "answer": "Redisson Fair Lock은 Redis 기반 분산 락 구현 중 하나로, 대기 순서를 고려해 락을 획득하게 하는 방식입니다. 다만 네트워크 왕복과 대기열 관리 비용이 추가될 수 있습니다.",
+      "relatedTargets": ["project-bookking-lock"]
+    },
+    {
+      "term": "비관적 락",
+      "aliases": ["Pessimistic Lock", "DB 비관적 락"],
+      "answer": "비관적 락은 동시에 같은 데이터가 수정될 가능성이 높다고 보고 DB 트랜잭션에서 해당 행을 잠그는 방식입니다.",
+      "relatedTargets": ["project-bookking-lock"]
+    },
+    {
+      "term": "NAT Gateway",
+      "aliases": ["NAT", "나트 게이트웨이"],
+      "answer": "NAT Gateway는 private subnet의 리소스가 외부 인터넷으로 나갈 수 있게 해주는 AWS 네트워크 서비스입니다. 편리하지만 고정 비용이 발생합니다.",
+      "relatedTargets": ["project-makertion-cost"]
+    },
+    {
+      "term": "ALB",
+      "aliases": ["Application Load Balancer", "로드밸런서"],
+      "answer": "ALB는 HTTP/HTTPS 트래픽을 여러 서버나 컨테이너로 분산하는 AWS 로드밸런서입니다. 보안 그룹과 함께 인스턴스 직접 접근을 제한하는 구조에도 활용됩니다.",
+      "relatedTargets": ["project-makertion-cost", "project-bookking-https"]
+    },
+    {
+      "term": "ACM",
+      "aliases": ["AWS Certificate Manager", "Certificate Manager"],
+      "answer": "ACM은 AWS에서 SSL/TLS 인증서를 발급하고 관리하는 서비스입니다. ALB, CloudFront 같은 AWS 서비스와 쉽게 연동됩니다.",
+      "relatedTargets": ["project-bookking-https"]
+    },
+    {
+      "term": "Route 53",
+      "aliases": ["Route53", "AWS DNS"],
+      "answer": "Route 53은 AWS의 DNS 서비스입니다. 도메인을 AWS 리소스와 연결하고 라우팅 정책을 관리할 수 있습니다.",
+      "relatedTargets": ["project-bookking-https"]
+    },
+    {
+      "term": "Cache Hit",
+      "aliases": ["캐시 히트", "캐시 적중"],
+      "answer": "Cache Hit는 요청한 데이터가 캐시에 있어서 DB 같은 원본 저장소를 조회하지 않고 바로 응답하는 상태입니다.",
+      "relatedTargets": ["project-makertion-cache"]
+    },
+    {
+      "term": "Cache Miss",
+      "aliases": ["캐시 미스", "캐시 미적중"],
+      "answer": "Cache Miss는 요청한 데이터가 캐시에 없어 원본 저장소를 조회해야 하는 상태입니다.",
+      "relatedTargets": ["project-makertion-cache"]
+    },
+    {
+      "term": "Fallback",
+      "aliases": ["장애 조치", "대체 경로", "폴백"],
+      "answer": "Fallback은 캐시나 외부 시스템이 실패했을 때 서비스가 멈추지 않도록 대체 경로로 처리하는 방식입니다.",
+      "relatedTargets": ["project-makertion-cache"]
+    },
+    {
+      "term": "Swagger",
+      "aliases": ["OpenAPI", "API 문서"],
+      "answer": "Swagger는 API 요청, 응답, 파라미터를 문서화하고 테스트할 수 있게 해주는 도구입니다.",
+      "relatedTargets": ["project-ott-api"]
+    },
+    {
+      "term": "MongoDB",
+      "aliases": ["몽고DB", "NoSQL"],
+      "answer": "MongoDB는 JSON과 유사한 문서 구조로 데이터를 저장하는 NoSQL 데이터베이스입니다. 구조가 유동적인 콘텐츠 데이터에 적합합니다.",
+      "relatedTargets": ["project-ott-api"]
+    },
+    {
+      "term": "k6",
+      "aliases": ["K6", "부하 테스트"],
+      "answer": "k6는 API나 웹 서비스에 가상 사용자를 발생시켜 응답 시간, 처리량, 오류율을 측정하는 부하 테스트 도구입니다.",
+      "relatedTargets": ["project-makertion-ci", "project-makertion-db"]
+    },
+    {
+      "term": "nGrinder",
+      "aliases": ["엔그라인더", "ngrinder"],
+      "answer": "nGrinder는 대규모 부하 테스트를 실행하고 성능 지표를 비교할 수 있는 테스트 도구입니다.",
+      "relatedTargets": ["project-bookking-lock"]
+    }
+  ]
+}
