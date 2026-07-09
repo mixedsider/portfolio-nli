@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify portfolio
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Show Node.js version
+        run: node --version
+
+      - name: Check JavaScript syntax
+        run: |
+          node --check app.js
+          node --check data/portfolio.js
+          node --check tools/static-server.mjs
+          node --check tools/nli-gateway.mjs
+          node --check tools/nli-test.mjs
+
+      - name: Validate JSON data
+        run: |
+          node -e "for (const f of ['nli/routes.json','nli/glossary.json','nli/intents.json','nli/response.schema.json','nli/test-cases.json']) JSON.parse(require('fs').readFileSync(f,'utf8')); console.log('json ok')"
+
+      - name: Run NLI routing tests
+        run: node tools/nli-test.mjs
+
+      - name: Smoke test static server
+        run: |
+          node tools/static-server.mjs &
+          SERVER_PID=$!
+          sleep 1
+          curl -fsS http://127.0.0.1:4173/ > /tmp/portfolio-index.html
+          grep -q "이은성" /tmp/portfolio-index.html
+          kill $SERVER_PID

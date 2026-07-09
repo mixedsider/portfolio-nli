@@ -61,6 +61,9 @@ node tools/nli-gateway.mjs
 - `NLI_PORT`: `8787`
 - `LM_STUDIO_BASE_URL`: `http://192.168.0.58:1234/v1`
 - `LM_STUDIO_MODEL`: `google/gemma-4-e4b`
+- `LM_STUDIO_TIMEOUT_MS`: `8000`
+
+예시 값은 `.env.example`에도 정리되어 있습니다.
 
 ## 응답 예시
 
