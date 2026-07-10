@@ -9,6 +9,36 @@
       }
     },
     {
+      "message": "자기소개해줘",
+      "expect": {
+        "intent": "introduce_profile",
+        "answerIncludes": "Backend & Infra Developer"
+      }
+    },
+    {
+      "message": "이 포트폴리오에서 뭘 할 수 있어?",
+      "expect": {
+        "intent": "list_capabilities",
+        "answerIncludes": "프로젝트"
+      }
+    },
+    {
+      "message": "CateQuest 요약해줘",
+      "expect": {
+        "intent": "summarize_project",
+        "targetId": "project-catequest",
+        "answerIncludes": "CateQuest"
+      }
+    },
+    {
+      "message": "Makertion DB 최적화 요약해줘",
+      "expect": {
+        "intent": "summarize_section",
+        "targetId": "project-makertion-db",
+        "answerIncludes": "65%"
+      }
+    },
+    {
       "message": "CloudWatch 모니터링 보여줘",
       "expect": {
         "intent": "navigate",

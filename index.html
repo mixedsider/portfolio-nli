@@ -103,19 +103,46 @@
       </section>
     </main>
 
-    <aside class="nli-command" aria-label="포트폴리오 자연어 이동">
-      <form class="nli-form" data-nli-form>
-        <label class="sr-only" for="nli-input">포트폴리오에서 찾을 내용</label>
-        <input
-          id="nli-input"
-          type="search"
-          autocomplete="off"
-          placeholder="DB 최적화 보여줘"
-          data-nli-input
-        />
-        <button type="submit" data-nli-submit>이동</button>
-      </form>
-      <p class="nli-status" data-nli-status aria-live="polite"></p>
+    <aside class="nli-command is-collapsed" aria-label="포트폴리오 자연어 인터페이스" data-nli-widget>
+      <button
+        class="nli-launcher"
+        type="button"
+        aria-controls="nli-panel"
+        aria-expanded="false"
+        data-nli-open
+      >
+        <strong>NLI</strong>
+        <span>포트폴리오에게 묻기</span>
+      </button>
+
+      <section class="nli-panel" id="nli-panel" aria-labelledby="nli-title" data-nli-panel>
+        <header class="nli-panel-header">
+          <div>
+            <p class="nli-kicker">Portfolio NLI</p>
+            <h2 id="nli-title">무엇을 찾아볼까요?</h2>
+          </div>
+          <div class="nli-panel-actions">
+            <button type="button" aria-label="대화 내용 지우기" title="대화 내용 지우기" data-nli-clear>지우기</button>
+            <button type="button" aria-label="패널 최소화" title="패널 최소화" data-nli-minimize>_</button>
+            <button type="button" aria-label="NLI 숨기기" title="NLI 숨기기" data-nli-close>x</button>
+          </div>
+        </header>
+
+        <div class="nli-panel-body" data-nli-body>
+          <div class="nli-messages" data-nli-messages aria-live="polite"></div>
+          <form class="nli-form" data-nli-form>
+            <label class="sr-only" for="nli-input">포트폴리오에서 찾을 내용</label>
+            <input
+              id="nli-input"
+              type="search"
+              autocomplete="off"
+              placeholder="CateQuest 요약해줘"
+              data-nli-input
+            />
+            <button type="submit" data-nli-submit>전송</button>
+          </form>
+        </div>
+      </section>
     </aside>
 
     <footer class="site-footer">

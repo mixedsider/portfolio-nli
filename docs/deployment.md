@@ -88,7 +88,65 @@ http://서버주소:8787/api/nli/health
 
 정상이라면 `ok: true`, 모델명, LM Studio 주소가 응답에 포함됩니다.
 
-## 3. 프론트와 Gateway 연결
+## 3. GitHub Actions로 NLI Gateway 자동 배포
+
+내부망 서버 `192.168.0.90`에 배포하려면 GitHub-hosted runner가 아니라 내부망에 접근 가능한 컴퓨터에 GitHub Actions self-hosted runner가 설치되어 있어야 합니다. 현재 workflow는 runner 라벨 `self-hosted`, `Linux`, `X64`를 대상으로 실행됩니다. 해당 runner에서는 `bash`, `ssh`, `curl` 명령을 사용할 수 있어야 합니다.
+
+배포 흐름:
+
+```text
+GitHub Actions self-hosted runner
+-> SSH 접속
+-> 192.168.0.90 NLI Gateway 서버
+-> Gateway 중지
+-> git pull
+-> Gateway 시작
+-> 5초 간격으로 최대 3회 health check
+```
+
+workflow 파일:
+
+```text
+.github/workflows/deploy-nli-gateway.yml
+```
+
+GitHub 저장소 `Settings > Secrets and variables > Actions`에 아래 secrets를 등록합니다.
+
+필수:
+
+```text
+NLI_GATEWAY_USER=서버 SSH 사용자명
+NLI_GATEWAY_SSH_KEY=서버 접속용 private key
+```
+
+선택:
+
+```text
+NLI_GATEWAY_HOST=192.168.0.90
+NLI_GATEWAY_PORT=8787
+NLI_GATEWAY_SSH_PORT=22
+NLI_GATEWAY_APP_DIR=~/portfolio-nli
+NLI_GATEWAY_PROCESS=portfolio-nli-gateway
+```
+
+서버에는 repository가 이미 clone되어 있어야 하며, `NLI_GATEWAY_APP_DIR`은 해당 repository 경로를 가리켜야 합니다.
+
+```bash
+git clone https://github.com/mixedsider/portfolio-nli.git ~/portfolio-nli
+cd ~/portfolio-nli
+cp .env.example .env
+```
+
+Gateway 프로세스는 `pm2` 또는 user systemd service 중 하나로 관리합니다. 기본 권장은 `pm2`입니다.
+
+```bash
+pm2 start tools/nli-gateway.mjs --name portfolio-nli-gateway --update-env
+pm2 save
+```
+
+배포 workflow는 `main` 브랜치에 Gateway 관련 파일이 push될 때 자동 실행되며, GitHub Actions 화면에서 `Deploy NLI Gateway`를 수동 실행할 수도 있습니다.
+
+## 4. 프론트와 Gateway 연결
 
 현재 MVP의 프론트엔드 NLI 요청 주소는 `app.js`에 있습니다.
 
@@ -118,7 +176,7 @@ flowchart LR
 
 같은 도메인으로 묶으면 CORS, HTTPS, 브라우저 접근 주소 관리가 단순해집니다.
 
-## 4. Nginx 리버스 프록시 예시
+## 5. Nginx 리버스 프록시 예시
 
 정적 사이트와 Gateway를 같은 도메인에서 제공하려면 Nginx를 사용할 수 있습니다.
 
@@ -150,7 +208,7 @@ server {
 const nliEndpoint = "/api/nli";
 ```
 
-## 5. 배포 후 확인
+## 6. 배포 후 확인
 
 1. 포트폴리오 페이지가 열리는지 확인합니다.
 2. 이미지가 정상적으로 보이는지 확인합니다.

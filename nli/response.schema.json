@@ -7,7 +7,15 @@
   "properties": {
     "intent": {
       "type": "string",
-      "enum": ["navigate", "define_term", "summarize_section", "reject_out_of_scope"]
+      "enum": [
+        "navigate",
+        "define_term",
+        "summarize_section",
+        "introduce_profile",
+        "summarize_project",
+        "list_capabilities",
+        "reject_out_of_scope"
+      ]
     },
     "confidence": {
       "type": "number",
@@ -29,7 +37,7 @@
     },
     "answer": {
       "type": "string",
-      "description": "define_term 또는 summarize_section intent일 때 제공하는 설명입니다."
+      "description": "define_term, summarize_section, introduce_profile, summarize_project, list_capabilities intent일 때 제공하는 설명입니다."
     },
     "relatedTargets": {
       "type": "array",
@@ -62,6 +70,30 @@
       },
       "then": {
         "required": ["targetId", "answer"]
+      }
+    },
+    {
+      "if": {
+        "properties": { "intent": { "const": "introduce_profile" } }
+      },
+      "then": {
+        "required": ["answer"]
+      }
+    },
+    {
+      "if": {
+        "properties": { "intent": { "const": "summarize_project" } }
+      },
+      "then": {
+        "required": ["targetId", "answer"]
+      }
+    },
+    {
+      "if": {
+        "properties": { "intent": { "const": "list_capabilities" } }
+      },
+      "then": {
+        "required": ["answer"]
       }
     }
   ]

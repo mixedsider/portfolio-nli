@@ -4,11 +4,14 @@
 
 포트폴리오 사이트에 붙는 NLI는 일반 챗봇이 아니라, 포트폴리오 탐색을 돕는 제한된 자연어 인터페이스입니다.
 
-MVP에서 허용하는 기능은 세 가지입니다.
+MVP에서 허용하는 기능은 여섯 가지입니다.
 
 1. 사용자의 자연어 요청을 포트폴리오 섹션 이동으로 변환
 2. 포트폴리오에 등장하는 전문 용어를 사전 기반으로 설명
-3. 포트폴리오 데이터에 있는 프로젝트 섹션만 짧게 요약
+3. 포트폴리오 데이터에 있는 프로젝트를 짧게 요약
+4. 포트폴리오 데이터에 있는 프로젝트 섹션을 짧게 요약
+5. 포트폴리오 데이터 기반 자기소개 응답
+6. NLI가 할 수 있는 기능 안내
 
 그 외 요청은 명확하게 거절합니다.
 
@@ -34,7 +37,7 @@ flowchart LR
   LMStudio --> Gateway
   Gateway --> Guard["JSON 검증 + 허용 범위 검사"]
   Guard --> Frontend
-  Frontend --> Action["섹션 이동 또는 용어 설명"]
+  Frontend --> Action["섹션 이동, 요약, 용어 설명, 자기소개"]
 ```
 
 ## Gateway 책임
@@ -101,8 +104,42 @@ node tools/nli-gateway.mjs
 }
 ```
 
+프로젝트 요약:
+
+```json
+{
+  "intent": "summarize_project",
+  "confidence": 0.9,
+  "targetId": "project-catequest",
+  "message": "CateQuest 프로젝트를 요약합니다.",
+  "answer": "CateQuest는 사용자 맞춤 카테고리별 질문 생성 프로젝트입니다."
+}
+```
+
+자기소개:
+
+```json
+{
+  "intent": "introduce_profile",
+  "confidence": 0.94,
+  "message": "이은성을 소개합니다.",
+  "answer": "이은성은 Backend & Infra Developer입니다."
+}
+```
+
+기능 안내:
+
+```json
+{
+  "intent": "list_capabilities",
+  "confidence": 0.96,
+  "message": "NLI가 할 수 있는 일을 안내합니다.",
+  "answer": "프로젝트 이동, 프로젝트 요약, 섹션 요약, 등록된 용어 설명, 자기소개를 도와줄 수 있습니다."
+}
+```
+
 ## 다음 구현 순서
 
-1. 배포 환경에서 NLI Gateway 주소를 프론트 설정값으로 주입
-2. 테스트 케이스를 실제 사용자 입력 로그 기준으로 확장
-3. 운영 배포 시 Gateway를 포트폴리오 정적 서버와 같은 도메인 뒤에 연결
+1. 실제 사용자 입력 로그 기준으로 테스트 케이스 확장
+2. 운영 배포 시 Gateway와 Pages 배포본 버전 동기화
+3. 필요하면 NLI Gateway 주소를 빌드 환경 변수로 분리

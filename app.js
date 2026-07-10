@@ -12,7 +12,13 @@ const toneMap = {
 
 const nliEndpoint = "https://portfolio-nli-gateway.mixedsider.cloud/api/nli";
 const focusSet = ["All", ...new Set(data.projects.flatMap((project) => project.focus))];
+const nliHistoryKey = "portfolio-nli:messages:v1";
+const nliMaxMessages = 30;
+const nliWelcomeText =
+  "안녕하세요. 프로젝트 이동, 프로젝트/섹션 요약, 용어 설명, 자기소개를 도와드릴 수 있습니다.";
 let currentFilter = "All";
+let nliMessages = [];
+let nliDelayTimers = [];
 
 function initProfile() {
   $("[data-profile-summary]").textContent = data.profile.summary;
@@ -212,13 +218,6 @@ function scrollToTarget(targetId) {
   return true;
 }
 
-function setNliStatus(message) {
-  const status = $("[data-nli-status]");
-  if (!status) return;
-
-  status.textContent = message || "";
-}
-
 function setNliPending(isPending) {
   const form = $("[data-nli-form]");
   const input = $("[data-nli-input]");
@@ -227,6 +226,123 @@ function setNliPending(isPending) {
   if (form) form.classList.toggle("is-pending", isPending);
   if (input) input.disabled = isPending;
   if (submit) submit.disabled = isPending;
+}
+
+function createNliMessage(role, text, options = {}) {
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    role,
+    text,
+    isPending: options.isPending === true
+  };
+}
+
+function loadNliMessages() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(nliHistoryKey) || "[]");
+    if (!Array.isArray(parsed)) return [createNliMessage("assistant", nliWelcomeText)];
+
+    const messages = parsed
+      .filter((message) => ["user", "assistant"].includes(message?.role) && typeof message?.text === "string")
+      .slice(-nliMaxMessages)
+      .map((message) => ({ ...message, isPending: false }));
+
+    return messages.length ? messages : [createNliMessage("assistant", nliWelcomeText)];
+  } catch {
+    return [createNliMessage("assistant", nliWelcomeText)];
+  }
+}
+
+function saveNliMessages() {
+  const storableMessages = nliMessages
+    .filter((message) => !message.isPending)
+    .slice(-nliMaxMessages)
+    .map(({ id, role, text }) => ({ id, role, text }));
+
+  localStorage.setItem(nliHistoryKey, JSON.stringify(storableMessages));
+}
+
+function renderNliMessages() {
+  const messageList = $("[data-nli-messages]");
+  if (!messageList) return;
+
+  messageList.innerHTML = "";
+
+  for (const message of nliMessages) {
+    const item = document.createElement("div");
+    item.className = `nli-message is-${message.role}${message.isPending ? " is-pending" : ""}`;
+
+    const label = document.createElement("span");
+    label.className = "nli-message-label";
+    label.textContent = message.role === "user" ? "나" : "NLI";
+
+    const bubble = document.createElement("p");
+    bubble.textContent = message.text;
+
+    item.append(label, bubble);
+
+    if (message.isPending) {
+      const dots = document.createElement("span");
+      dots.className = "nli-typing";
+      dots.setAttribute("aria-hidden", "true");
+      dots.innerHTML = "<i></i><i></i><i></i>";
+      item.append(dots);
+    }
+
+    messageList.append(item);
+  }
+
+  messageList.scrollTop = messageList.scrollHeight;
+}
+
+function appendNliMessage(role, text, options = {}) {
+  const message = createNliMessage(role, text, options);
+  nliMessages = [...nliMessages, message].slice(-nliMaxMessages);
+  if (!message.isPending) saveNliMessages();
+  renderNliMessages();
+  return message.id;
+}
+
+function updateNliMessage(id, text, options = {}) {
+  nliMessages = nliMessages.map((message) =>
+    message.id === id
+      ? {
+          ...message,
+          text,
+          isPending: options.isPending === true
+        }
+      : message
+  );
+  saveNliMessages();
+  renderNliMessages();
+}
+
+function clearNliDelayTimers() {
+  for (const timer of nliDelayTimers) clearTimeout(timer);
+  nliDelayTimers = [];
+}
+
+function setNliOpen(isOpen) {
+  const widget = $("[data-nli-widget]");
+  const openButton = $("[data-nli-open]");
+  const input = $("[data-nli-input]");
+  if (!widget || !openButton) return;
+
+  widget.classList.toggle("is-collapsed", !isOpen);
+  widget.classList.remove("is-minimized");
+  openButton.setAttribute("aria-expanded", String(isOpen));
+
+  if (isOpen) {
+    renderNliMessages();
+    window.setTimeout(() => input?.focus(), 0);
+  }
+}
+
+function toggleNliMinimized() {
+  const widget = $("[data-nli-widget]");
+  if (!widget || widget.classList.contains("is-collapsed")) return;
+
+  widget.classList.toggle("is-minimized");
 }
 
 async function requestNli(message) {
@@ -240,24 +356,20 @@ async function requestNli(message) {
   return response.json();
 }
 
-function handleNliResult(result) {
+function getNliResultText(result) {
   if (!result || result.intent === "reject_out_of_scope") {
-    setNliStatus(result?.message || "포트폴리오 안에서 찾을 수 있는 내용만 이동할 수 있습니다.");
-    return;
+    return result?.message || "포트폴리오 안에서 찾을 수 있는 내용만 이동하거나 설명할 수 있습니다.";
   }
 
-  if (result.intent === "define_term") {
-    setNliStatus(result.answer || result.message);
-    return;
-  }
+  let text = result.answer || result.message || "";
+  const shouldMove = ["navigate", "summarize_project", "summarize_section"].includes(result.intent);
 
-  if (result.targetId) {
+  if (result.targetId && shouldMove) {
     const moved = scrollToTarget(result.targetId);
-    setNliStatus(moved ? result.answer || result.message : "해당 위치를 찾지 못했습니다.");
-    return;
+    if (!moved) return "해당 위치를 찾지 못했습니다.";
   }
 
-  setNliStatus(result.message || "");
+  return text || "요청을 처리했습니다.";
 }
 
 async function handleNliSubmit(event) {
@@ -267,22 +379,42 @@ async function handleNliSubmit(event) {
   const message = input?.value.trim();
 
   if (!message) {
-    setNliStatus("찾을 내용을 입력해주세요.");
+    appendNliMessage("assistant", "찾을 내용을 입력해주세요.");
     return;
   }
 
+  input.value = "";
+  appendNliMessage("user", message);
+  const pendingId = appendNliMessage("assistant", "찾는 중입니다.", { isPending: true });
   setNliPending(true);
-  setNliStatus("찾는 중입니다.");
+  clearNliDelayTimers();
+  nliDelayTimers = [
+    window.setTimeout(() => {
+      updateNliMessage(pendingId, "조금만 기다려주세요. 포트폴리오 내용을 확인하고 있어요.", {
+        isPending: true
+      });
+    }, 3000),
+    window.setTimeout(() => {
+      updateNliMessage(pendingId, "로컬 LLM 응답이 지연되고 있습니다.", { isPending: true });
+    }, 8000)
+  ];
 
   try {
     const result = await requestNli(message);
-    handleNliResult(result);
+    updateNliMessage(pendingId, getNliResultText(result));
   } catch {
-    setNliStatus("NLI Gateway에 연결할 수 없습니다. Gateway가 켜져 있는지 확인해주세요.");
+    updateNliMessage(pendingId, "NLI Gateway에 연결할 수 없습니다. Gateway가 켜져 있는지 확인해주세요.");
   } finally {
+    clearNliDelayTimers();
     setNliPending(false);
     input?.focus();
   }
+}
+
+function initNli() {
+  nliMessages = loadNliMessages();
+  saveNliMessages();
+  renderNliMessages();
 }
 
 function bindEvents() {
@@ -303,6 +435,15 @@ function bindEvents() {
 
   const nliForm = $("[data-nli-form]");
   if (nliForm) nliForm.addEventListener("submit", handleNliSubmit);
+
+  $("[data-nli-open]")?.addEventListener("click", () => setNliOpen(true));
+  $("[data-nli-close]")?.addEventListener("click", () => setNliOpen(false));
+  $("[data-nli-minimize]")?.addEventListener("click", toggleNliMinimized);
+  $("[data-nli-clear]")?.addEventListener("click", () => {
+    nliMessages = [createNliMessage("assistant", nliWelcomeText)];
+    saveNliMessages();
+    renderNliMessages();
+  });
 }
 
 function init() {
@@ -310,6 +451,7 @@ function init() {
   initMetrics();
   initFilters();
   renderProjects();
+  initNli();
   bindEvents();
 }
 

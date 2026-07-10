@@ -1,0 +1,133 @@
+name: Deploy NLI Gateway
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - tools/nli-gateway.mjs
+      - nli/**
+      - data/portfolio.js
+      - .env.example
+      - .github/workflows/deploy-nli-gateway.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-nli-gateway
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to internal NLI Gateway
+    runs-on: [self-hosted, Linux, X64]
+    env:
+      NLI_GATEWAY_HOST: ${{ secrets.NLI_GATEWAY_HOST }}
+      NLI_GATEWAY_PORT: ${{ secrets.NLI_GATEWAY_PORT }}
+      NLI_GATEWAY_SSH_PORT: ${{ secrets.NLI_GATEWAY_SSH_PORT }}
+      NLI_GATEWAY_APP_DIR: ${{ secrets.NLI_GATEWAY_APP_DIR }}
+      NLI_GATEWAY_PROCESS: ${{ secrets.NLI_GATEWAY_PROCESS }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        shell: bash
+        env:
+          NLI_GATEWAY_USER: ${{ secrets.NLI_GATEWAY_USER }}
+          NLI_GATEWAY_SSH_KEY: ${{ secrets.NLI_GATEWAY_SSH_KEY }}
+        run: |
+          test -n "${NLI_GATEWAY_USER}" || {
+            echo "NLI_GATEWAY_USER secret is required"
+            exit 1
+          }
+          test -n "${NLI_GATEWAY_SSH_KEY}" || {
+            echo "NLI_GATEWAY_SSH_KEY secret is required"
+            exit 1
+          }
+
+      - name: Prepare deployment variables
+        shell: bash
+        run: |
+          {
+            echo "NLI_GATEWAY_HOST=${NLI_GATEWAY_HOST:-192.168.0.90}"
+            echo "NLI_GATEWAY_PORT=${NLI_GATEWAY_PORT:-8787}"
+            echo "NLI_GATEWAY_SSH_PORT=${NLI_GATEWAY_SSH_PORT:-22}"
+            echo "NLI_GATEWAY_APP_DIR=${NLI_GATEWAY_APP_DIR:-~/portfolio-nli}"
+            echo "NLI_GATEWAY_PROCESS=${NLI_GATEWAY_PROCESS:-portfolio-nli-gateway}"
+          } >> "${GITHUB_ENV}"
+
+      - name: Configure SSH
+        shell: bash
+        env:
+          NLI_GATEWAY_SSH_KEY: ${{ secrets.NLI_GATEWAY_SSH_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${NLI_GATEWAY_SSH_KEY}" | tr -d '\r' > ~/.ssh/nli_gateway_key
+          chmod 600 ~/.ssh/nli_gateway_key
+          ssh-keyscan -p "${NLI_GATEWAY_SSH_PORT}" -H "${NLI_GATEWAY_HOST}" >> ~/.ssh/known_hosts
+
+      - name: Deploy Gateway
+        shell: bash
+        env:
+          NLI_GATEWAY_USER: ${{ secrets.NLI_GATEWAY_USER }}
+        run: |
+          ssh -i ~/.ssh/nli_gateway_key \
+            -p "${NLI_GATEWAY_SSH_PORT}" \
+            -o IdentitiesOnly=yes \
+            "${NLI_GATEWAY_USER}@${NLI_GATEWAY_HOST}" \
+            "APP_DIR='${NLI_GATEWAY_APP_DIR}' PROCESS_NAME='${NLI_GATEWAY_PROCESS}' bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          APP_DIR="${APP_DIR/#\~/$HOME}"
+          cd "${APP_DIR}"
+
+          if command -v pm2 >/dev/null 2>&1; then
+            if pm2 describe "${PROCESS_NAME}" >/dev/null 2>&1; then
+              pm2 stop "${PROCESS_NAME}"
+            else
+              echo "pm2 process ${PROCESS_NAME} does not exist yet. It will be created after update."
+            fi
+          elif command -v systemctl >/dev/null 2>&1 && systemctl --user list-unit-files | grep -q "^${PROCESS_NAME}.service"; then
+            systemctl --user stop "${PROCESS_NAME}.service"
+          else
+            echo "Neither pm2 process nor user systemd service was found for ${PROCESS_NAME}"
+            exit 1
+          fi
+
+          git fetch origin main
+          git checkout main
+          git pull --ff-only origin main
+
+          if command -v pm2 >/dev/null 2>&1; then
+            if pm2 describe "${PROCESS_NAME}" >/dev/null 2>&1; then
+              pm2 start "${PROCESS_NAME}" --update-env
+            else
+              pm2 start tools/nli-gateway.mjs --name "${PROCESS_NAME}" --update-env
+            fi
+            pm2 save
+          else
+            systemctl --user start "${PROCESS_NAME}.service"
+          fi
+          REMOTE
+
+      - name: Health check
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if curl -fsS "http://${NLI_GATEWAY_HOST}:${NLI_GATEWAY_PORT}/api/nli/health"; then
+              echo "NLI Gateway health check passed on attempt ${attempt}"
+              exit 0
+            fi
+
+            if [ "${attempt}" -lt 3 ]; then
+              echo "NLI Gateway is not healthy yet. Waiting 5 seconds..."
+              sleep 5
+            fi
+          done
+
+          echo "NLI Gateway health check failed after 3 attempts"
+          exit 1

@@ -13,10 +13,21 @@ const lmStudioBaseUrl = process.env.LM_STUDIO_BASE_URL || "http://192.168.0.58:1
 const lmStudioModel = process.env.LM_STUDIO_MODEL || "google/gemma-4-e4b";
 const lmStudioTimeoutMs = Number(process.env.LM_STUDIO_TIMEOUT_MS || 8000);
 
-const intentNames = new Set(["navigate", "define_term", "summarize_section", "reject_out_of_scope"]);
+const intentNames = new Set([
+  "navigate",
+  "define_term",
+  "summarize_section",
+  "introduce_profile",
+  "summarize_project",
+  "list_capabilities",
+  "reject_out_of_scope"
+]);
 const navigateWords = ["보여", "이동", "열어", "가줘", "보고", "찾아", "섹션", "어디"];
 const defineWords = ["뭐야", "뜻", "설명", "의미", "알려줘", "무슨"];
 const summarizeWords = ["요약", "정리", "뭘 했", "무슨 프로젝트", "간단히"];
+const projectSummaryWords = ["요약", "정리", "뭐야", "무슨", "어떤", "설명", "소개"];
+const profileWords = ["자기소개", "이은성", "누구", "어떤 개발자", "소개해", "프로필"];
+const capabilityWords = ["뭘 할 수", "무엇을 할 수", "할 수 있어", "사용법", "기능", "도움", "명령"];
 const responseKeys = new Set(["intent", "confidence", "targetId", "term", "message", "answer", "relatedTargets"]);
 
 export async function loadNliContext() {
@@ -39,6 +50,7 @@ export async function loadNliContext() {
       ])
     )
   );
+  const projectByTargetId = new Map(portfolio.projects.map((project) => [`project-${project.id}`, project]));
   const termByCanonical = new Map(glossary.terms.map((term) => [normalize(term.term), term]));
 
   return {
@@ -48,6 +60,7 @@ export async function loadNliContext() {
     portfolio,
     targetById,
     sectionById,
+    projectByTargetId,
     termByCanonical
   };
 }
@@ -115,15 +128,39 @@ export async function createNliServer() {
 
 function resolveLocally(message, context) {
   const routeMatch = findBestRoute(message, context.routes.targets);
+  const sectionRouteMatch = findBestRoute(
+    message,
+    context.routes.targets.filter((target) => target.type === "section")
+  );
   const termMatch = findBestTerm(message, context.glossary.terms);
   const normalizedMessage = normalize(message);
+
+  if (hasAny(normalizedMessage, capabilityWords)) {
+    return listCapabilitiesResponse();
+  }
+
+  if (hasAny(normalizedMessage, profileWords)) {
+    return introduceProfileResponse(context);
+  }
 
   if (termMatch && hasAny(normalizedMessage, defineWords)) {
     return defineTermResponse(termMatch.term, termMatch.score);
   }
 
   if (routeMatch && hasAny(normalizedMessage, summarizeWords)) {
+    if (sectionRouteMatch && sectionRouteMatch.score >= 0.72) {
+      return summarizeSectionResponse(sectionRouteMatch.target.id, context, sectionRouteMatch.score);
+    }
+
+    if (isProjectTarget(routeMatch.target)) {
+      return summarizeProjectResponse(routeMatch.target.id, context, routeMatch.score);
+    }
+
     return summarizeSectionResponse(routeMatch.target.id, context, routeMatch.score);
+  }
+
+  if (routeMatch && isProjectTarget(routeMatch.target) && hasAny(normalizedMessage, projectSummaryWords)) {
+    return summarizeProjectResponse(routeMatch.target.id, context, routeMatch.score);
   }
 
   if (routeMatch && (routeMatch.score >= 0.86 || hasAny(normalizedMessage, navigateWords))) {
@@ -245,6 +282,18 @@ function guardModelResponse(modelResponse, context) {
     return summarizeSectionResponse(modelResponse.targetId, context, modelResponse.confidence);
   }
 
+  if (modelResponse.intent === "introduce_profile") {
+    return introduceProfileResponse(context, modelResponse.confidence);
+  }
+
+  if (modelResponse.intent === "summarize_project") {
+    return summarizeProjectResponse(modelResponse.targetId, context, modelResponse.confidence);
+  }
+
+  if (modelResponse.intent === "list_capabilities") {
+    return listCapabilitiesResponse(modelResponse.confidence);
+  }
+
   return rejectResponse(modelResponse.message);
 }
 
@@ -290,6 +339,22 @@ export function validateNliResponse(response, context, options = {}) {
     validateTargetId(response.targetId, context, errors);
     if (typeof response.answer !== "string" || !response.answer.trim()) {
       errors.push("answer is required for summarize_section");
+    }
+  }
+
+  if (response.intent === "introduce_profile" || response.intent === "list_capabilities") {
+    if (typeof response.answer !== "string" || !response.answer.trim()) {
+      errors.push(`answer is required for ${response.intent}`);
+    }
+  }
+
+  if (response.intent === "summarize_project") {
+    validateTargetId(response.targetId, context, errors);
+    if (response.targetId && !context.projectByTargetId.has(response.targetId)) {
+      errors.push(`targetId is not a project: ${response.targetId}`);
+    }
+    if (typeof response.answer !== "string" || !response.answer.trim()) {
+      errors.push("answer is required for summarize_project");
     }
   }
 
@@ -363,6 +428,48 @@ function summarizeSectionResponse(targetId, context, confidence = 0.84) {
   };
 }
 
+function introduceProfileResponse(context, confidence = 0.94) {
+  const profile = context.portfolio.profile;
+
+  return {
+    intent: "introduce_profile",
+    confidence: clampConfidence(confidence),
+    message: "이은성을 소개합니다.",
+    answer: `${profile.name}은 ${profile.role}입니다. ${profile.headline}. ${profile.summary}`
+  };
+}
+
+function summarizeProjectResponse(targetId, context, confidence = 0.86) {
+  const project = context.projectByTargetId.get(targetId);
+  const target = context.targetById.get(targetId);
+
+  if (!project || !target) return navigateResponse(targetId, confidence);
+
+  const tags = project.tags.slice(0, 5).join(", ");
+  const results = project.sections
+    .slice(0, 3)
+    .map((section) => section.result)
+    .join(" ");
+
+  return {
+    intent: "summarize_project",
+    confidence: clampConfidence(confidence),
+    targetId,
+    message: `${project.title} 프로젝트를 요약합니다.`,
+    answer: `${project.title}는 ${project.description}입니다. 주요 기술은 ${tags}이며, ${results}`
+  };
+}
+
+function listCapabilitiesResponse(confidence = 0.96) {
+  return {
+    intent: "list_capabilities",
+    confidence: clampConfidence(confidence),
+    message: "NLI가 할 수 있는 일을 안내합니다.",
+    answer:
+      "저는 이 포트폴리오 안에서 프로젝트나 섹션으로 이동하고, 특정 프로젝트와 프로젝트 내부 사례를 요약하고, P95나 분산 락 같은 등록된 용어를 설명할 수 있습니다. 예를 들어 'DB 최적화 보여줘', 'CateQuest 요약해줘', 'P95가 뭐야?', '자기소개해줘'처럼 물어보면 됩니다."
+  };
+}
+
 function rejectResponse(message = "이 포트폴리오의 프로젝트 이동, 프로젝트 요약, 등록된 용어 설명만 도와드릴 수 있습니다.", confidence = 1) {
   return {
     intent: "reject_out_of_scope",
@@ -383,7 +490,19 @@ function buildContextBlock(context) {
     relatedTargets: term.relatedTargets
   }));
 
-  return JSON.stringify({ routes, terms });
+  const projects = context.portfolio.projects.map((project) => ({
+    id: `project-${project.id}`,
+    title: project.title,
+    description: project.description,
+    tags: project.tags,
+    sections: project.sections.map((section) => ({ id: section.id, title: section.title, result: section.result }))
+  }));
+
+  return JSON.stringify({ profile: context.portfolio.profile, routes, terms, projects });
+}
+
+function isProjectTarget(target) {
+  return target?.type === "project";
 }
 
 function buildLmStudioChatCompletionsUrl(baseUrl) {

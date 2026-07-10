@@ -57,8 +57,11 @@ http://127.0.0.1:8787/api/nli/health
 ```text
 DB 최적화 보여줘
 P95가 뭐야?
+자기소개해줘
+CateQuest 요약해줘
 CateQuest N+1 해결 요약해줘
 CloudWatch 모니터링 보여줘
+이 포트폴리오에서 뭘 할 수 있어?
 오늘 날씨 알려줘
 ```
 
