@@ -29,6 +29,7 @@ jobs:
       NLI_GATEWAY_SSH_PORT: ${{ secrets.NLI_GATEWAY_SSH_PORT }}
       NLI_GATEWAY_APP_DIR: ${{ secrets.NLI_GATEWAY_APP_DIR }}
       NLI_GATEWAY_PROCESS: ${{ secrets.NLI_GATEWAY_PROCESS }}
+      NLI_GATEWAY_KNOWN_HOSTS: ${{ secrets.NLI_GATEWAY_KNOWN_HOSTS }}
 
     steps:
       - name: Checkout
@@ -69,8 +70,25 @@ jobs:
           printf '%s\n' "${NLI_GATEWAY_SSH_KEY}" | tr -d '\r' > ~/.ssh/nli_gateway_key
           chmod 600 ~/.ssh/nli_gateway_key
           rm -f ~/.ssh/nli_gateway_known_hosts
-          ssh-keyscan -p "${NLI_GATEWAY_SSH_PORT}" -H "${NLI_GATEWAY_HOST}" > ~/.ssh/nli_gateway_known_hosts
-          test -s ~/.ssh/nli_gateway_known_hosts
+
+          if [ -n "${NLI_GATEWAY_KNOWN_HOSTS}" ]; then
+            printf '%s\n' "${NLI_GATEWAY_KNOWN_HOSTS}" | tr -d '\r' > ~/.ssh/nli_gateway_known_hosts
+          else
+            echo "Scanning SSH host key from ${NLI_GATEWAY_HOST}:${NLI_GATEWAY_SSH_PORT}"
+            if ! ssh-keyscan -T 10 -p "${NLI_GATEWAY_SSH_PORT}" -H "${NLI_GATEWAY_HOST}" > ~/.ssh/nli_gateway_known_hosts 2> ~/.ssh/nli_gateway_keyscan.log; then
+              cat ~/.ssh/nli_gateway_keyscan.log
+              echo "Failed to scan SSH host key. Check that the runner can reach ${NLI_GATEWAY_HOST}:${NLI_GATEWAY_SSH_PORT}."
+              exit 1
+            fi
+          fi
+
+          if [ ! -s ~/.ssh/nli_gateway_known_hosts ]; then
+            if [ -f ~/.ssh/nli_gateway_keyscan.log ]; then
+              cat ~/.ssh/nli_gateway_keyscan.log
+            fi
+            echo "SSH host key scan returned no keys. Check the SSH server, firewall, host, and port."
+            exit 1
+          fi
 
       - name: Deploy Gateway
         shell: bash

@@ -127,9 +127,22 @@ NLI_GATEWAY_PORT=8787
 NLI_GATEWAY_SSH_PORT=22
 NLI_GATEWAY_APP_DIR=~/portfolio-nli
 NLI_GATEWAY_PROCESS=portfolio-nli-gateway
+NLI_GATEWAY_KNOWN_HOSTS=192.168.0.90 서버의 SSH host public key
 ```
 
 서버에는 repository가 이미 clone되어 있어야 하며, `NLI_GATEWAY_APP_DIR`은 해당 repository 경로를 가리켜야 합니다.
+
+`ssh-keyscan`이 runner 환경에서 실패하면 `NLI_GATEWAY_KNOWN_HOSTS`를 등록해 host key 조회를 우회할 수 있습니다. 서버에서 아래 명령으로 값을 만들고 GitHub Secret에 그대로 넣습니다.
+
+```bash
+awk '{ print "192.168.0.90 " $1 " " $2 }' /etc/ssh/ssh_host_ed25519_key.pub
+```
+
+출력 예시는 아래 형태입니다.
+
+```text
+192.168.0.90 ssh-ed25519 AAAAC3...
+```
 
 ```bash
 git clone https://github.com/mixedsider/portfolio-nli.git ~/portfolio-nli
