@@ -7,6 +7,9 @@ on:
       - main
     paths:
       - tools/nli-gateway.mjs
+      - tools/nli/**
+      - tools/nli-test.mjs
+      - tools/nli-gateway.test.mjs
       - nli/**
       - data/portfolio.js
       - .env.example
@@ -23,6 +26,7 @@ jobs:
   deploy:
     name: Deploy to internal NLI Gateway
     runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 20
     env:
       NLI_GATEWAY_HOST: ${{ secrets.NLI_GATEWAY_HOST }}
       NLI_GATEWAY_PORT: ${{ secrets.NLI_GATEWAY_PORT }}
@@ -34,6 +38,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
 
       - name: Validate required secrets
         shell: bash
@@ -41,14 +52,28 @@ jobs:
           NLI_GATEWAY_USER: ${{ secrets.NLI_GATEWAY_USER }}
           NLI_GATEWAY_SSH_KEY: ${{ secrets.NLI_GATEWAY_SSH_KEY }}
         run: |
-          test -n "${NLI_GATEWAY_USER}" || {
-            echo "NLI_GATEWAY_USER secret is required"
-            exit 1
-          }
-          test -n "${NLI_GATEWAY_SSH_KEY}" || {
-            echo "NLI_GATEWAY_SSH_KEY secret is required"
-            exit 1
-          }
+          for secret_name in NLI_GATEWAY_USER NLI_GATEWAY_SSH_KEY NLI_GATEWAY_KNOWN_HOSTS; do
+            if [ -z "${!secret_name}" ]; then
+              echo "${secret_name} secret is required"
+              exit 1
+            fi
+          done
+
+      - name: Verify Gateway source before deployment
+        shell: bash
+        run: |
+          node --check app.js
+          node --check data/portfolio.js
+          node --check tools/static-server.mjs
+          node --check tools/nli-gateway.mjs
+          node --check tools/nli-test.mjs
+          node --check tools/nli-gateway.test.mjs
+          for file in tools/nli/*.mjs; do node --check "$file"; done
+          node -e "for (const f of ['nli/routes.json','nli/glossary.json','nli/intents.json','nli/response.schema.json','nli/model-decision.schema.json','nli/test-cases.json','nli/live-test-cases.json','nli/adversarial-test-cases.json']) JSON.parse(require('fs').readFileSync(f,'utf8')); console.log('json ok')"
+          node tools/nli-test.mjs
+          node tools/nli-test.mjs --local --cases nli/live-test-cases.json --min-pass-rate 1
+          node tools/nli-test.mjs --local --cases nli/adversarial-test-cases.json --min-pass-rate 1
+          node --test tools/nli-gateway.test.mjs
 
       - name: Prepare deployment variables
         shell: bash
@@ -68,71 +93,72 @@ jobs:
         run: |
           install -m 700 -d ~/.ssh
           printf '%s\n' "${NLI_GATEWAY_SSH_KEY}" | tr -d '\r' > ~/.ssh/nli_gateway_key
-          chmod 600 ~/.ssh/nli_gateway_key
-          rm -f ~/.ssh/nli_gateway_known_hosts
+          printf '%s\n' "${NLI_GATEWAY_KNOWN_HOSTS}" | tr -d '\r' > ~/.ssh/nli_gateway_known_hosts
+          chmod 600 ~/.ssh/nli_gateway_key ~/.ssh/nli_gateway_known_hosts
+          test -s ~/.ssh/nli_gateway_known_hosts
 
-          if [ -n "${NLI_GATEWAY_KNOWN_HOSTS}" ]; then
-            printf '%s\n' "${NLI_GATEWAY_KNOWN_HOSTS}" | tr -d '\r' > ~/.ssh/nli_gateway_known_hosts
-          else
-            echo "Scanning SSH host key from ${NLI_GATEWAY_HOST}:${NLI_GATEWAY_SSH_PORT}"
-            if ! ssh-keyscan -T 10 -p "${NLI_GATEWAY_SSH_PORT}" -H "${NLI_GATEWAY_HOST}" > ~/.ssh/nli_gateway_known_hosts 2> ~/.ssh/nli_gateway_keyscan.log; then
-              cat ~/.ssh/nli_gateway_keyscan.log
-              echo "Failed to scan SSH host key. Check that the runner can reach ${NLI_GATEWAY_HOST}:${NLI_GATEWAY_SSH_PORT}."
-              exit 1
-            fi
-          fi
+      - name: Record current Gateway revision
+        id: previous
+        shell: bash
+        env:
+          NLI_GATEWAY_USER: ${{ secrets.NLI_GATEWAY_USER }}
+        run: |
+          PREVIOUS_SHA="$(ssh -i ~/.ssh/nli_gateway_key \
+            -p "${NLI_GATEWAY_SSH_PORT}" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=10 \
+            -o ServerAliveInterval=15 \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=~/.ssh/nli_gateway_known_hosts \
+            "${NLI_GATEWAY_USER}@${NLI_GATEWAY_HOST}" \
+            "APP_DIR='${NLI_GATEWAY_APP_DIR}' bash -s" <<'REMOTE'
+          set -euo pipefail
+          APP_DIR="${APP_DIR/#\~/$HOME}"
+          cd "${APP_DIR}"
+          git rev-parse HEAD
+          REMOTE
+          )"
+          test -n "${PREVIOUS_SHA}"
+          echo "sha=${PREVIOUS_SHA}" >> "${GITHUB_OUTPUT}"
 
-          if [ ! -s ~/.ssh/nli_gateway_known_hosts ]; then
-            if [ -f ~/.ssh/nli_gateway_keyscan.log ]; then
-              cat ~/.ssh/nli_gateway_keyscan.log
-            fi
-            echo "SSH host key scan returned no keys. Check the SSH server, firewall, host, and port."
-            exit 1
-          fi
-
-      - name: Deploy Gateway
+      - name: Deploy exact triggering revision
+        id: deploy
         shell: bash
         env:
           NLI_GATEWAY_USER: ${{ secrets.NLI_GATEWAY_USER }}
         run: |
           ssh -i ~/.ssh/nli_gateway_key \
             -p "${NLI_GATEWAY_SSH_PORT}" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=10 \
+            -o ServerAliveInterval=15 \
             -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile=~/.ssh/nli_gateway_known_hosts \
             "${NLI_GATEWAY_USER}@${NLI_GATEWAY_HOST}" \
-            "APP_DIR='${NLI_GATEWAY_APP_DIR}' PROCESS_NAME='${NLI_GATEWAY_PROCESS}' bash -s" <<'REMOTE'
+            "APP_DIR='${NLI_GATEWAY_APP_DIR}' PROCESS_NAME='${NLI_GATEWAY_PROCESS}' DEPLOY_SHA='${{ github.sha }}' bash -s" <<'REMOTE'
           set -euo pipefail
 
           APP_DIR="${APP_DIR/#\~/$HOME}"
           cd "${APP_DIR}"
+          git fetch --no-tags origin "main:refs/remotes/origin/main"
+          git cat-file -e "${DEPLOY_SHA}^{commit}"
+          git merge-base --is-ancestor "${DEPLOY_SHA}" origin/main
+          git checkout --detach "${DEPLOY_SHA}"
 
           if command -v pm2 >/dev/null 2>&1; then
             if pm2 describe "${PROCESS_NAME}" >/dev/null 2>&1; then
-              pm2 stop "${PROCESS_NAME}"
-            else
-              echo "pm2 process ${PROCESS_NAME} does not exist yet. It will be created after update."
-            fi
-          elif command -v systemctl >/dev/null 2>&1 && systemctl --user list-unit-files | grep -q "^${PROCESS_NAME}.service"; then
-            systemctl --user stop "${PROCESS_NAME}.service"
-          else
-            echo "Neither pm2 process nor user systemd service was found for ${PROCESS_NAME}"
-            exit 1
-          fi
-
-          git fetch origin main
-          git checkout main
-          git pull --ff-only origin main
-
-          if command -v pm2 >/dev/null 2>&1; then
-            if pm2 describe "${PROCESS_NAME}" >/dev/null 2>&1; then
-              pm2 start "${PROCESS_NAME}" --update-env
+              pm2 restart "${PROCESS_NAME}" --update-env
             else
               pm2 start tools/nli-gateway.mjs --name "${PROCESS_NAME}" --update-env
             fi
             pm2 save
+          elif command -v systemctl >/dev/null 2>&1 && systemctl --user list-unit-files | grep -q "^${PROCESS_NAME}.service"; then
+            systemctl --user restart "${PROCESS_NAME}.service"
           else
-            systemctl --user start "${PROCESS_NAME}.service"
+            echo "Neither pm2 process nor user systemd service was found for ${PROCESS_NAME}"
+            exit 1
           fi
           REMOTE
 
@@ -140,16 +166,61 @@ jobs:
         shell: bash
         run: |
           for attempt in 1 2 3; do
-            if curl -fsS "http://${NLI_GATEWAY_HOST}:${NLI_GATEWAY_PORT}/api/nli/health"; then
+            if curl --connect-timeout 3 --max-time 10 -fsS "http://${NLI_GATEWAY_HOST}:${NLI_GATEWAY_PORT}/api/nli/health"; then
               echo "NLI Gateway health check passed on attempt ${attempt}"
               exit 0
             fi
-
             if [ "${attempt}" -lt 3 ]; then
               echo "NLI Gateway is not healthy yet. Waiting 5 seconds..."
               sleep 5
             fi
           done
-
           echo "NLI Gateway health check failed after 3 attempts"
           exit 1
+
+      - name: Run live NLI functional tests
+        shell: bash
+        run: |
+          NLI_TEST_BASE_URL="http://${NLI_GATEWAY_HOST}:${NLI_GATEWAY_PORT}" \
+            node tools/nli-test.mjs --live --cases nli/live-test-cases.json --min-pass-rate 0.9
+
+      - name: Run live NLI adversarial tests
+        shell: bash
+        run: |
+          NLI_TEST_BASE_URL="http://${NLI_GATEWAY_HOST}:${NLI_GATEWAY_PORT}" \
+            node tools/nli-test.mjs --live --cases nli/adversarial-test-cases.json --min-pass-rate 1
+
+      - name: Roll back failed deployment
+        if: ${{ failure() && steps.previous.outputs.sha != '' }}
+        shell: bash
+        env:
+          NLI_GATEWAY_USER: ${{ secrets.NLI_GATEWAY_USER }}
+          PREVIOUS_SHA: ${{ steps.previous.outputs.sha }}
+        run: |
+          ssh -i ~/.ssh/nli_gateway_key \
+            -p "${NLI_GATEWAY_SSH_PORT}" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=10 \
+            -o ServerAliveInterval=15 \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=~/.ssh/nli_gateway_known_hosts \
+            "${NLI_GATEWAY_USER}@${NLI_GATEWAY_HOST}" \
+            "APP_DIR='${NLI_GATEWAY_APP_DIR}' PROCESS_NAME='${NLI_GATEWAY_PROCESS}' PREVIOUS_SHA='${PREVIOUS_SHA}' bash -s" <<'REMOTE'
+          set -euo pipefail
+          APP_DIR="${APP_DIR/#\~/$HOME}"
+          cd "${APP_DIR}"
+          git checkout --detach "${PREVIOUS_SHA}"
+          if command -v pm2 >/dev/null 2>&1; then
+            pm2 restart "${PROCESS_NAME}" --update-env
+            pm2 save
+          else
+            systemctl --user restart "${PROCESS_NAME}.service"
+          fi
+          REMOTE
+
+      - name: Remove deployment SSH material
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          rm -f ~/.ssh/nli_gateway_key ~/.ssh/nli_gateway_known_hosts
