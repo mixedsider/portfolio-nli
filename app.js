@@ -10,7 +10,7 @@ const toneMap = {
   red: "var(--red)"
 };
 
-const nliEndpoint = "http://127.0.0.1:8787/api/nli";
+const nliEndpoint = "https://portfolio-nli-gateway.mixedsider.cloud/api/nli";
 const focusSet = ["All", ...new Set(data.projects.flatMap((project) => project.focus))];
 let currentFilter = "All";
 
