@@ -5,6 +5,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import vm from "node:vm";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
+await loadDotEnv();
+
 const port = Number(process.env.NLI_PORT || 8787);
 const host = process.env.NLI_HOST || "127.0.0.1";
 const lmStudioBaseUrl = process.env.LM_STUDIO_BASE_URL || "http://192.168.0.58:1234/v1";
@@ -404,6 +406,34 @@ async function readJson(relativePath) {
 
 async function readText(relativePath) {
   return readFile(resolve(root, relativePath), "utf8");
+}
+
+async function loadDotEnv() {
+  const source = await readFile(resolve(root, ".env"), "utf8").catch(() => "");
+  if (!source) return;
+
+  for (const line of source.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+
+    const separatorIndex = trimmed.indexOf("=");
+    if (separatorIndex <= 0) continue;
+
+    const key = trimmed.slice(0, separatorIndex).trim();
+    const value = parseDotEnvValue(trimmed.slice(separatorIndex + 1).trim());
+    if (!process.env[key]) process.env[key] = value;
+  }
+}
+
+function parseDotEnvValue(value) {
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    return value.slice(1, -1);
+  }
+
+  return value;
 }
 
 function normalize(value) {

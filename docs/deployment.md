@@ -68,6 +68,12 @@ LM_STUDIO_MODEL=google/gemma-4-e4b
 LM_STUDIO_TIMEOUT_MS=8000
 ```
 
+서버에서는 `.env.example`을 `.env`로 복사한 뒤 값을 수정해서 사용할 수 있습니다. `tools/nli-gateway.mjs`는 시작할 때 프로젝트 루트의 `.env` 파일을 자동으로 읽습니다.
+
+```bash
+cp .env.example .env
+```
+
 실행:
 
 ```bash

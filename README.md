@@ -64,9 +64,16 @@ CloudWatch 모니터링 보여줘
 
 ## 환경 변수
 
-기본값은 `.env.example`에 정리되어 있습니다.
+기본값은 `.env.example`에 정리되어 있습니다. 서버에서는 `.env.example`을 `.env`로 복사한 뒤 값을 수정하면 `tools/nli-gateway.mjs`가 자동으로 읽습니다.
 
-PowerShell 예시:
+Linux 서버 예시:
+
+```bash
+cp .env.example .env
+node tools/nli-gateway.mjs
+```
+
+PowerShell 환경 변수 예시:
 
 ```powershell
 $env:NLI_HOST="127.0.0.1"
@@ -99,4 +106,3 @@ node --check tools/nli-test.mjs
 
 - [NLI MVP 설계](docs/nli-mvp.md)
 - [배포 방법](docs/deployment.md)
-
