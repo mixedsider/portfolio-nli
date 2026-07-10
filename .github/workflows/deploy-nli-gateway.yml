@@ -68,7 +68,9 @@ jobs:
           install -m 700 -d ~/.ssh
           printf '%s\n' "${NLI_GATEWAY_SSH_KEY}" | tr -d '\r' > ~/.ssh/nli_gateway_key
           chmod 600 ~/.ssh/nli_gateway_key
-          ssh-keyscan -p "${NLI_GATEWAY_SSH_PORT}" -H "${NLI_GATEWAY_HOST}" >> ~/.ssh/known_hosts
+          rm -f ~/.ssh/nli_gateway_known_hosts
+          ssh-keyscan -p "${NLI_GATEWAY_SSH_PORT}" -H "${NLI_GATEWAY_HOST}" > ~/.ssh/nli_gateway_known_hosts
+          test -s ~/.ssh/nli_gateway_known_hosts
 
       - name: Deploy Gateway
         shell: bash
@@ -78,6 +80,8 @@ jobs:
           ssh -i ~/.ssh/nli_gateway_key \
             -p "${NLI_GATEWAY_SSH_PORT}" \
             -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=~/.ssh/nli_gateway_known_hosts \
             "${NLI_GATEWAY_USER}@${NLI_GATEWAY_HOST}" \
             "APP_DIR='${NLI_GATEWAY_APP_DIR}' PROCESS_NAME='${NLI_GATEWAY_PROCESS}' bash -s" <<'REMOTE'
           set -euo pipefail
