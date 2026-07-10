@@ -16,6 +16,7 @@ await loadDotEnv(root);
 const defaultConfig = createGatewayConfig();
 const defaultContextPromise = loadContext(root);
 const defaultModelClient = createModelClient(defaultConfig);
+const localResolutionConfidence = 0.8;
 
 export { validateNliResponse };
 
@@ -33,7 +34,7 @@ export async function resolveNliRequest(message, context = null, options = {}) {
   if (!safeMessage) return rejectResponse();
 
   const local = resolveLocally(safeMessage, nliContext);
-  if (local.confidence >= 0.7) return local;
+  if (local.confidence >= localResolutionConfidence) return local;
   if (options.useModel === false || !isModelEligible(safeMessage, nliContext, local)) {
     return local.confidence > 0 ? local : rejectResponse();
   }

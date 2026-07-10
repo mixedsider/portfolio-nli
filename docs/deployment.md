@@ -15,6 +15,7 @@
 node --check app.js
 node --check data/portfolio.js
 node --check tools/static-server.mjs
+node --check tools/static-server.test.mjs
 node --check tools/nli-gateway.mjs
 node --check tools/nli-test.mjs
 node --check tools/nli-gateway.test.mjs
@@ -23,12 +24,13 @@ node tools/nli-test.mjs
 node tools/nli-test.mjs --local --cases nli/live-test-cases.json --min-pass-rate 1
 node tools/nli-test.mjs --local --cases nli/adversarial-test-cases.json --min-pass-rate 1
 node --test tools/nli-gateway.test.mjs
+node --test tools/static-server.test.mjs
 ```
 
-배포된 Gateway를 직접 호출하는 검증은 다음 명령으로 실행합니다. `nli/live-test-cases.json`의 성공/실패 케이스를 호출하며, 성공률이 90% 이상이면 통과합니다.
+배포된 Gateway를 직접 호출하는 기능 검증은 다음 명령으로 실행합니다. `nli/live-test-cases.json`의 성공 18개만 호출하며, 이어지는 adversarial 8개와 합쳐 기본 30회/분 rate limit 안에서 실행되도록 구성했습니다.
 
 ```bash
-NLI_TEST_BASE_URL="http://127.0.0.1:8787" node tools/nli-test.mjs --live --cases nli/live-test-cases.json --min-pass-rate 0.9
+NLI_TEST_BASE_URL="http://127.0.0.1:8787" node tools/nli-test.mjs --live --cases nli/live-test-cases.json --kind success --min-pass-rate 1
 ```
 
 정적 서버도 한 번 확인합니다.
@@ -179,7 +181,7 @@ pm2 start tools/nli-gateway.mjs --name portfolio-nli-gateway --update-env
 pm2 save
 ```
 
-배포 workflow는 `main` 브랜치에 Gateway 관련 파일이 push될 때 자동 실행되며, GitHub Actions 화면에서 `Deploy NLI Gateway`를 수동 실행할 수도 있습니다. 배포 전 self-hosted runner에서 소스 문법, fixture, fake LM Studio/HTTP 통합 테스트를 다시 실행합니다. 서버는 이동하는 `main`이 아니라 push 이벤트의 정확한 commit으로 checkout하며, health·live test 실패 시 직전 commit으로 rollback합니다. 기능 live test는 90%를 허용하지만 prompt injection·외부 주제 혼동을 담은 adversarial test는 100%를 요구합니다.
+배포 workflow는 `main` 브랜치에 Gateway 관련 파일이 push될 때만 자동 실행됩니다. `workflow_dispatch`는 self-hosted runner에서 임의 branch 코드를 실행할 수 있으므로 사용하지 않습니다. `main`은 branch protection과 승인된 변경만 병합하도록 설정합니다. 배포 전 self-hosted runner에서 소스 문법, fixture, fake LM Studio/HTTP 통합 테스트를 다시 실행합니다. 서버는 이동하는 `main`이 아니라 push 이벤트의 정확한 commit으로 checkout하며, health·live test 실패 시 직전 commit으로 rollback합니다. 기능 live test는 성공 fixture를 100% 요구하고, prompt injection·외부 주제 혼동을 담은 adversarial test도 100%를 요구합니다.
 
 ## 4. 프론트와 Gateway 연결
 
@@ -209,7 +211,7 @@ flowchart LR
   Gateway --> LMStudio["LM Studio"]
 ```
 
-같은 도메인으로 묶으면 CORS, HTTPS, 브라우저 접근 주소 관리가 단순해집니다. 다른 origin에서 호출해야 한다면 `.env`의 `NLI_ALLOWED_ORIGINS`에 실제 정적 사이트 origin만 쉼표로 구분해 등록합니다. `*`는 로컬 개발에만 사용합니다.
+같은 도메인으로 묶으면 CORS, HTTPS, 브라우저 접근 주소 관리가 단순해집니다. 다른 origin에서 호출해야 한다면 `.env`의 `NLI_ALLOWED_ORIGINS`에 실제 정적 사이트 origin만 쉼표로 구분해 등록합니다. Gateway는 이 값이 비어 있으면 브라우저 origin 요청을 거부하고, 배포 workflow도 비어 있거나 `*`인 운영 설정을 rollback합니다. `*`는 명시적인 로컬 개발 환경에서만 사용합니다.
 
 `NLI_TRUST_PROXY=true`는 신뢰할 수 있는 리버스 프록시가 `X-Forwarded-For`를 직접 설정하고 외부 클라이언트의 해당 헤더를 덮어쓰는 경우에만 사용합니다. 기본값 `false`에서는 Gateway가 TCP 원격 주소 기준으로 rate limit을 적용합니다. public Gateway는 process 내 rate limit 외에 reverse proxy/CDN의 rate limit도 함께 설정하는 것이 좋습니다.
 

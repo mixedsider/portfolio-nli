@@ -34,6 +34,12 @@ const intentNames = new Set([
 ]);
 
 const responseKeys = new Set(["intent", "confidence", "targetId", "term", "message", "answer", "relatedTargets"]);
+const modelDecisionKeys = new Set(["intent", "confidence", "targetId", "term"]);
+const MAX_MESSAGE_LENGTH = 500;
+const MAX_ANSWER_LENGTH = 12_000;
+const MAX_TARGET_ID_LENGTH = 128;
+const MAX_TERM_LENGTH = 128;
+const MAX_RELATED_TARGETS = 20;
 const canonicalKeysByIntent = {
   navigate: ["intent", "confidence", "targetId", "message"],
   define_term: ["intent", "confidence", "term", "message", "answer", "relatedTargets"],
@@ -55,17 +61,18 @@ export function validateNliResponse(response, context, options = {}) {
   const modelCandidate = options.modelCandidate === true;
 
   if (!isPlainObject(response)) return { ok: false, errors: ["response must be an object"] };
+  const allowedKeys = modelCandidate ? modelDecisionKeys : responseKeys;
   for (const key of Object.keys(response)) {
-    if (!responseKeys.has(key)) errors.push(`unknown property: ${key}`);
+    if (!allowedKeys.has(key)) errors.push(`unknown property: ${key}`);
   }
 
   if (!intentNames.has(response.intent)) errors.push("intent is invalid");
-  if (typeof response.confidence !== "number" || response.confidence < 0 || response.confidence > 1) {
+  if (!Number.isFinite(response.confidence) || response.confidence < 0 || response.confidence > 1) {
     errors.push("confidence must be a number between 0 and 1");
   }
 
   if (!modelCandidate) validateCanonicalShape(response, errors);
-  validateIntentSlots(response, context, errors);
+  validateIntentSlots(response, context, errors, { canonicalResponse: !modelCandidate });
   return { ok: errors.length === 0, errors };
 }
 
@@ -108,34 +115,32 @@ export function canonicalizeModelResponse(modelResponse, context) {
 function validateCanonicalShape(response, errors) {
   const allowedKeys = canonicalKeysByIntent[response.intent];
   if (!allowedKeys) return;
+  for (const key of allowedKeys) {
+    if (!Object.hasOwn(response, key)) errors.push(`${key} is required for ${response.intent}`);
+  }
   for (const key of Object.keys(response)) {
     if (!allowedKeys.includes(key)) errors.push(`${key} is not allowed for ${response.intent}`);
   }
-  if (typeof response.message !== "string" || !response.message.trim()) errors.push("message is required");
+  validateRequiredString(response.message, "message", MAX_MESSAGE_LENGTH, errors);
 
-  if (requiresAnswer(response.intent) && (typeof response.answer !== "string" || !response.answer.trim())) {
-    errors.push(`answer is required for ${response.intent}`);
+  if (requiresAnswer(response.intent)) {
+    validateRequiredString(response.answer, "answer", MAX_ANSWER_LENGTH, errors);
   }
 }
 
-function validateIntentSlots(response, context, errors) {
+function validateIntentSlots(response, context, errors, options) {
   if (response.intent === "navigate") validateRouteTarget(response.targetId, context, errors);
   if (response.intent === "summarize_section") validateSectionTarget(response.targetId, context, errors);
   if (response.intent === "summarize_project") validateProjectTarget(response.targetId, context, errors);
 
   if (response.intent === "define_term") {
-    if (typeof response.term !== "string" || !response.term.trim()) {
-      errors.push("term is required");
-    } else if (!context.termByCanonical.has(normalize(response.term))) {
-      errors.push(`unknown term: ${response.term}`);
-    }
-    if (response.relatedTargets !== undefined) validateTargetList(response.relatedTargets, context, errors);
+    validateKnownTerm(response.term, context, "term", errors);
+    if (options.canonicalResponse) validateTargetList(response.relatedTargets, context, errors);
   }
 
   if (response.intent === "list_skill_experience") {
-    if (typeof response.term !== "string" || !response.term.trim()) {
-      errors.push("term is required for list_skill_experience");
-    } else if (!findSkillExperienceMatch(response.term, context)) {
+    if (!validateRequiredString(response.term, "term", MAX_TERM_LENGTH, errors)) return;
+    if (!findSkillExperienceMatch(response.term, context)) {
       errors.push(`unknown skill experience term: ${response.term}`);
     }
   }
@@ -146,9 +151,8 @@ function requiresAnswer(intent) {
 }
 
 function validateRouteTarget(targetId, context, errors) {
-  if (typeof targetId !== "string" || !targetId.trim()) {
-    errors.push("targetId is required");
-  } else if (!context.targetById.has(targetId)) {
+  if (!validateRequiredString(targetId, "targetId", MAX_TARGET_ID_LENGTH, errors)) return;
+  if (!context.targetById.has(targetId)) {
     errors.push(`unknown targetId: ${targetId}`);
   }
 }
@@ -172,11 +176,32 @@ function validateTargetList(targets, context, errors) {
     errors.push("relatedTargets must be an array");
     return;
   }
+  if (targets.length > MAX_RELATED_TARGETS) {
+    errors.push(`relatedTargets must contain at most ${MAX_RELATED_TARGETS} targets`);
+  }
   for (const targetId of targets) {
-    if (typeof targetId !== "string" || !context.targetById.has(targetId)) {
+    if (!validateRequiredString(targetId, "related targetId", MAX_TARGET_ID_LENGTH, errors)) continue;
+    if (!context.targetById.has(targetId)) {
       errors.push(`unknown related targetId: ${targetId}`);
     }
   }
+}
+
+function validateKnownTerm(term, context, label, errors) {
+  if (!validateRequiredString(term, label, MAX_TERM_LENGTH, errors)) return;
+  if (!context.termByCanonical.has(normalize(term))) errors.push(`unknown term: ${term}`);
+}
+
+function validateRequiredString(value, label, maxLength, errors) {
+  if (typeof value !== "string" || !value.trim()) {
+    errors.push(`${label} is required`);
+    return false;
+  }
+  if (value.length > maxLength) {
+    errors.push(`${label} must be at most ${maxLength} characters`);
+    return false;
+  }
+  return true;
 }
 
 function isPlainObject(value) {

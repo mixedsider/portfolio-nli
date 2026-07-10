@@ -61,7 +61,10 @@ export function buildContextBlock(context) {
 
 async function readPortfolioData(root) {
   const source = await readText(root, "data/portfolio.js");
-  const sandbox = { window: {} };
+  // This repository-owned data file is not user input. The null-prototype context
+  // narrows accidental host access, but is not a security boundary for untrusted code.
+  const sandbox = Object.create(null);
+  sandbox.window = Object.create(null);
   vm.runInNewContext(source, sandbox, {
     filename: "data/portfolio.js",
     timeout: 1_000,

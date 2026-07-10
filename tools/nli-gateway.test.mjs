@@ -3,7 +3,10 @@ import { readFile } from "node:fs/promises";
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 
+import { createGatewayConfig } from "./nli/config.mjs";
+import { isOriginAllowed } from "./nli/http.mjs";
 import { createModelClient } from "./nli/model-client.mjs";
+import { resolveLocally } from "./nli/router.mjs";
 import { createNliServer, loadNliContext, resolveNliRequest, validateNliResponse } from "./nli-gateway.mjs";
 
 const context = await loadNliContext();
@@ -30,6 +33,22 @@ test("model-backed rejection never reflects model-controlled text", async () => 
   assert.equal(calls, 1);
   assert.equal(result.intent, "reject_out_of_scope");
   assert.doesNotMatch(JSON.stringify(result), /LEAK_MARKER_FROM_MODEL|system prompt|<b>/);
+});
+
+test("grounded model decisions are canonicalized into portfolio data", async () => {
+  let calls = 0;
+  const result = await resolveNliRequest("P95가 뭐야?", context, {
+    modelClient: async () => {
+      calls += 1;
+      return { intent: "define_term", confidence: 0.91, term: "P95" };
+    }
+  });
+
+  const p95 = context.glossary.terms.find((term) => term.term === "P95");
+  assert.equal(calls, 1);
+  assert.equal(result.intent, "define_term");
+  assert.equal(result.term, "P95");
+  assert.equal(result.answer, p95.answer);
 });
 
 test("out-of-scope prompts never call the model or accept a valid-looking intent", async () => {
@@ -110,7 +129,10 @@ test("HTTP boundary rejects malformed, oversized, rate-limited, and disallowed r
       maxMessageLength: 20,
       rateLimitMax: 20
     }),
-    modelClient: async () => ({ intent: "reject_out_of_scope", confidence: 1 })
+    modelClient: async (message) =>
+      message === "P95가 뭐야?"
+        ? { intent: "define_term", confidence: 0.91, term: "P95" }
+        : { intent: "reject_out_of_scope", confidence: 1 }
   });
   const baseUrl = await listen(server);
 
@@ -188,6 +210,47 @@ test("rate limits ignore spoofed forwarding headers unless trusted proxy mode is
   await closeServer(server);
 });
 
+test("browser origins fail closed until an exact origin is configured", () => {
+  const defaultConfig = createGatewayConfig({});
+  assert.equal(defaultConfig.allowedOrigins.size, 0);
+  assert.equal(isOriginAllowed({ headers: { origin: "https://attacker.example" } }, defaultConfig), false);
+  assert.equal(isOriginAllowed({ headers: {} }, defaultConfig), true);
+
+  const configured = createGatewayConfig({ NLI_ALLOWED_ORIGINS: "https://portfolio.example" });
+  assert.equal(isOriginAllowed({ headers: { origin: "https://portfolio.example" } }, configured), true);
+  assert.equal(isOriginAllowed({ headers: { origin: "https://attacker.example" } }, configured), false);
+});
+
+test("default rate limit accommodates the deployed functional and adversarial suites", async () => {
+  const [functionalFixture, adversarialFixture] = await Promise.all([
+    readJson("nli/live-test-cases.json"),
+    readJson("nli/adversarial-test-cases.json")
+  ]);
+  const testCases = [
+    ...functionalFixture.cases.filter((testCase) => testCase.kind === "success"),
+    ...adversarialFixture.cases
+  ];
+  assert.equal(testCases.length, 26);
+
+  const server = await createNliServer({
+    context,
+    config: createTestConfig({ rateLimitMax: 30, allowedOrigins: new Set(["*"]) }),
+    modelClient: async (message, nliContext) => toModelDecision(resolveLocally(message, nliContext))
+  });
+  const baseUrl = await listen(server);
+
+  for (const testCase of testCases) {
+    const response = await fetch(`${baseUrl}/api/nli`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: testCase.message, currentTargetId: testCase.currentTargetId })
+    });
+    assert.equal(response.status, 200, testCase.message);
+  }
+
+  await closeServer(server);
+});
+
 test("response contracts reject fields that do not belong to the selected intent", () => {
   const result = validateNliResponse(
     { intent: "navigate", confidence: 1, targetId: "projects", message: "이동", answer: "untrusted" },
@@ -195,6 +258,28 @@ test("response contracts reject fields that do not belong to the selected intent
   );
   assert.equal(result.ok, false);
   assert.match(result.errors.join("\n"), /answer is not allowed/);
+
+  const missingRelatedTargets = validateNliResponse(
+    { intent: "define_term", confidence: 1, term: "P95", message: "설명", answer: "설명" },
+    context
+  );
+  assert.equal(missingRelatedTargets.ok, false);
+  assert.match(missingRelatedTargets.errors.join("\n"), /relatedTargets is required/);
+
+  const oversizedMessage = validateNliResponse(
+    { intent: "navigate", confidence: 1, targetId: "projects", message: "x".repeat(501) },
+    context
+  );
+  assert.equal(oversizedMessage.ok, false);
+  assert.match(oversizedMessage.errors.join("\n"), /message must be at most 500 characters/);
+
+  const modelExtraField = validateNliResponse(
+    { intent: "define_term", confidence: 1, term: "P95", message: "model-controlled" },
+    context,
+    { modelCandidate: true }
+  );
+  assert.equal(modelExtraField.ok, false);
+  assert.match(modelExtraField.errors.join("\n"), /unknown property: message/);
 });
 
 test("intent definitions, schemas, and fixtures remain aligned", async () => {
@@ -264,4 +349,11 @@ async function readRequestBody(request) {
 
 async function readJson(relativePath) {
   return JSON.parse(await readFile(new URL(`../${relativePath}`, import.meta.url), "utf8"));
+}
+
+function toModelDecision(response) {
+  const decision = { intent: response.intent, confidence: response.confidence };
+  if (response.targetId) decision.targetId = response.targetId;
+  if (response.term) decision.term = response.term;
+  return decision;
 }

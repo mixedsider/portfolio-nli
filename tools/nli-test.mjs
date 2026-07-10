@@ -5,7 +5,7 @@ import { loadNliContext, resolveNliRequest, validateNliResponse } from "./nli-ga
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const options = parseOptions(process.argv.slice(2));
-const testCases = await loadTestCases(options.casesPath);
+const testCases = selectTestCases(await loadTestCases(options.casesPath), options.caseKind);
 const context = await loadNliContext();
 const endpoint = options.mode === "live" ? buildNliEndpoint(options.baseUrl) : null;
 const minimumPassRate = resolveMinimumPassRate(options);
@@ -133,6 +133,7 @@ function parseOptions(args) {
     baseUrl: process.env.NLI_TEST_BASE_URL || "",
     minimumPassRate: parsePassRate(process.env.NLI_TEST_MIN_PASS_RATE),
     casesPath: process.env.NLI_TEST_CASES || null,
+    caseKind: parseCaseKind(process.env.NLI_TEST_KIND),
     timeoutMs: parseTimeout(process.env.NLI_TEST_TIMEOUT_MS)
   };
 
@@ -151,6 +152,9 @@ function parseOptions(args) {
       index += 1;
     } else if (arg === "--cases") {
       parsed.casesPath = readOptionValue(args, index, arg);
+      index += 1;
+    } else if (arg === "--kind") {
+      parsed.caseKind = parseCaseKind(readOptionValue(args, index, arg));
       index += 1;
     } else if (arg === "--timeout-ms") {
       parsed.timeoutMs = parseTimeout(readOptionValue(args, index, arg));
@@ -201,6 +205,14 @@ function resolveCasePath(casesPath) {
   return resolved;
 }
 
+function selectTestCases(testCases, caseKind) {
+  if (!caseKind) return testCases;
+
+  const selected = testCases.filter((testCase) => testCase.kind === caseKind);
+  if (selected.length === 0) throw new Error(`No ${caseKind} cases found in fixture`);
+  return selected;
+}
+
 function readOptionValue(args, index, optionName) {
   const value = args[index + 1];
   if (!value || value.startsWith("--")) throw new Error(`${optionName} requires a value`);
@@ -221,6 +233,14 @@ function parsePassRate(value) {
   }
 
   return rate;
+}
+
+function parseCaseKind(value) {
+  if (value === undefined || value === null || value === "") return null;
+  if (value !== "success" && value !== "failure") {
+    throw new Error(`Case kind must be success or failure: ${value}`);
+  }
+  return value;
 }
 
 function parseTimeout(value) {

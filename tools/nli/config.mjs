@@ -22,7 +22,7 @@ export function createGatewayConfig(env = process.env) {
   return {
     host: env.NLI_HOST || "127.0.0.1",
     port: readPort(env.NLI_PORT, 8787),
-    allowedOrigins: readAllowedOrigins(env.NLI_ALLOWED_ORIGINS || "*"),
+    allowedOrigins: readAllowedOrigins(env.NLI_ALLOWED_ORIGINS || ""),
     maxRequestBytes: readPositiveIntegerEnv(env, "NLI_MAX_REQUEST_BYTES", 16_384),
     maxMessageLength: readPositiveIntegerEnv(env, "NLI_MAX_MESSAGE_LENGTH", 500),
     requestTimeoutMs: readPositiveIntegerEnv(env, "NLI_REQUEST_TIMEOUT_MS", 15_000),
