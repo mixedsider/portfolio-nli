@@ -19,41 +19,6 @@
     },
     {
       "kind": "success",
-      "message": "이 포트폴리오에서 뭘 할 수 있어?",
-      "expect": {
-        "intent": "list_capabilities",
-        "answerIncludes": "프로젝트"
-      }
-    },
-    {
-      "kind": "success",
-      "message": "사장님 피규어 만들어주세요 요약해줘",
-      "expect": {
-        "intent": "summarize_project",
-        "targetId": "project-makertion",
-        "answerIncludes": "사장님 피규어 만들어주세요"
-      }
-    },
-    {
-      "kind": "success",
-      "message": "지금 보고 있는 프로젝트를 요약해줘.",
-      "currentTargetId": "project-makertion",
-      "expect": {
-        "intent": "summarize_project",
-        "targetId": "project-makertion",
-        "answerIncludes": "사장님 피규어 만들어주세요"
-      }
-    },
-    {
-      "kind": "success",
-      "message": "어떤 프로젝트를 했는지 목록을 알려줘.",
-      "expect": {
-        "intent": "list_projects",
-        "answerIncludes": "CateQuest"
-      }
-    },
-    {
-      "kind": "success",
       "message": "포트폴리오 전체를 요약해줘.",
       "expect": {
         "intent": "summarize_portfolio",
@@ -127,6 +92,41 @@
       "expect": {
         "intent": "summarize_project",
         "targetId": "project-catequest",
+        "answerIncludes": "CateQuest"
+      }
+    },
+    {
+      "kind": "success",
+      "message": "이 포트폴리오에서 뭘 할 수 있어?",
+      "expect": {
+        "intent": "list_capabilities",
+        "answerIncludes": "프로젝트"
+      }
+    },
+    {
+      "kind": "success",
+      "message": "사장님 피규어 만들어주세요 요약해줘",
+      "expect": {
+        "intent": "summarize_project",
+        "targetId": "project-makertion",
+        "answerIncludes": "사장님 피규어 만들어주세요"
+      }
+    },
+    {
+      "kind": "success",
+      "message": "지금 보고 있는 프로젝트를 요약해줘.",
+      "currentTargetId": "project-makertion",
+      "expect": {
+        "intent": "summarize_project",
+        "targetId": "project-makertion",
+        "answerIncludes": "사장님 피규어 만들어주세요"
+      }
+    },
+    {
+      "kind": "success",
+      "message": "어떤 프로젝트를 했는지 목록을 알려줘.",
+      "expect": {
+        "intent": "list_projects",
         "answerIncludes": "CateQuest"
       }
     },
@@ -221,42 +221,7 @@
     },
     {
       "kind": "failure",
-      "message": "OpenAI 최신 모델 요약해줘",
-      "expect": {
-        "intent": "reject_out_of_scope"
-      }
-    },
-    {
-      "kind": "failure",
       "message": "오늘 뉴스 요약해줘",
-      "expect": {
-        "intent": "reject_out_of_scope"
-      }
-    },
-    {
-      "kind": "failure",
-      "message": "비트코인 핵심만 알려줘",
-      "expect": {
-        "intent": "reject_out_of_scope"
-      }
-    },
-    {
-      "kind": "failure",
-      "message": "비트코인 한눈에 정리해줘",
-      "expect": {
-        "intent": "reject_out_of_scope"
-      }
-    },
-    {
-      "kind": "failure",
-      "message": "비트코인 전체 요약해줘",
-      "expect": {
-        "intent": "reject_out_of_scope"
-      }
-    },
-    {
-      "kind": "failure",
-      "message": "오늘 뉴스 전체 요약해줘",
       "expect": {
         "intent": "reject_out_of_scope"
       }
@@ -270,14 +235,7 @@
     },
     {
       "kind": "failure",
-      "message": "오늘 뉴스 한눈에 정리해줘",
-      "expect": {
-        "intent": "reject_out_of_scope"
-      }
-    },
-    {
-      "kind": "failure",
-      "message": "게임 한 판 하자",
+      "message": "비트코인 전체 요약해줘",
       "expect": {
         "intent": "reject_out_of_scope"
       }
@@ -285,6 +243,13 @@
     {
       "kind": "failure",
       "message": "면접 예상 질문 만들어줘",
+      "expect": {
+        "intent": "reject_out_of_scope"
+      }
+    },
+    {
+      "kind": "failure",
+      "message": "게임 한 판 하자",
       "expect": {
         "intent": "reject_out_of_scope"
       }

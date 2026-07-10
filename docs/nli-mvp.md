@@ -4,7 +4,7 @@
 
 포트폴리오 사이트에 붙는 NLI는 일반 챗봇이 아니라, 포트폴리오 탐색을 돕는 제한된 자연어 인터페이스입니다.
 
-MVP에서 허용하는 기능은 여섯 가지입니다.
+MVP에서 허용하는 기능은 열한 가지입니다.
 
 1. 사용자의 자연어 요청을 포트폴리오 섹션 이동으로 변환
 2. 포트폴리오에 등장하는 전문 용어를 사전 기반으로 설명
@@ -12,6 +12,11 @@ MVP에서 허용하는 기능은 여섯 가지입니다.
 4. 포트폴리오 데이터에 있는 프로젝트 섹션을 짧게 요약
 5. 포트폴리오 데이터 기반 자기소개 응답
 6. NLI가 할 수 있는 기능 안내
+7. 포트폴리오 전체 요약
+8. 포트폴리오 목차 및 구성 안내
+9. 공개 연락처 안내
+10. 숫자로 검증된 주요 성과 안내
+11. 기술/역량별 관련 프로젝트 경험 안내
 
 그 외 요청은 명확하게 거절합니다.
 
@@ -20,9 +25,12 @@ MVP에서 허용하는 기능은 여섯 가지입니다.
 - `nli/routes.json`: 이동 가능한 페이지와 프로젝트 섹션 ID 목록
 - `nli/glossary.json`: 포트폴리오 전문 용어 사전
 - `nli/intents.json`: MVP에서 허용하는 intent 목록
-- `nli/response.schema.json`: 로컬 LLM이 반환해야 하는 JSON 응답 계약
-- `nli/system-prompt.md`: LM Studio 모델에 주입할 시스템 프롬프트 초안
+- `nli/response.schema.json`: 브라우저에 반환하는 canonical 응답 계약
+- `nli/model-decision.schema.json`: 로컬 LLM이 반환하는 최소 결정 JSON 계약
+- `nli/system-prompt.md`: prompt injection 방어와 최소 결정 출력을 요구하는 시스템 프롬프트
 - `nli/test-cases.json`: 자연어 입력별 기대 intent 테스트 케이스
+- `nli/live-test-cases.json`: 배포된 Gateway에 실행하는 live 검증 테스트 케이스
+- `nli/adversarial-test-cases.json`: prompt injection·외부 주제 혼동을 막는 live 보안 케이스
 
 ## 런타임 구조
 
@@ -46,11 +54,10 @@ Gateway는 모델보다 더 엄격해야 합니다.
 
 - 시스템 프롬프트와 context를 조립합니다.
 - LM Studio OpenAI-compatible API로 요청합니다.
-- 모델 응답이 JSON인지 파싱합니다.
-- `response.schema.json` 기준으로 응답을 검증합니다.
-- `targetId`가 `routes.json`에 존재하는지 확인합니다.
-- `term`이 `glossary.json`에 존재하는지 확인합니다.
-- 실패하면 안전한 `reject_out_of_scope` 응답으로 바꿉니다.
+- 모델 응답을 최소 결정 JSON으로만 파싱합니다.
+- 입력의 포트폴리오 근거와 모델 intent를 교차 검증합니다.
+- `targetId`와 `term`을 allowlist로 확인한 뒤, 사용자 문장과 답변은 서버 데이터로 다시 생성합니다.
+- 실패·범위 밖·지시 변경 요청은 모델의 자유형 문장을 사용하지 않는 canonical `reject_out_of_scope` 응답으로 바꿉니다.
 
 현재 Gateway 초안은 `tools/nli-gateway.mjs`에 구현되어 있습니다. 기본 실행 명령은 다음과 같습니다.
 
@@ -65,6 +72,16 @@ node tools/nli-gateway.mjs
 - `LM_STUDIO_BASE_URL`: `http://192.168.0.58:1234/v1`
 - `LM_STUDIO_MODEL`: `google/gemma-4-e4b`
 - `LM_STUDIO_TIMEOUT_MS`: `8000`
+- `NLI_MAX_REQUEST_BYTES`: `16384`
+- `NLI_MAX_MESSAGE_LENGTH`: `500`
+- `NLI_RATE_LIMIT_WINDOW_MS`: `60000`
+- `NLI_RATE_LIMIT_MAX`: `30`
+- `NLI_RATE_LIMIT_MAX_BUCKETS`: `10000`
+- `NLI_REQUEST_TIMEOUT_MS`: `15000`
+- `NLI_ALLOWED_ORIGINS`: production에서는 정확한 포트폴리오 origin 목록
+- `LM_STUDIO_MAX_TOKENS`: `256`
+- `LM_STUDIO_MAX_RESPONSE_BYTES`: `65536`
+- `LM_STUDIO_MAX_CONCURRENT_REQUESTS`: `4`
 
 예시 값은 `.env.example`에도 정리되어 있습니다.
 
@@ -127,19 +144,30 @@ node tools/nli-gateway.mjs
 }
 ```
 
+NLI 도우미 자기소개:
+
+```json
+{
+  "intent": "list_capabilities",
+  "confidence": 0.96,
+  "message": "포트폴리오 도우미를 소개합니다.",
+  "answer": "저는 포트폴리오 도우미에요. 원하는 자료를 말하시면 이동을 해드리거나, 해당 프로젝트 내용 요약, 등록된 용어를 설명해드릴 수 있어요."
+}
+```
+
 기능 안내:
 
 ```json
 {
   "intent": "list_capabilities",
   "confidence": 0.96,
-  "message": "NLI가 할 수 있는 일을 안내합니다.",
-  "answer": "프로젝트 이동, 프로젝트 요약, 섹션 요약, 등록된 용어 설명, 자기소개를 도와줄 수 있습니다."
+  "message": "도우미가 할 수 있는 일을 안내합니다.",
+  "answer": "전체 요약, 목차, 연락처, 주요 성과, 기술별 경험, 프로젝트 이동, 프로젝트 요약, 섹션 요약, 등록된 용어 설명, 자기소개를 도와줄 수 있습니다."
 }
 ```
 
-## 다음 구현 순서
+## 검증 원칙
 
-1. 실제 사용자 입력 로그 기준으로 테스트 케이스 확장
-2. 운영 배포 시 Gateway와 Pages 배포본 버전 동기화
-3. 필요하면 NLI Gateway 주소를 빌드 환경 변수로 분리
+- 로컬 라우팅 fixture는 100% 통과해야 합니다.
+- fake LM Studio 기반 `node --test tools/nli-gateway.test.mjs`는 모델 출력 반사, 모델 경로의 범위 혼동, HTTP 제한을 결정적으로 검증합니다.
+- 배포 후 기능 fixture는 모델 품질 변동을 고려해 90%를 허용할 수 있지만, adversarial fixture는 100% 통과해야 합니다.

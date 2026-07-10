@@ -1,94 +1,64 @@
 import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import vm from "node:vm";
+
+import { createGatewayConfig, loadDotEnv } from "./nli/config.mjs";
+import { loadNliContext as loadContext } from "./nli/context.mjs";
+import { assertJsonContentType, createRateLimiter, HttpRequestError, isOriginAllowed, readNliRequest, readRequestJson, sendJson, setCorsHeaders } from "./nli/http.mjs";
+import { createModelClient } from "./nli/model-client.mjs";
+import { isModelEligible, isModelIntentGrounded, resolveLocally } from "./nli/router.mjs";
+import { rejectResponse } from "./nli/responses.mjs";
+import { canonicalizeModelResponse, validateNliResponse } from "./nli/validation.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
-await loadDotEnv();
+await loadDotEnv(root);
 
-const port = Number(process.env.NLI_PORT || 8787);
-const host = process.env.NLI_HOST || "127.0.0.1";
-const lmStudioBaseUrl = process.env.LM_STUDIO_BASE_URL || "http://192.168.0.58:1234/v1";
-const lmStudioModel = process.env.LM_STUDIO_MODEL || "google/gemma-4-e4b";
-const lmStudioTimeoutMs = Number(process.env.LM_STUDIO_TIMEOUT_MS || 8000);
+const defaultConfig = createGatewayConfig();
+const defaultContextPromise = loadContext(root);
+const defaultModelClient = createModelClient(defaultConfig);
 
-const intentNames = new Set([
-  "navigate",
-  "define_term",
-  "summarize_section",
-  "introduce_profile",
-  "summarize_project",
-  "list_capabilities",
-  "reject_out_of_scope"
-]);
-const navigateWords = ["보여", "이동", "열어", "가줘", "보고", "찾아", "섹션", "어디"];
-const defineWords = ["뭐야", "뜻", "설명", "의미", "알려줘", "무슨"];
-const summarizeWords = ["요약", "정리", "뭘 했", "무슨 프로젝트", "간단히"];
-const projectSummaryWords = ["요약", "정리", "뭐야", "무슨", "어떤", "설명", "소개"];
-const profileWords = ["자기소개", "이은성", "누구", "어떤 개발자", "소개해", "프로필"];
-const capabilityWords = ["뭘 할 수", "무엇을 할 수", "할 수 있어", "사용법", "기능", "도움", "명령"];
-const responseKeys = new Set(["intent", "confidence", "targetId", "term", "message", "answer", "relatedTargets"]);
+export { validateNliResponse };
 
 export async function loadNliContext() {
-  const [routes, glossary, prompt, portfolio] = await Promise.all([
-    readJson("nli/routes.json"),
-    readJson("nli/glossary.json"),
-    readText("nli/system-prompt.md"),
-    readPortfolioData()
-  ]);
-
-  const targetById = new Map(routes.targets.map((target) => [target.id, target]));
-  const sectionById = new Map(
-    portfolio.projects.flatMap((project) =>
-      project.sections.map((section) => [
-        section.id,
-        {
-          ...section,
-          projectTitle: project.title
-        }
-      ])
-    )
-  );
-  const projectByTargetId = new Map(portfolio.projects.map((project) => [`project-${project.id}`, project]));
-  const termByCanonical = new Map(glossary.terms.map((term) => [normalize(term.term), term]));
-
-  return {
-    routes,
-    glossary,
-    prompt,
-    portfolio,
-    targetById,
-    sectionById,
-    projectByTargetId,
-    termByCanonical
-  };
+  return loadContext(root);
 }
 
 export async function resolveNliRequest(message, context = null, options = {}) {
   const safeMessage = String(message || "").trim();
-  const nliContext = context || (await loadNliContext());
-  const useModel = options.useModel !== false;
-
+  const baseContext = context || (await defaultContextPromise);
+  const nliContext = {
+    ...baseContext,
+    currentTargetId: typeof options.currentTargetId === "string" ? options.currentTargetId : null
+  };
   if (!safeMessage) return rejectResponse();
 
   const local = resolveLocally(safeMessage, nliContext);
   if (local.confidence >= 0.7) return local;
+  if (options.useModel === false || !isModelEligible(safeMessage, nliContext, local)) {
+    return local.confidence > 0 ? local : rejectResponse();
+  }
 
-  if (!useModel) return local.confidence > 0 ? local : rejectResponse();
+  const modelClient = options.modelClient || defaultModelClient;
+  const modelResponse = await modelClient(safeMessage, nliContext).catch(() => null);
+  if (!modelResponse || !isModelIntentGrounded(safeMessage, modelResponse, nliContext)) {
+    return local.confidence > 0 ? local : rejectResponse();
+  }
 
-  const modelResponse = await askModel(safeMessage, nliContext).catch(() => null);
-  const guarded = guardModelResponse(modelResponse, nliContext);
-  if (guarded) return guarded;
-
-  return local.confidence > 0 ? local : rejectResponse();
+  return canonicalizeModelResponse(modelResponse, nliContext) || (local.confidence > 0 ? local : rejectResponse());
 }
 
-export async function createNliServer() {
-  const context = await loadNliContext();
+export async function createNliServer(options = {}) {
+  const config = options.config || defaultConfig;
+  const context = options.context || (await defaultContextPromise);
+  const modelClient = options.modelClient || (config === defaultConfig ? defaultModelClient : createModelClient(config));
+  const rateLimiter = createRateLimiter(config);
 
-  return createServer(async (request, response) => {
-    setCorsHeaders(response);
+  const server = createServer(async (request, response) => {
+    setCorsHeaders(request, response, config);
+    if (!isOriginAllowed(request, config)) {
+      sendJson(response, 403, rejectResponse("허용되지 않은 출처의 요청입니다."));
+      return;
+    }
 
     if (request.method === "OPTIONS") {
       response.writeHead(204);
@@ -96,522 +66,46 @@ export async function createNliServer() {
       return;
     }
 
-    const url = new URL(request.url || "/", `http://${host}:${port}`);
-
+    const url = new URL(request.url || "/", `http://${config.host}:${config.port}`);
     if (request.method === "GET" && url.pathname === "/api/nli/health") {
-      sendJson(response, 200, {
-        ok: true,
-        targets: context.routes.targets.length,
-        terms: context.glossary.terms.length,
-        model: lmStudioModel,
-        lmStudioTimeoutMs,
-        lmStudioBaseUrl,
-        lmStudioChatCompletionsUrl: buildLmStudioChatCompletionsUrl(lmStudioBaseUrl)
+      sendJson(response, 200, { ok: true, targets: context.routes.targets.length, terms: context.glossary.terms.length });
+      return;
+    }
+
+    if (request.method !== "POST" || url.pathname !== "/api/nli") {
+      sendJson(response, 404, { error: "Not found" });
+      return;
+    }
+
+    if (!rateLimiter.consume(request)) {
+      sendJson(response, 429, rejectResponse("요청이 너무 많습니다. 잠시 후 다시 시도해주세요."), { "Retry-After": "60" });
+      return;
+    }
+
+    try {
+      assertJsonContentType(request);
+      const body = await readRequestJson(request, config.maxRequestBytes);
+      const nliRequest = readNliRequest(body, config.maxMessageLength);
+      const result = await resolveNliRequest(nliRequest.message, context, {
+        currentTargetId: nliRequest.currentTargetId,
+        modelClient
       });
-      return;
+      sendJson(response, 200, result);
+    } catch (error) {
+      const statusCode = error instanceof HttpRequestError ? error.statusCode : 400;
+      const message = error instanceof HttpRequestError ? error.publicMessage : "요청을 처리할 수 없습니다.";
+      sendJson(response, statusCode, rejectResponse(message));
     }
-
-    if (request.method === "POST" && url.pathname === "/api/nli") {
-      try {
-        const body = await readRequestJson(request);
-        const result = await resolveNliRequest(body.message, context);
-        sendJson(response, 200, result);
-      } catch {
-        sendJson(response, 400, rejectResponse("요청을 처리할 수 없습니다."));
-      }
-      return;
-    }
-
-    sendJson(response, 404, { error: "Not found" });
   });
-}
 
-function resolveLocally(message, context) {
-  const routeMatch = findBestRoute(message, context.routes.targets);
-  const sectionRouteMatch = findBestRoute(
-    message,
-    context.routes.targets.filter((target) => target.type === "section")
-  );
-  const termMatch = findBestTerm(message, context.glossary.terms);
-  const normalizedMessage = normalize(message);
-
-  if (hasAny(normalizedMessage, capabilityWords)) {
-    return listCapabilitiesResponse();
-  }
-
-  if (hasAny(normalizedMessage, profileWords)) {
-    return introduceProfileResponse(context);
-  }
-
-  if (termMatch && hasAny(normalizedMessage, defineWords)) {
-    return defineTermResponse(termMatch.term, termMatch.score);
-  }
-
-  if (routeMatch && hasAny(normalizedMessage, summarizeWords)) {
-    if (sectionRouteMatch && sectionRouteMatch.score >= 0.72) {
-      return summarizeSectionResponse(sectionRouteMatch.target.id, context, sectionRouteMatch.score);
-    }
-
-    if (isProjectTarget(routeMatch.target)) {
-      return summarizeProjectResponse(routeMatch.target.id, context, routeMatch.score);
-    }
-
-    return summarizeSectionResponse(routeMatch.target.id, context, routeMatch.score);
-  }
-
-  if (routeMatch && isProjectTarget(routeMatch.target) && hasAny(normalizedMessage, projectSummaryWords)) {
-    return summarizeProjectResponse(routeMatch.target.id, context, routeMatch.score);
-  }
-
-  if (routeMatch && (routeMatch.score >= 0.86 || hasAny(normalizedMessage, navigateWords))) {
-    return navigateResponse(routeMatch.target.id, routeMatch.score);
-  }
-
-  if (termMatch && termMatch.score >= 0.9) {
-    return defineTermResponse(termMatch.term, termMatch.score);
-  }
-
-  if (routeMatch) {
-    return navigateResponse(routeMatch.target.id, Math.min(routeMatch.score, 0.72));
-  }
-
-  return rejectResponse("이 포트폴리오에서 이동하거나 설명할 수 있는 내용을 찾지 못했습니다.", 0);
-}
-
-function findBestRoute(message, targets) {
-  const normalizedMessage = normalize(message);
-  const scored = targets
-    .map((target) => {
-      return {
-        target,
-        score: routeScore(normalizedMessage, target)
-      };
-    })
-    .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score);
-
-  return scored[0] || null;
-}
-
-function routeScore(normalizedMessage, target) {
-  const labelScore = keywordScore(normalizedMessage, target.label);
-  const aliasScores = (target.aliases || []).map((alias) => keywordScore(normalizedMessage, alias));
-  const projectScore = keywordScore(normalizedMessage, target.project) * 0.35;
-  const strongScores = [labelScore, ...aliasScores].filter((score) => score > 0);
-  const base = Math.max(labelScore, projectScore, ...aliasScores, 0);
-  const specificityBonus = strongScores.length > 1 ? 0.12 : 0;
-  const projectBonus = projectScore > 0 && strongScores.length ? 0.08 : 0;
-
-  return Math.min(0.98, base + specificityBonus + projectBonus);
-}
-
-function findBestTerm(message, terms) {
-  const normalizedMessage = normalize(message);
-  const scored = terms
-    .map((term) => {
-      const keys = [term.term, ...(term.aliases || [])];
-      return {
-        term,
-        score: Math.max(...keys.map((key) => keywordScore(normalizedMessage, key)))
-      };
-    })
-    .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score);
-
-  return scored[0] || null;
-}
-
-function keywordScore(normalizedMessage, keyword) {
-  const normalizedKeyword = normalize(keyword);
-  if (!normalizedKeyword) return 0;
-  if (normalizedMessage === normalizedKeyword) return 1;
-  if (normalizedMessage.includes(normalizedKeyword)) return Math.min(0.95, 0.72 + normalizedKeyword.length / 80);
-
-  const compactMessage = compact(normalizedMessage);
-  const compactKeyword = compact(normalizedKeyword);
-  if (compactMessage.includes(compactKeyword)) return Math.min(0.9, 0.68 + compactKeyword.length / 90);
-
-  return 0;
-}
-
-async function askModel(message, context) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), lmStudioTimeoutMs);
-  const payload = {
-    model: lmStudioModel,
-    temperature: 0,
-    messages: [
-      { role: "system", content: context.prompt },
-      { role: "system", content: buildContextBlock(context) },
-      { role: "user", content: message }
-    ]
-  };
-
-  try {
-    const response = await fetch(buildLmStudioChatCompletionsUrl(lmStudioBaseUrl), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: controller.signal
-    });
-
-    if (!response.ok) throw new Error(`LM Studio responded with ${response.status}`);
-
-    const data = await response.json();
-    const content = data?.choices?.[0]?.message?.content;
-    return parseJsonObject(content);
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-function guardModelResponse(modelResponse, context) {
-  const validation = validateNliResponse(modelResponse, context, { allowModelAnswer: true });
-  if (!validation.ok) return null;
-
-  if (modelResponse.intent === "navigate") {
-    return navigateResponse(modelResponse.targetId, modelResponse.confidence);
-  }
-
-  if (modelResponse.intent === "define_term") {
-    const glossaryTerm = context.termByCanonical.get(normalize(modelResponse.term));
-    return defineTermResponse(glossaryTerm, modelResponse.confidence);
-  }
-
-  if (modelResponse.intent === "summarize_section") {
-    return summarizeSectionResponse(modelResponse.targetId, context, modelResponse.confidence);
-  }
-
-  if (modelResponse.intent === "introduce_profile") {
-    return introduceProfileResponse(context, modelResponse.confidence);
-  }
-
-  if (modelResponse.intent === "summarize_project") {
-    return summarizeProjectResponse(modelResponse.targetId, context, modelResponse.confidence);
-  }
-
-  if (modelResponse.intent === "list_capabilities") {
-    return listCapabilitiesResponse(modelResponse.confidence);
-  }
-
-  return rejectResponse(modelResponse.message);
-}
-
-export function validateNliResponse(response, context, options = {}) {
-  const errors = [];
-  const allowModelAnswer = options.allowModelAnswer === true;
-
-  if (!isPlainObject(response)) {
-    return { ok: false, errors: ["response must be an object"] };
-  }
-
-  for (const key of Object.keys(response)) {
-    if (!responseKeys.has(key)) errors.push(`unknown property: ${key}`);
-  }
-
-  if (!intentNames.has(response.intent)) errors.push("intent is invalid");
-  if (typeof response.confidence !== "number" || response.confidence < 0 || response.confidence > 1) {
-    errors.push("confidence must be a number between 0 and 1");
-  }
-  if (typeof response.message !== "string" || !response.message.trim()) {
-    errors.push("message is required");
-  }
-
-  if (response.intent === "navigate") {
-    validateTargetId(response.targetId, context, errors);
-  }
-
-  if (response.intent === "define_term") {
-    if (typeof response.term !== "string" || !response.term.trim()) {
-      errors.push("term is required");
-    } else if (!context.termByCanonical.has(normalize(response.term))) {
-      errors.push(`unknown term: ${response.term}`);
-    }
-
-    if (typeof response.answer !== "string" || !response.answer.trim()) {
-      errors.push("answer is required for define_term");
-    }
-
-    if (response.relatedTargets !== undefined) validateTargetList(response.relatedTargets, context, errors);
-  }
-
-  if (response.intent === "summarize_section") {
-    validateTargetId(response.targetId, context, errors);
-    if (typeof response.answer !== "string" || !response.answer.trim()) {
-      errors.push("answer is required for summarize_section");
-    }
-  }
-
-  if (response.intent === "introduce_profile" || response.intent === "list_capabilities") {
-    if (typeof response.answer !== "string" || !response.answer.trim()) {
-      errors.push(`answer is required for ${response.intent}`);
-    }
-  }
-
-  if (response.intent === "summarize_project") {
-    validateTargetId(response.targetId, context, errors);
-    if (response.targetId && !context.projectByTargetId.has(response.targetId)) {
-      errors.push(`targetId is not a project: ${response.targetId}`);
-    }
-    if (typeof response.answer !== "string" || !response.answer.trim()) {
-      errors.push("answer is required for summarize_project");
-    }
-  }
-
-  if (response.intent === "reject_out_of_scope") {
-    if (!allowModelAnswer && (response.targetId || response.term || response.answer || response.relatedTargets)) {
-      errors.push("reject_out_of_scope must not include targetId, term, answer, or relatedTargets");
-    }
-  }
-
-  return { ok: errors.length === 0, errors };
-}
-
-function validateTargetId(targetId, context, errors) {
-  if (typeof targetId !== "string" || !targetId.trim()) {
-    errors.push("targetId is required");
-    return;
-  }
-
-  if (!context.targetById.has(targetId)) errors.push(`unknown targetId: ${targetId}`);
-}
-
-function validateTargetList(targets, context, errors) {
-  if (!Array.isArray(targets)) {
-    errors.push("relatedTargets must be an array");
-    return;
-  }
-
-  for (const targetId of targets) {
-    if (typeof targetId !== "string" || !context.targetById.has(targetId)) {
-      errors.push(`unknown related targetId: ${targetId}`);
-    }
-  }
-}
-
-function isPlainObject(value) {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function navigateResponse(targetId, confidence = 0.85) {
-  return {
-    intent: "navigate",
-    confidence: clampConfidence(confidence),
-    targetId,
-    message: "해당 위치로 이동합니다."
-  };
-}
-
-function defineTermResponse(term, confidence = 0.88) {
-  return {
-    intent: "define_term",
-    confidence: clampConfidence(confidence),
-    term: term.term,
-    message: `${term.term} 용어를 설명합니다.`,
-    answer: term.answer,
-    relatedTargets: term.relatedTargets || []
-  };
-}
-
-function summarizeSectionResponse(targetId, context, confidence = 0.84) {
-  const section = context.sectionById.get(targetId);
-  const target = context.targetById.get(targetId);
-
-  if (!section || !target) return navigateResponse(targetId, confidence);
-
-  return {
-    intent: "summarize_section",
-    confidence: clampConfidence(confidence),
-    targetId,
-    message: `${target.label} 사례를 요약합니다.`,
-    answer: `${section.projectTitle}의 ${section.title} 사례입니다. ${section.result}`
-  };
-}
-
-function introduceProfileResponse(context, confidence = 0.94) {
-  const profile = context.portfolio.profile;
-
-  return {
-    intent: "introduce_profile",
-    confidence: clampConfidence(confidence),
-    message: "이은성을 소개합니다.",
-    answer: `${profile.name}은 ${profile.role}입니다. ${profile.headline}. ${profile.summary}`
-  };
-}
-
-function summarizeProjectResponse(targetId, context, confidence = 0.86) {
-  const project = context.projectByTargetId.get(targetId);
-  const target = context.targetById.get(targetId);
-
-  if (!project || !target) return navigateResponse(targetId, confidence);
-
-  const tags = project.tags.slice(0, 5).join(", ");
-  const results = project.sections
-    .slice(0, 3)
-    .map((section) => section.result)
-    .join(" ");
-
-  return {
-    intent: "summarize_project",
-    confidence: clampConfidence(confidence),
-    targetId,
-    message: `${project.title} 프로젝트를 요약합니다.`,
-    answer: `${project.title}는 ${project.description}입니다. 주요 기술은 ${tags}이며, ${results}`
-  };
-}
-
-function listCapabilitiesResponse(confidence = 0.96) {
-  return {
-    intent: "list_capabilities",
-    confidence: clampConfidence(confidence),
-    message: "NLI가 할 수 있는 일을 안내합니다.",
-    answer:
-      "저는 이 포트폴리오 안에서 프로젝트나 섹션으로 이동하고, 특정 프로젝트와 프로젝트 내부 사례를 요약하고, P95나 분산 락 같은 등록된 용어를 설명할 수 있습니다. 예를 들어 'DB 최적화 보여줘', 'CateQuest 요약해줘', 'P95가 뭐야?', '자기소개해줘'처럼 물어보면 됩니다."
-  };
-}
-
-function rejectResponse(message = "이 포트폴리오의 프로젝트 이동, 프로젝트 요약, 등록된 용어 설명만 도와드릴 수 있습니다.", confidence = 1) {
-  return {
-    intent: "reject_out_of_scope",
-    confidence: clampConfidence(confidence),
-    message
-  };
-}
-
-function buildContextBlock(context) {
-  const routes = context.routes.targets.map((target) => ({
-    id: target.id,
-    label: target.label,
-    aliases: target.aliases
-  }));
-  const terms = context.glossary.terms.map((term) => ({
-    term: term.term,
-    aliases: term.aliases,
-    relatedTargets: term.relatedTargets
-  }));
-
-  const projects = context.portfolio.projects.map((project) => ({
-    id: `project-${project.id}`,
-    title: project.title,
-    description: project.description,
-    tags: project.tags,
-    sections: project.sections.map((section) => ({ id: section.id, title: section.title, result: section.result }))
-  }));
-
-  return JSON.stringify({ profile: context.portfolio.profile, routes, terms, projects });
-}
-
-function isProjectTarget(target) {
-  return target?.type === "project";
-}
-
-function buildLmStudioChatCompletionsUrl(baseUrl) {
-  const url = new URL(baseUrl);
-  const path = url.pathname.replace(/\/$/, "");
-  url.pathname = path.endsWith("/v1") ? `${path}/chat/completions` : `${path}/v1/chat/completions`;
-  return url.toString();
-}
-
-async function readPortfolioData() {
-  const source = await readText("data/portfolio.js");
-  const sandbox = { window: {} };
-  vm.runInNewContext(source, sandbox, { filename: "data/portfolio.js" });
-  return sandbox.window.PORTFOLIO_DATA;
-}
-
-async function readJson(relativePath) {
-  return JSON.parse(await readText(relativePath));
-}
-
-async function readText(relativePath) {
-  return readFile(resolve(root, relativePath), "utf8");
-}
-
-async function loadDotEnv() {
-  const source = await readFile(resolve(root, ".env"), "utf8").catch(() => "");
-  if (!source) return;
-
-  for (const line of source.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-
-    const separatorIndex = trimmed.indexOf("=");
-    if (separatorIndex <= 0) continue;
-
-    const key = trimmed.slice(0, separatorIndex).trim();
-    const value = parseDotEnvValue(trimmed.slice(separatorIndex + 1).trim());
-    if (!process.env[key]) process.env[key] = value;
-  }
-}
-
-function parseDotEnvValue(value) {
-  if (
-    (value.startsWith('"') && value.endsWith('"')) ||
-    (value.startsWith("'") && value.endsWith("'"))
-  ) {
-    return value.slice(1, -1);
-  }
-
-  return value;
-}
-
-function normalize(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[?!.,:;()[\]{}'"`]/g, " ")
-    .replace(/\s+/g, " ");
-}
-
-function compact(value) {
-  return String(value || "").replace(/\s+/g, "");
-}
-
-function hasAny(message, words) {
-  return words.some((word) => message.includes(normalize(word)));
-}
-
-function clampConfidence(value) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return 0.8;
-  return Math.max(0, Math.min(1, number));
-}
-
-function parseJsonObject(content) {
-  if (!content) return null;
-  try {
-    return JSON.parse(content);
-  } catch {
-    const match = String(content).match(/\{[\s\S]*\}/);
-    return match ? JSON.parse(match[0]) : null;
-  }
-}
-
-async function readRequestJson(request) {
-  const chunks = [];
-  for await (const chunk of request) chunks.push(chunk);
-  const rawBody = Buffer.concat(chunks).toString("utf8");
-  return rawBody ? JSON.parse(rawBody) : {};
-}
-
-function sendJson(response, statusCode, body) {
-  response.writeHead(statusCode, {
-    "Content-Type": "application/json; charset=utf-8"
-  });
-  response.end(JSON.stringify(body));
-}
-
-function setCorsHeaders(response) {
-  response.setHeader("Access-Control-Allow-Origin", "*");
-  response.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  response.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  server.requestTimeout = config.requestTimeoutMs;
+  server.headersTimeout = Math.min(config.requestTimeoutMs, 60_000);
+  return server;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const server = await createNliServer();
-  server.listen(port, host, () => {
-    console.log(`NLI gateway listening at http://${host}:${port}`);
-    console.log(`LM Studio endpoint: ${lmStudioBaseUrl}`);
-    console.log(`LM Studio model: ${lmStudioModel}`);
+  server.listen(defaultConfig.port, defaultConfig.host, () => {
+    console.log(`NLI gateway listening at http://${defaultConfig.host}:${defaultConfig.port}`);
   });
 }

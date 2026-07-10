@@ -1,100 +1,174 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Portfolio NLI Response",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["intent", "confidence", "message"],
-  "properties": {
-    "intent": {
-      "type": "string",
-      "enum": [
-        "navigate",
-        "define_term",
-        "summarize_section",
-        "introduce_profile",
-        "summarize_project",
-        "list_capabilities",
-        "reject_out_of_scope"
-      ]
+  "title": "Portfolio NLI Canonical Response",
+  "description": "The Gateway, not the model, produces this browser-facing response.",
+  "oneOf": [
+    { "$ref": "#/$defs/navigate" },
+    { "$ref": "#/$defs/defineTerm" },
+    { "$ref": "#/$defs/summarizeSection" },
+    { "$ref": "#/$defs/introduceProfile" },
+    { "$ref": "#/$defs/summarizeProject" },
+    { "$ref": "#/$defs/listProjects" },
+    { "$ref": "#/$defs/summarizePortfolio" },
+    { "$ref": "#/$defs/listToc" },
+    { "$ref": "#/$defs/listContacts" },
+    { "$ref": "#/$defs/listAchievements" },
+    { "$ref": "#/$defs/listSkillExperience" },
+    { "$ref": "#/$defs/listCapabilities" },
+    { "$ref": "#/$defs/reject" }
+  ],
+  "$defs": {
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "targetId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "term": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "message": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "answer": { "type": "string", "minLength": 1, "maxLength": 12000 },
+    "navigate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["intent", "confidence", "targetId", "message"],
+      "properties": {
+        "intent": { "const": "navigate" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "targetId": { "$ref": "#/$defs/targetId" },
+        "message": { "$ref": "#/$defs/message" }
+      }
     },
-    "confidence": {
-      "type": "number",
-      "minimum": 0,
-      "maximum": 1
+    "defineTerm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["intent", "confidence", "term", "message", "answer", "relatedTargets"],
+      "properties": {
+        "intent": { "const": "define_term" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "term": { "$ref": "#/$defs/term" },
+        "message": { "$ref": "#/$defs/message" },
+        "answer": { "$ref": "#/$defs/answer" },
+        "relatedTargets": { "type": "array", "maxItems": 20, "items": { "$ref": "#/$defs/targetId" } }
+      }
     },
-    "targetId": {
-      "type": "string",
-      "description": "navigate 또는 summarize_section intent일 때만 사용합니다."
+    "summarizeSection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["intent", "confidence", "targetId", "message", "answer"],
+      "properties": {
+        "intent": { "const": "summarize_section" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "targetId": { "$ref": "#/$defs/targetId" },
+        "message": { "$ref": "#/$defs/message" },
+        "answer": { "$ref": "#/$defs/answer" }
+      }
     },
-    "term": {
-      "type": "string",
-      "description": "define_term intent일 때만 사용합니다."
+    "introduceProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["intent", "confidence", "message", "answer"],
+      "properties": {
+        "intent": { "const": "introduce_profile" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "message": { "$ref": "#/$defs/message" },
+        "answer": { "$ref": "#/$defs/answer" }
+      }
     },
-    "message": {
-      "type": "string",
-      "minLength": 1,
-      "description": "사용자에게 보여줄 짧은 한국어 응답입니다."
+    "summarizeProject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["intent", "confidence", "targetId", "message", "answer"],
+      "properties": {
+        "intent": { "const": "summarize_project" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "targetId": { "$ref": "#/$defs/targetId" },
+        "message": { "$ref": "#/$defs/message" },
+        "answer": { "$ref": "#/$defs/answer" }
+      }
     },
-    "answer": {
-      "type": "string",
-      "description": "define_term, summarize_section, introduce_profile, summarize_project, list_capabilities intent일 때 제공하는 설명입니다."
+    "listProjects": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["intent", "confidence", "message", "answer"],
+      "properties": {
+        "intent": { "const": "list_projects" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "message": { "$ref": "#/$defs/message" },
+        "answer": { "$ref": "#/$defs/answer" }
+      }
     },
-    "relatedTargets": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      },
-      "description": "용어 설명과 관련된 포트폴리오 섹션 ID 목록입니다."
+    "summarizePortfolio": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["intent", "confidence", "message", "answer"],
+      "properties": {
+        "intent": { "const": "summarize_portfolio" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "message": { "$ref": "#/$defs/message" },
+        "answer": { "$ref": "#/$defs/answer" }
+      }
+    },
+    "listToc": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["intent", "confidence", "message", "answer"],
+      "properties": {
+        "intent": { "const": "list_toc" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "message": { "$ref": "#/$defs/message" },
+        "answer": { "$ref": "#/$defs/answer" }
+      }
+    },
+    "listContacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["intent", "confidence", "message", "answer"],
+      "properties": {
+        "intent": { "const": "list_contacts" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "message": { "$ref": "#/$defs/message" },
+        "answer": { "$ref": "#/$defs/answer" }
+      }
+    },
+    "listAchievements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["intent", "confidence", "message", "answer"],
+      "properties": {
+        "intent": { "const": "list_achievements" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "message": { "$ref": "#/$defs/message" },
+        "answer": { "$ref": "#/$defs/answer" }
+      }
+    },
+    "listSkillExperience": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["intent", "confidence", "term", "message", "answer"],
+      "properties": {
+        "intent": { "const": "list_skill_experience" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "term": { "$ref": "#/$defs/term" },
+        "message": { "$ref": "#/$defs/message" },
+        "answer": { "$ref": "#/$defs/answer" }
+      }
+    },
+    "listCapabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["intent", "confidence", "message", "answer"],
+      "properties": {
+        "intent": { "const": "list_capabilities" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "message": { "$ref": "#/$defs/message" },
+        "answer": { "$ref": "#/$defs/answer" }
+      }
+    },
+    "reject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["intent", "confidence", "message"],
+      "properties": {
+        "intent": { "const": "reject_out_of_scope" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "message": { "$ref": "#/$defs/message" }
+      }
     }
-  },
-  "allOf": [
-    {
-      "if": {
-        "properties": { "intent": { "const": "navigate" } }
-      },
-      "then": {
-        "required": ["targetId"]
-      }
-    },
-    {
-      "if": {
-        "properties": { "intent": { "const": "define_term" } }
-      },
-      "then": {
-        "required": ["term", "answer"]
-      }
-    },
-    {
-      "if": {
-        "properties": { "intent": { "const": "summarize_section" } }
-      },
-      "then": {
-        "required": ["targetId", "answer"]
-      }
-    },
-    {
-      "if": {
-        "properties": { "intent": { "const": "introduce_profile" } }
-      },
-      "then": {
-        "required": ["answer"]
-      }
-    },
-    {
-      "if": {
-        "properties": { "intent": { "const": "summarize_project" } }
-      },
-      "then": {
-        "required": ["targetId", "answer"]
-      }
-    },
-    {
-      "if": {
-        "properties": { "intent": { "const": "list_capabilities" } }
-      },
-      "then": {
-        "required": ["answer"]
-      }
-    }
-  ]
+  }
 }

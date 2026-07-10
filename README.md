@@ -13,6 +13,7 @@
 - `assets/`: 포트폴리오 이미지
 - `tools/static-server.mjs`: 로컬 정적 서버
 - `tools/nli-gateway.mjs`: LM Studio 연동 NLI Gateway
+- `tools/nli/`: Gateway의 설정, HTTP 경계, 모델 클라이언트, 라우팅, 응답 생성 모듈
 - `nli/`: NLI 라우팅, 용어 사전, 테스트 데이터
 - `docs/`: 설계 및 배포 문서
 
@@ -57,7 +58,9 @@ http://127.0.0.1:8787/api/nli/health
 ```text
 DB 최적화 보여줘
 P95가 뭐야?
+너는 누구야?
 자기소개해줘
+사장님 피규어 만들어주세요 요약해줘
 CateQuest 요약해줘
 CateQuest N+1 해결 요약해줘
 CloudWatch 모니터링 보여줘
@@ -84,6 +87,16 @@ $env:NLI_PORT="8787"
 $env:LM_STUDIO_BASE_URL="http://192.168.0.58:1234/v1"
 $env:LM_STUDIO_MODEL="google/gemma-4-e4b"
 $env:LM_STUDIO_TIMEOUT_MS="8000"
+$env:LM_STUDIO_MAX_TOKENS="256"
+$env:LM_STUDIO_MAX_RESPONSE_BYTES="65536"
+$env:LM_STUDIO_MAX_CONCURRENT_REQUESTS="4"
+$env:NLI_MAX_REQUEST_BYTES="16384"
+$env:NLI_MAX_MESSAGE_LENGTH="500"
+$env:NLI_RATE_LIMIT_WINDOW_MS="60000"
+$env:NLI_RATE_LIMIT_MAX="30"
+$env:NLI_RATE_LIMIT_MAX_BUCKETS="10000"
+$env:NLI_REQUEST_TIMEOUT_MS="15000"
+$env:NLI_ALLOWED_ORIGINS="http://127.0.0.1:4173"
 node tools/nli-gateway.mjs
 ```
 
@@ -95,6 +108,20 @@ NLI 라우팅 테스트:
 node tools/nli-test.mjs
 ```
 
+fake LM Studio와 HTTP 경계를 포함한 보안 통합 테스트:
+
+```bash
+node --test tools/nli-gateway.test.mjs
+node tools/nli-test.mjs --local --cases nli/adversarial-test-cases.json --min-pass-rate 1
+```
+
+배포된 Gateway 실제 호출 테스트:
+
+```bash
+NLI_TEST_BASE_URL="http://127.0.0.1:8787" node tools/nli-test.mjs --live --cases nli/live-test-cases.json --min-pass-rate 0.9
+NLI_TEST_BASE_URL="http://127.0.0.1:8787" node tools/nli-test.mjs --live --cases nli/adversarial-test-cases.json --min-pass-rate 1
+```
+
 JavaScript 문법 확인:
 
 ```bash
@@ -103,6 +130,7 @@ node --check data/portfolio.js
 node --check tools/static-server.mjs
 node --check tools/nli-gateway.mjs
 node --check tools/nli-test.mjs
+node --test tools/nli-gateway.test.mjs
 ```
 
 ## 문서

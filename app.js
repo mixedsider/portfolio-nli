@@ -15,7 +15,7 @@ const focusSet = ["All", ...new Set(data.projects.flatMap((project) => project.f
 const nliHistoryKey = "portfolio-nli:messages:v1";
 const nliMaxMessages = 30;
 const nliWelcomeText =
-  "안녕하세요. 프로젝트 이동, 프로젝트/섹션 요약, 용어 설명, 자기소개를 도와드릴 수 있습니다.";
+  "저는 포트폴리오 도우미에요. 원하는 자료를 말하시면 이동해드리거나, 프로젝트 요약과 등록된 용어 설명을 도와드릴 수 있어요.";
 let currentFilter = "All";
 let nliMessages = [];
 let nliDelayTimers = [];
@@ -274,7 +274,7 @@ function renderNliMessages() {
 
     const label = document.createElement("span");
     label.className = "nli-message-label";
-    label.textContent = message.role === "user" ? "나" : "NLI";
+    label.textContent = message.role === "user" ? "나" : "도우미";
 
     const bubble = document.createElement("p");
     bubble.textContent = message.text;
@@ -349,11 +349,31 @@ async function requestNli(message) {
   const response = await fetch(nliEndpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message })
+    body: JSON.stringify({ message, currentTargetId: getCurrentProjectTargetId() })
   });
 
   if (!response.ok) throw new Error("NLI request failed");
   return response.json();
+}
+
+function getCurrentProjectTargetId() {
+  const projectCards = $$("[data-project-card]");
+  let bestCard = null;
+  let bestVisibleArea = 0;
+
+  for (const card of projectCards) {
+    const rect = card.getBoundingClientRect();
+    const visibleWidth = Math.max(0, Math.min(rect.right, window.innerWidth) - Math.max(rect.left, 0));
+    const visibleHeight = Math.max(0, Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0));
+    const visibleArea = visibleWidth * visibleHeight;
+
+    if (visibleArea > bestVisibleArea) {
+      bestVisibleArea = visibleArea;
+      bestCard = card;
+    }
+  }
+
+  return bestVisibleArea > 0 ? bestCard?.id || null : null;
 }
 
 function getNliResultText(result) {
@@ -403,7 +423,7 @@ async function handleNliSubmit(event) {
     const result = await requestNli(message);
     updateNliMessage(pendingId, getNliResultText(result));
   } catch {
-    updateNliMessage(pendingId, "NLI Gateway에 연결할 수 없습니다. Gateway가 켜져 있는지 확인해주세요.");
+    updateNliMessage(pendingId, "도우미 Gateway에 연결할 수 없습니다. Gateway가 켜져 있는지 확인해주세요.");
   } finally {
     clearNliDelayTimers();
     setNliPending(false);
