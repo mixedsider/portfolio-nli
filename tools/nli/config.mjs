@@ -30,6 +30,7 @@ export function createGatewayConfig(env = process.env) {
     rateLimitMax: readPositiveIntegerEnv(env, "NLI_RATE_LIMIT_MAX", 30),
     maxRateLimitBuckets: readPositiveIntegerEnv(env, "NLI_RATE_LIMIT_MAX_BUCKETS", 10_000),
     trustProxy: env.NLI_TRUST_PROXY === "true",
+    releaseRevision: env.GIT_COMMIT_SHA || null,
     model: {
       baseUrl: env.LM_STUDIO_BASE_URL || "http://192.168.0.58:1234/v1",
       name: env.LM_STUDIO_MODEL || "google/gemma-4-e4b",

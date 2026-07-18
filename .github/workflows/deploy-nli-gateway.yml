@@ -140,7 +140,7 @@ jobs:
             -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile=~/.ssh/nli_gateway_known_hosts \
             "${NLI_GATEWAY_USER}@${NLI_GATEWAY_HOST}" \
-            "APP_DIR='${NLI_GATEWAY_APP_DIR}' PROCESS_NAME='${NLI_GATEWAY_PROCESS}' NLI_GATEWAY_PORT='${NLI_GATEWAY_PORT}' DEPLOY_SHA='${{ github.sha }}' bash -s" <<'REMOTE'
+            "APP_DIR='${NLI_GATEWAY_APP_DIR}' PROCESS_NAME='${NLI_GATEWAY_PROCESS}' NLI_GATEWAY_PORT='${NLI_GATEWAY_PORT}' DEPLOY_SHA='${{ github.sha }}' GIT_COMMIT_SHA='${{ github.sha }}' bash -s" <<'REMOTE'
           set -euo pipefail
           wait_for_pm2_listener_match() {
             local attempt pm2_pid listener_pid
@@ -200,19 +200,35 @@ jobs:
 
       - name: Health check
         shell: bash
+        env:
+          DEPLOY_SHA: ${{ github.sha }}
         run: |
           for attempt in 1 2 3; do
-            if curl --connect-timeout 3 --max-time 10 -fsS "http://${NLI_GATEWAY_HOST}:${NLI_GATEWAY_PORT}/api/nli/health"; then
+            health_json="$(curl --connect-timeout 3 --max-time 10 -fsS "http://${NLI_GATEWAY_HOST}:${NLI_GATEWAY_PORT}/api/nli/health")" || {
+              if [ "${attempt}" -lt 3 ]; then
+                echo "NLI Gateway is not healthy yet. Waiting 5 seconds..."
+                sleep 5
+                continue
+              fi
+              echo "NLI Gateway health check failed after 3 attempts"
+              exit 1
+            }
+
+            health_revision="$(node --input-type=module -e 'const health = JSON.parse(process.argv[1]); process.stdout.write(String(health.revision || ""));' "${health_json}")"
+            if [ "${health_revision}" = "${DEPLOY_SHA}" ]; then
               echo "NLI Gateway health check passed on attempt ${attempt}"
               exit 0
             fi
+
+            echo "NLI Gateway revision mismatch: expected ${DEPLOY_SHA}, got ${health_revision:-<missing>}"
             if [ "${attempt}" -lt 3 ]; then
               echo "NLI Gateway is not healthy yet. Waiting 5 seconds..."
               sleep 5
+            else
+              echo "NLI Gateway health check failed after 3 attempts"
+              exit 1
             fi
           done
-          echo "NLI Gateway health check failed after 3 attempts"
-          exit 1
 
       - name: Run live NLI functional tests
         shell: bash
@@ -242,7 +258,7 @@ jobs:
             -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile=~/.ssh/nli_gateway_known_hosts \
             "${NLI_GATEWAY_USER}@${NLI_GATEWAY_HOST}" \
-            "APP_DIR='${NLI_GATEWAY_APP_DIR}' PROCESS_NAME='${NLI_GATEWAY_PROCESS}' NLI_GATEWAY_PORT='${NLI_GATEWAY_PORT}' PREVIOUS_SHA='${PREVIOUS_SHA}' bash -s" <<'REMOTE'
+            "APP_DIR='${NLI_GATEWAY_APP_DIR}' PROCESS_NAME='${NLI_GATEWAY_PROCESS}' NLI_GATEWAY_PORT='${NLI_GATEWAY_PORT}' PREVIOUS_SHA='${PREVIOUS_SHA}' GIT_COMMIT_SHA='${PREVIOUS_SHA}' bash -s" <<'REMOTE'
           set -euo pipefail
           wait_for_pm2_listener_match() {
             local attempt pm2_pid listener_pid

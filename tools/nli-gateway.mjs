@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { resolve } from "node:path";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { createGatewayConfig, loadDotEnv } from "./nli/config.mjs";
@@ -17,6 +18,7 @@ const defaultConfig = createGatewayConfig();
 const defaultContextPromise = loadContext(root);
 const defaultModelClient = createModelClient(defaultConfig);
 const localResolutionConfidence = 0.8;
+const gatewayRevision = defaultConfig.releaseRevision || resolveGatewayRevision(root);
 
 export { validateNliResponse };
 
@@ -69,7 +71,13 @@ export async function createNliServer(options = {}) {
 
     const url = new URL(request.url || "/", `http://${config.host}:${config.port}`);
     if (request.method === "GET" && url.pathname === "/api/nli/health") {
-      sendJson(response, 200, { ok: true, targets: context.routes.targets.length, terms: context.glossary.terms.length });
+      sendJson(response, 200, {
+        ok: true,
+        targets: context.routes.targets.length,
+        terms: context.glossary.terms.length,
+        revision: config.releaseRevision || gatewayRevision,
+        processId: process.pid
+      });
       return;
     }
 
@@ -102,6 +110,14 @@ export async function createNliServer(options = {}) {
   server.requestTimeout = config.requestTimeoutMs;
   server.headersTimeout = Math.min(config.requestTimeoutMs, 60_000);
   return server;
+}
+
+function resolveGatewayRevision(rootDir) {
+  try {
+    return execFileSync("git", ["rev-parse", "HEAD"], { cwd: rootDir, encoding: "utf8" }).trim();
+  } catch {
+    return null;
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

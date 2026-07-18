@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
@@ -219,6 +220,48 @@ test("browser origins fail closed until an exact origin is configured", () => {
   const configured = createGatewayConfig({ NLI_ALLOWED_ORIGINS: "https://portfolio.example" });
   assert.equal(isOriginAllowed({ headers: { origin: "https://portfolio.example" } }, configured), true);
   assert.equal(isOriginAllowed({ headers: { origin: "https://attacker.example" } }, configured), false);
+});
+
+test("health identifies the running deployment revision", async () => {
+  const server = await createNliServer({
+    context,
+    config: createTestConfig({ releaseRevision: "9d5621b4cf5b66bb9b3974650fd194129eaaf4ab" })
+  });
+  const baseUrl = await listen(server);
+
+  const response = await fetch(`${baseUrl}/api/nli/health`);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    ok: true,
+    targets: context.routes.targets.length,
+    terms: context.glossary.terms.length,
+    revision: "9d5621b4cf5b66bb9b3974650fd194129eaaf4ab",
+    processId: process.pid
+  });
+
+  await closeServer(server);
+});
+
+test("health responses fingerprint the checked-out revision and running process", async () => {
+  const checkedOutRevision = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  const server = await createNliServer({
+    context,
+    config: createTestConfig(),
+    modelClient: async () => ({ intent: "reject_out_of_scope", confidence: 1 })
+  });
+  const baseUrl = await listen(server);
+
+  const response = await fetch(`${baseUrl}/api/nli/health`);
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(body.targets, context.routes.targets.length);
+  assert.equal(body.terms, context.glossary.terms.length);
+  assert.equal(body.revision, checkedOutRevision);
+  assert.equal(body.processId, process.pid);
+
+  await closeServer(server);
 });
 
 test("default rate limit accommodates the deployed functional and adversarial suites", async () => {
