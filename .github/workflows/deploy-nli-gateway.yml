@@ -176,8 +176,27 @@ jobs:
             done
           }
 
+          is_expected_nli_gateway_listener() {
+            local listener_pid="${1:-}" listener_cwd expected_script
+            local -a listener_argv=()
+            expected_script="${APP_DIR}/tools/nli-gateway.mjs"
+            if [ -z "${listener_pid}" ] || [ ! -r "/proc/${listener_pid}/cmdline" ] || [ ! -r "/proc/${listener_pid}/cwd" ]; then
+              return 1
+            fi
+
+            listener_cwd="$(readlink -f "/proc/${listener_pid}/cwd")"
+            [ "${listener_cwd}" = "${APP_DIR}" ] || return 1
+            mapfile -d '' -t listener_argv < "/proc/${listener_pid}/cmdline"
+            [ "${#listener_argv[@]}" -ge 2 ] || return 1
+            case "${listener_argv[0]}" in
+              */node|*/nodejs|node|nodejs) ;;
+              *) return 1 ;;
+            esac
+            [ "${listener_argv[1]}" = "${expected_script}" ]
+          }
+
           stop_stale_nli_listeners() {
-            local attempt listener_pid listener_cmdline listener_cwd expected_script expected_cwd
+            local attempt listener_pid expected_script expected_cwd
             local -a listener_pids=()
             expected_script="${APP_DIR}/tools/nli-gateway.mjs"
             expected_cwd="${APP_DIR}"
@@ -189,9 +208,7 @@ jobs:
                 return 1
               fi
 
-              listener_cmdline="$(tr '\0' ' ' </proc/${listener_pid}/cmdline)"
-              listener_cwd="$(readlink -f "/proc/${listener_pid}/cwd")"
-              if [ "${listener_cwd}" != "${expected_cwd}" ] || ! printf '%s' "${listener_cmdline}" | grep -Fq -- "${expected_script}"; then
+              if ! is_expected_nli_gateway_listener "${listener_pid}"; then
                 echo "Refusing to stop a non-Gateway listener on port ${NLI_GATEWAY_PORT}"
                 echo "Expected script: ${expected_script}"
                 echo "Expected cwd: ${expected_cwd}"
@@ -233,7 +250,7 @@ jobs:
           }
 
           wait_for_pm2_nli_listener_identity() {
-            local attempt listener_pid listener_cmdline listener_cwd pm2_pid expected_script expected_cwd
+            local attempt listener_pid pm2_pid expected_script expected_cwd
             local -a listener_pids=()
             expected_script="${APP_DIR}/tools/nli-gateway.mjs"
             expected_cwd="${APP_DIR}"
@@ -242,12 +259,8 @@ jobs:
               mapfile -t listener_pids < <(nli_listener_pids)
               if [ -n "${pm2_pid}" ] && [ "${#listener_pids[@]}" -eq 1 ]; then
                 listener_pid="${listener_pids[0]}"
-                if [ -r "/proc/${listener_pid}/cmdline" ] && [ -r "/proc/${listener_pid}/cwd" ]; then
-                  listener_cmdline="$(tr '\0' ' ' </proc/${listener_pid}/cmdline)"
-                  listener_cwd="$(readlink -f "/proc/${listener_pid}/cwd")"
-                  if [ "${listener_pid}" = "${pm2_pid}" ] && [ "${listener_cwd}" = "${expected_cwd}" ] && printf '%s' "${listener_cmdline}" | grep -Fq -- "${expected_script}"; then
-                    return 0
-                  fi
+                if [ "${listener_pid}" = "${pm2_pid}" ] && is_expected_nli_gateway_listener "${listener_pid}"; then
+                  return 0
                 fi
               fi
               sleep 1
@@ -262,17 +275,13 @@ jobs:
           }
 
           wait_for_nli_listener_identity() {
-            local attempt listener_pid listener_cmdline listener_cwd expected_script expected_cwd
+            local attempt listener_pid expected_script expected_cwd
             expected_script="${APP_DIR}/tools/nli-gateway.mjs"
             expected_cwd="${APP_DIR}"
             for attempt in 1 2 3 4 5 6 7 8 9 10; do
               listener_pid="$(nli_listener_pids | head -n 1)"
-              if [ -n "${listener_pid}" ] && [ -r "/proc/${listener_pid}/cmdline" ] && [ -r "/proc/${listener_pid}/cwd" ]; then
-                listener_cmdline="$(tr '\0' ' ' </proc/${listener_pid}/cmdline)"
-                listener_cwd="$(readlink -f "/proc/${listener_pid}/cwd")"
-                if [ "${listener_cwd}" = "${expected_cwd}" ] && printf '%s' "${listener_cmdline}" | grep -Fq "${expected_script}"; then
-                  return 0
-                fi
+              if [ -n "${listener_pid}" ] && is_expected_nli_gateway_listener "${listener_pid}"; then
+                return 0
               fi
               sleep 1
             done
@@ -418,8 +427,27 @@ jobs:
             done
           }
 
+          is_expected_nli_gateway_listener() {
+            local listener_pid="${1:-}" listener_cwd expected_script
+            local -a listener_argv=()
+            expected_script="${APP_DIR}/tools/nli-gateway.mjs"
+            if [ -z "${listener_pid}" ] || [ ! -r "/proc/${listener_pid}/cmdline" ] || [ ! -r "/proc/${listener_pid}/cwd" ]; then
+              return 1
+            fi
+
+            listener_cwd="$(readlink -f "/proc/${listener_pid}/cwd")"
+            [ "${listener_cwd}" = "${APP_DIR}" ] || return 1
+            mapfile -d '' -t listener_argv < "/proc/${listener_pid}/cmdline"
+            [ "${#listener_argv[@]}" -ge 2 ] || return 1
+            case "${listener_argv[0]}" in
+              */node|*/nodejs|node|nodejs) ;;
+              *) return 1 ;;
+            esac
+            [ "${listener_argv[1]}" = "${expected_script}" ]
+          }
+
           stop_stale_nli_listeners() {
-            local attempt listener_pid listener_cmdline listener_cwd expected_script expected_cwd
+            local attempt listener_pid expected_script expected_cwd
             local -a listener_pids=()
             expected_script="${APP_DIR}/tools/nli-gateway.mjs"
             expected_cwd="${APP_DIR}"
@@ -431,9 +459,7 @@ jobs:
                 return 1
               fi
 
-              listener_cmdline="$(tr '\0' ' ' </proc/${listener_pid}/cmdline)"
-              listener_cwd="$(readlink -f "/proc/${listener_pid}/cwd")"
-              if [ "${listener_cwd}" != "${expected_cwd}" ] || ! printf '%s' "${listener_cmdline}" | grep -Fq -- "${expected_script}"; then
+              if ! is_expected_nli_gateway_listener "${listener_pid}"; then
                 echo "Refusing to stop a non-Gateway listener on port ${NLI_GATEWAY_PORT}"
                 echo "Expected script: ${expected_script}"
                 echo "Expected cwd: ${expected_cwd}"
@@ -475,7 +501,7 @@ jobs:
           }
 
           wait_for_pm2_nli_listener_identity() {
-            local attempt listener_pid listener_cmdline listener_cwd pm2_pid expected_script expected_cwd
+            local attempt listener_pid pm2_pid expected_script expected_cwd
             local -a listener_pids=()
             expected_script="${APP_DIR}/tools/nli-gateway.mjs"
             expected_cwd="${APP_DIR}"
@@ -484,12 +510,8 @@ jobs:
               mapfile -t listener_pids < <(nli_listener_pids)
               if [ -n "${pm2_pid}" ] && [ "${#listener_pids[@]}" -eq 1 ]; then
                 listener_pid="${listener_pids[0]}"
-                if [ -r "/proc/${listener_pid}/cmdline" ] && [ -r "/proc/${listener_pid}/cwd" ]; then
-                  listener_cmdline="$(tr '\0' ' ' </proc/${listener_pid}/cmdline)"
-                  listener_cwd="$(readlink -f "/proc/${listener_pid}/cwd")"
-                  if [ "${listener_pid}" = "${pm2_pid}" ] && [ "${listener_cwd}" = "${expected_cwd}" ] && printf '%s' "${listener_cmdline}" | grep -Fq -- "${expected_script}"; then
-                    return 0
-                  fi
+                if [ "${listener_pid}" = "${pm2_pid}" ] && is_expected_nli_gateway_listener "${listener_pid}"; then
+                  return 0
                 fi
               fi
               sleep 1
@@ -504,17 +526,13 @@ jobs:
           }
 
           wait_for_nli_listener_identity() {
-            local attempt listener_pid listener_cmdline listener_cwd expected_script expected_cwd
+            local attempt listener_pid expected_script expected_cwd
             expected_script="${APP_DIR}/tools/nli-gateway.mjs"
             expected_cwd="${APP_DIR}"
             for attempt in 1 2 3 4 5 6 7 8 9 10; do
               listener_pid="$(nli_listener_pids | head -n 1)"
-              if [ -n "${listener_pid}" ] && [ -r "/proc/${listener_pid}/cmdline" ] && [ -r "/proc/${listener_pid}/cwd" ]; then
-                listener_cmdline="$(tr '\0' ' ' </proc/${listener_pid}/cmdline)"
-                listener_cwd="$(readlink -f "/proc/${listener_pid}/cwd")"
-                if [ "${listener_cwd}" = "${expected_cwd}" ] && printf '%s' "${listener_cmdline}" | grep -Fq "${expected_script}"; then
-                  return 0
-                fi
+              if [ -n "${listener_pid}" ] && is_expected_nli_gateway_listener "${listener_pid}"; then
+                return 0
               fi
               sleep 1
             done

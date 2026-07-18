@@ -15,6 +15,8 @@ const deployScript = extractDeploymentRemoteScript(workflow);
 test("deployment reconciles a stale Gateway listener before PM2 starts", () => {
   assert.match(deployScript, /stop_stale_nli_listeners\(\)/);
   assert.match(deployScript, /wait_for_pm2_nli_listener_identity\(\)/);
+  assert.match(deployScript, /is_expected_nli_gateway_listener\(\)/);
+  assert.match(deployScript, /listener_argv\[1\]/);
   assert.doesNotMatch(deployScript, /match\(\$0,/);
 
   const pm2Block = deployScript.slice(
@@ -47,6 +49,8 @@ test("rollback reconciles a stale Gateway listener before restoring the previous
 
   assert.match(rollbackScript, /stop_stale_nli_listeners\(\)/);
   assert.match(rollbackScript, /wait_for_pm2_nli_listener_identity\(\)/);
+  assert.match(rollbackScript, /is_expected_nli_gateway_listener\(\)/);
+  assert.match(rollbackScript, /listener_argv\[1\]/);
   assert.doesNotMatch(rollbackScript, /match\(\$0,/);
   assert.ok(pm2Block.indexOf("pm2 delete") >= 0, "PM2 process must be removed before rollback reconciliation");
   assert.ok(pm2Block.indexOf("stop_stale_nli_listeners") > pm2Block.indexOf("pm2 delete"));
@@ -74,20 +78,44 @@ test(
     try {
       await waitForGateway(port, gateway);
       const helpers = extractLifecycleHelpers(deployScript);
-      const cleanup = await runBash(
-        helpers +
-          "\nAPP_DIR=" +
-          shellQuote(root) +
-          "\nNLI_GATEWAY_PORT=" +
-          String(port) +
-          "\nstop_stale_nli_listeners\n"
-      );
+      const cleanup = await runLifecycleCleanup(helpers, port);
 
       assert.equal(cleanup.status, 0, cleanup.stderr);
       assert.match(cleanup.stdout, /Stopping stale Gateway listener PID/);
       await waitForExit(gateway);
     } finally {
       if (gateway.exitCode === null && gateway.signalCode === null) gateway.kill("SIGTERM");
+    }
+  }
+);
+
+test(
+  "deployment lifecycle refuses a listener that only mentions the Gateway path as a later argument",
+  { skip: process.platform !== "linux" },
+  async () => {
+    const port = await reservePort();
+    const gatewayPath = resolve(root, "tools/nli-gateway.mjs");
+    const dummy = spawn(
+      process.execPath,
+      [
+        "--input-type=module",
+        "--eval",
+        'import { createServer } from "node:http"; createServer((request, response) => response.end("dummy")).listen(Number(process.env.NLI_PORT), "127.0.0.1");',
+        gatewayPath
+      ],
+      { cwd: root, env: { ...process.env, NLI_PORT: String(port) }, stdio: "ignore" }
+    );
+
+    try {
+      await waitForGateway(port, dummy);
+      const cleanup = await runLifecycleCleanup(extractLifecycleHelpers(deployScript), port);
+
+      assert.notEqual(cleanup.status, 0, "non-Gateway listener cleanup must fail safely");
+      assert.match(cleanup.stdout, /Refusing to stop a non-Gateway listener/);
+      assert.equal(dummy.exitCode, null, "non-Gateway listener must remain running");
+      assert.equal(dummy.signalCode, null, "non-Gateway listener must not receive a signal");
+    } finally {
+      if (dummy.exitCode === null && dummy.signalCode === null) dummy.kill("SIGTERM");
     }
   }
 );
@@ -153,6 +181,17 @@ function runBash(script) {
     child.once("error", reject);
     child.once("close", (status) => resolveResult({ status, stdout, stderr }));
   });
+}
+
+function runLifecycleCleanup(helpers, port) {
+  return runBash(
+    helpers +
+      "\nAPP_DIR=" +
+      shellQuote(root) +
+      "\nNLI_GATEWAY_PORT=" +
+      String(port) +
+      "\nstop_stale_nli_listeners\n"
+  );
 }
 
 function shellQuote(value) {
