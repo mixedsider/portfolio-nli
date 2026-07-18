@@ -75,7 +75,7 @@ jobs:
           node tools/nli-test.mjs --local --cases nli/live-test-cases.json --min-pass-rate 1
           node tools/nli-test.mjs --local --cases nli/live-test-cases.json --kind success --min-pass-rate 1
           node tools/nli-test.mjs --local --cases nli/adversarial-test-cases.json --min-pass-rate 1
-          node --test tools/nli-gateway.test.mjs
+          node --test tools/nli-gateway.test.mjs tools/deploy-nli-gateway.test.mjs
           node --test tools/static-server.test.mjs
 
       - name: Prepare deployment variables
@@ -142,12 +142,131 @@ jobs:
             "${NLI_GATEWAY_USER}@${NLI_GATEWAY_HOST}" \
             "APP_DIR='${NLI_GATEWAY_APP_DIR}' PROCESS_NAME='${NLI_GATEWAY_PROCESS}' NLI_GATEWAY_PORT='${NLI_GATEWAY_PORT}' DEPLOY_SHA='${{ github.sha }}' GIT_COMMIT_SHA='${{ github.sha }}' bash -s" <<'REMOTE'
           set -euo pipefail
+          command -v ss >/dev/null 2>&1 || {
+            echo "ss is required to verify the NLI Gateway listener"
+            exit 1
+          }
+
+          nli_listener_pids() {
+            ss -ltnp "sport = :${NLI_GATEWAY_PORT}" 2>/dev/null |
+              grep -o 'pid=[0-9][0-9]*' |
+              cut -d= -f2 |
+              sort -u || true
+          }
+
+          describe_nli_listeners() {
+            local listener_pid listener_cmdline listener_cwd
+            local -a listener_pids=()
+            mapfile -t listener_pids < <(nli_listener_pids)
+            if [ "${#listener_pids[@]}" -eq 0 ]; then
+              echo "Listener PID: unset"
+              return 0
+            fi
+
+            for listener_pid in "${listener_pids[@]}"; do
+              echo "Listener PID: ${listener_pid}"
+              if [ -r "/proc/${listener_pid}/cmdline" ]; then
+                listener_cmdline="$(tr '\0' ' ' </proc/${listener_pid}/cmdline)"
+                echo "Listener cmdline: ${listener_cmdline}"
+              fi
+              if [ -r "/proc/${listener_pid}/cwd" ]; then
+                listener_cwd="$(readlink -f "/proc/${listener_pid}/cwd")"
+                echo "Listener cwd: ${listener_cwd}"
+              fi
+            done
+          }
+
+          stop_stale_nli_listeners() {
+            local attempt listener_pid listener_cmdline listener_cwd expected_script expected_cwd
+            local -a listener_pids=()
+            expected_script="${APP_DIR}/tools/nli-gateway.mjs"
+            expected_cwd="${APP_DIR}"
+            mapfile -t listener_pids < <(nli_listener_pids)
+
+            for listener_pid in "${listener_pids[@]}"; do
+              if [ ! -r "/proc/${listener_pid}/cmdline" ] || [ ! -r "/proc/${listener_pid}/cwd" ]; then
+                echo "Refusing to stop uninspectable listener PID ${listener_pid} on port ${NLI_GATEWAY_PORT}"
+                return 1
+              fi
+
+              listener_cmdline="$(tr '\0' ' ' </proc/${listener_pid}/cmdline)"
+              listener_cwd="$(readlink -f "/proc/${listener_pid}/cwd")"
+              if [ "${listener_cwd}" != "${expected_cwd}" ] || ! printf '%s' "${listener_cmdline}" | grep -Fq -- "${expected_script}"; then
+                echo "Refusing to stop a non-Gateway listener on port ${NLI_GATEWAY_PORT}"
+                echo "Expected script: ${expected_script}"
+                echo "Expected cwd: ${expected_cwd}"
+                describe_nli_listeners
+                return 1
+              fi
+
+              echo "Stopping stale Gateway listener PID ${listener_pid}"
+              kill -TERM "${listener_pid}"
+            done
+
+            for attempt in 1 2 3 4 5 6 7 8 9 10; do
+              mapfile -t listener_pids < <(nli_listener_pids)
+              if [ "${#listener_pids[@]}" -eq 0 ]; then
+                return 0
+              fi
+              sleep 1
+            done
+
+            echo "Stale Gateway listener did not release port ${NLI_GATEWAY_PORT}"
+            describe_nli_listeners
+            return 1
+          }
+
+          gateway_pm2_pid() {
+            pm2 jlist | env PROCESS_NAME="${PROCESS_NAME}" node --input-type=module -e '
+              let raw = "";
+              process.stdin.on("data", (chunk) => (raw += chunk));
+              process.stdin.on("end", () => {
+                const processInfo = JSON.parse(raw).find((entry) => entry.name === process.env.PROCESS_NAME);
+                const pid = processInfo?.pm2_env?.status === "online" ? processInfo.pid : null;
+                if (Number.isInteger(pid) && pid > 0) {
+                  console.log(pid);
+                  return;
+                }
+                process.exit(1);
+              });
+            '
+          }
+
+          wait_for_pm2_nli_listener_identity() {
+            local attempt listener_pid listener_cmdline listener_cwd pm2_pid expected_script expected_cwd
+            local -a listener_pids=()
+            expected_script="${APP_DIR}/tools/nli-gateway.mjs"
+            expected_cwd="${APP_DIR}"
+            for attempt in 1 2 3 4 5 6 7 8 9 10; do
+              pm2_pid="$(gateway_pm2_pid 2>/dev/null || true)"
+              mapfile -t listener_pids < <(nli_listener_pids)
+              if [ -n "${pm2_pid}" ] && [ "${#listener_pids[@]}" -eq 1 ]; then
+                listener_pid="${listener_pids[0]}"
+                if [ -r "/proc/${listener_pid}/cmdline" ] && [ -r "/proc/${listener_pid}/cwd" ]; then
+                  listener_cmdline="$(tr '\0' ' ' </proc/${listener_pid}/cmdline)"
+                  listener_cwd="$(readlink -f "/proc/${listener_pid}/cwd")"
+                  if [ "${listener_pid}" = "${pm2_pid}" ] && [ "${listener_cwd}" = "${expected_cwd}" ] && printf '%s' "${listener_cmdline}" | grep -Fq -- "${expected_script}"; then
+                    return 0
+                  fi
+                fi
+              fi
+              sleep 1
+            done
+
+            echo "Gateway listener did not settle to the PM2-managed process on port ${NLI_GATEWAY_PORT}"
+            echo "Expected script: ${expected_script}"
+            echo "Expected cwd: ${expected_cwd}"
+            echo "PM2 PID: ${pm2_pid:-unset}"
+            describe_nli_listeners
+            return 1
+          }
+
           wait_for_nli_listener_identity() {
             local attempt listener_pid listener_cmdline listener_cwd expected_script expected_cwd
             expected_script="${APP_DIR}/tools/nli-gateway.mjs"
             expected_cwd="${APP_DIR}"
             for attempt in 1 2 3 4 5 6 7 8 9 10; do
-              listener_pid="$(ss -ltnp "sport = :${NLI_GATEWAY_PORT}" | awk 'NR > 1 { if (match($0, /pid=([0-9]+)/, m)) { print m[1]; exit } }')"
+              listener_pid="$(nli_listener_pids | head -n 1)"
               if [ -n "${listener_pid}" ] && [ -r "/proc/${listener_pid}/cmdline" ] && [ -r "/proc/${listener_pid}/cwd" ]; then
                 listener_cmdline="$(tr '\0' ' ' </proc/${listener_pid}/cmdline)"
                 listener_cwd="$(readlink -f "/proc/${listener_pid}/cwd")"
@@ -190,11 +309,13 @@ jobs:
             if pm2 describe "${PROCESS_NAME}" >/dev/null 2>&1; then
               pm2 delete "${PROCESS_NAME}"
             fi
-            pm2 start tools/nli-gateway.mjs --name "${PROCESS_NAME}" --cwd "${APP_DIR}" --update-env
+            stop_stale_nli_listeners
+            pm2 start "${APP_DIR}/tools/nli-gateway.mjs" --name "${PROCESS_NAME}" --cwd "${APP_DIR}" --update-env
             pm2 save
-            wait_for_nli_listener_identity
+            wait_for_pm2_nli_listener_identity
           elif command -v systemctl >/dev/null 2>&1 && systemctl --user list-unit-files | grep -q "^${PROCESS_NAME}.service"; then
             systemctl --user restart "${PROCESS_NAME}.service"
+            wait_for_nli_listener_identity
           else
             echo "Neither pm2 process nor user systemd service was found for ${PROCESS_NAME}"
             exit 1
@@ -263,12 +384,131 @@ jobs:
             "${NLI_GATEWAY_USER}@${NLI_GATEWAY_HOST}" \
             "APP_DIR='${NLI_GATEWAY_APP_DIR}' PROCESS_NAME='${NLI_GATEWAY_PROCESS}' NLI_GATEWAY_PORT='${NLI_GATEWAY_PORT}' PREVIOUS_SHA='${PREVIOUS_SHA}' GIT_COMMIT_SHA='${PREVIOUS_SHA}' bash -s" <<'REMOTE'
           set -euo pipefail
+          command -v ss >/dev/null 2>&1 || {
+            echo "ss is required to verify the NLI Gateway listener"
+            exit 1
+          }
+
+          nli_listener_pids() {
+            ss -ltnp "sport = :${NLI_GATEWAY_PORT}" 2>/dev/null |
+              grep -o 'pid=[0-9][0-9]*' |
+              cut -d= -f2 |
+              sort -u || true
+          }
+
+          describe_nli_listeners() {
+            local listener_pid listener_cmdline listener_cwd
+            local -a listener_pids=()
+            mapfile -t listener_pids < <(nli_listener_pids)
+            if [ "${#listener_pids[@]}" -eq 0 ]; then
+              echo "Listener PID: unset"
+              return 0
+            fi
+
+            for listener_pid in "${listener_pids[@]}"; do
+              echo "Listener PID: ${listener_pid}"
+              if [ -r "/proc/${listener_pid}/cmdline" ]; then
+                listener_cmdline="$(tr '\0' ' ' </proc/${listener_pid}/cmdline)"
+                echo "Listener cmdline: ${listener_cmdline}"
+              fi
+              if [ -r "/proc/${listener_pid}/cwd" ]; then
+                listener_cwd="$(readlink -f "/proc/${listener_pid}/cwd")"
+                echo "Listener cwd: ${listener_cwd}"
+              fi
+            done
+          }
+
+          stop_stale_nli_listeners() {
+            local attempt listener_pid listener_cmdline listener_cwd expected_script expected_cwd
+            local -a listener_pids=()
+            expected_script="${APP_DIR}/tools/nli-gateway.mjs"
+            expected_cwd="${APP_DIR}"
+            mapfile -t listener_pids < <(nli_listener_pids)
+
+            for listener_pid in "${listener_pids[@]}"; do
+              if [ ! -r "/proc/${listener_pid}/cmdline" ] || [ ! -r "/proc/${listener_pid}/cwd" ]; then
+                echo "Refusing to stop uninspectable listener PID ${listener_pid} on port ${NLI_GATEWAY_PORT}"
+                return 1
+              fi
+
+              listener_cmdline="$(tr '\0' ' ' </proc/${listener_pid}/cmdline)"
+              listener_cwd="$(readlink -f "/proc/${listener_pid}/cwd")"
+              if [ "${listener_cwd}" != "${expected_cwd}" ] || ! printf '%s' "${listener_cmdline}" | grep -Fq -- "${expected_script}"; then
+                echo "Refusing to stop a non-Gateway listener on port ${NLI_GATEWAY_PORT}"
+                echo "Expected script: ${expected_script}"
+                echo "Expected cwd: ${expected_cwd}"
+                describe_nli_listeners
+                return 1
+              fi
+
+              echo "Stopping stale Gateway listener PID ${listener_pid}"
+              kill -TERM "${listener_pid}"
+            done
+
+            for attempt in 1 2 3 4 5 6 7 8 9 10; do
+              mapfile -t listener_pids < <(nli_listener_pids)
+              if [ "${#listener_pids[@]}" -eq 0 ]; then
+                return 0
+              fi
+              sleep 1
+            done
+
+            echo "Stale Gateway listener did not release port ${NLI_GATEWAY_PORT}"
+            describe_nli_listeners
+            return 1
+          }
+
+          gateway_pm2_pid() {
+            pm2 jlist | env PROCESS_NAME="${PROCESS_NAME}" node --input-type=module -e '
+              let raw = "";
+              process.stdin.on("data", (chunk) => (raw += chunk));
+              process.stdin.on("end", () => {
+                const processInfo = JSON.parse(raw).find((entry) => entry.name === process.env.PROCESS_NAME);
+                const pid = processInfo?.pm2_env?.status === "online" ? processInfo.pid : null;
+                if (Number.isInteger(pid) && pid > 0) {
+                  console.log(pid);
+                  return;
+                }
+                process.exit(1);
+              });
+            '
+          }
+
+          wait_for_pm2_nli_listener_identity() {
+            local attempt listener_pid listener_cmdline listener_cwd pm2_pid expected_script expected_cwd
+            local -a listener_pids=()
+            expected_script="${APP_DIR}/tools/nli-gateway.mjs"
+            expected_cwd="${APP_DIR}"
+            for attempt in 1 2 3 4 5 6 7 8 9 10; do
+              pm2_pid="$(gateway_pm2_pid 2>/dev/null || true)"
+              mapfile -t listener_pids < <(nli_listener_pids)
+              if [ -n "${pm2_pid}" ] && [ "${#listener_pids[@]}" -eq 1 ]; then
+                listener_pid="${listener_pids[0]}"
+                if [ -r "/proc/${listener_pid}/cmdline" ] && [ -r "/proc/${listener_pid}/cwd" ]; then
+                  listener_cmdline="$(tr '\0' ' ' </proc/${listener_pid}/cmdline)"
+                  listener_cwd="$(readlink -f "/proc/${listener_pid}/cwd")"
+                  if [ "${listener_pid}" = "${pm2_pid}" ] && [ "${listener_cwd}" = "${expected_cwd}" ] && printf '%s' "${listener_cmdline}" | grep -Fq -- "${expected_script}"; then
+                    return 0
+                  fi
+                fi
+              fi
+              sleep 1
+            done
+
+            echo "Gateway listener did not settle to the PM2-managed process on port ${NLI_GATEWAY_PORT}"
+            echo "Expected script: ${expected_script}"
+            echo "Expected cwd: ${expected_cwd}"
+            echo "PM2 PID: ${pm2_pid:-unset}"
+            describe_nli_listeners
+            return 1
+          }
+
           wait_for_nli_listener_identity() {
             local attempt listener_pid listener_cmdline listener_cwd expected_script expected_cwd
             expected_script="${APP_DIR}/tools/nli-gateway.mjs"
             expected_cwd="${APP_DIR}"
             for attempt in 1 2 3 4 5 6 7 8 9 10; do
-              listener_pid="$(ss -ltnp "sport = :${NLI_GATEWAY_PORT}" | awk 'NR > 1 { if (match($0, /pid=([0-9]+)/, m)) { print m[1]; exit } }')"
+              listener_pid="$(nli_listener_pids | head -n 1)"
               if [ -n "${listener_pid}" ] && [ -r "/proc/${listener_pid}/cmdline" ] && [ -r "/proc/${listener_pid}/cwd" ]; then
                 listener_cmdline="$(tr '\0' ' ' </proc/${listener_pid}/cmdline)"
                 listener_cwd="$(readlink -f "/proc/${listener_pid}/cwd")"
@@ -297,11 +537,13 @@ jobs:
             if pm2 describe "${PROCESS_NAME}" >/dev/null 2>&1; then
               pm2 delete "${PROCESS_NAME}"
             fi
-            pm2 start tools/nli-gateway.mjs --name "${PROCESS_NAME}" --cwd "${APP_DIR}" --update-env
+            stop_stale_nli_listeners
+            pm2 start "${APP_DIR}/tools/nli-gateway.mjs" --name "${PROCESS_NAME}" --cwd "${APP_DIR}" --update-env
             pm2 save
-            wait_for_nli_listener_identity
+            wait_for_pm2_nli_listener_identity
           else
             systemctl --user restart "${PROCESS_NAME}.service"
+            wait_for_nli_listener_identity
           fi
           REMOTE
 
