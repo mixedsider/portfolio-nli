@@ -140,8 +140,31 @@ jobs:
             -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile=~/.ssh/nli_gateway_known_hosts \
             "${NLI_GATEWAY_USER}@${NLI_GATEWAY_HOST}" \
-            "APP_DIR='${NLI_GATEWAY_APP_DIR}' PROCESS_NAME='${NLI_GATEWAY_PROCESS}' DEPLOY_SHA='${{ github.sha }}' bash -s" <<'REMOTE'
+            "APP_DIR='${NLI_GATEWAY_APP_DIR}' PROCESS_NAME='${NLI_GATEWAY_PROCESS}' NLI_GATEWAY_PORT='${NLI_GATEWAY_PORT}' DEPLOY_SHA='${{ github.sha }}' bash -s" <<'REMOTE'
           set -euo pipefail
+          wait_for_pm2_listener_match() {
+            local attempt pm2_pid listener_pid
+            for attempt in 1 2 3 4 5 6 7 8 9 10; do
+              pm2_pid="$(pm2 jlist | node -e '
+                let raw = "";
+                process.stdin.on("data", (chunk) => raw += chunk);
+                process.stdin.on("end", () => {
+                  const processName = process.env.PROCESS_NAME;
+                  const p = JSON.parse(raw).find((item) => item.name === processName);
+                  if (p?.pid) console.log(p.pid);
+                });
+              ')"
+              listener_pid="$(ss -ltnp "sport = :${NLI_GATEWAY_PORT}" | awk 'NR > 1 { if (match($0, /pid=([0-9]+)/, m)) { print m[1]; exit } }')"
+              if [ -n "${pm2_pid}" ] && [ -n "${listener_pid}" ] && [ "${pm2_pid}" = "${listener_pid}" ]; then
+                return 0
+              fi
+              sleep 1
+            done
+            echo "PM2 process PID and listener PID did not match on port ${NLI_GATEWAY_PORT}"
+            echo "PM2 PID: ${pm2_pid:-unset}"
+            echo "Listener PID: ${listener_pid:-unset}"
+            return 1
+          }
 
           APP_DIR="${APP_DIR/#\~/$HOME}"
           cd "${APP_DIR}"
@@ -166,6 +189,7 @@ jobs:
               pm2 start tools/nli-gateway.mjs --name "${PROCESS_NAME}" --update-env
             fi
             pm2 save
+            wait_for_pm2_listener_match
           elif command -v systemctl >/dev/null 2>&1 && systemctl --user list-unit-files | grep -q "^${PROCESS_NAME}.service"; then
             systemctl --user restart "${PROCESS_NAME}.service"
           else
@@ -218,14 +242,38 @@ jobs:
             -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile=~/.ssh/nli_gateway_known_hosts \
             "${NLI_GATEWAY_USER}@${NLI_GATEWAY_HOST}" \
-            "APP_DIR='${NLI_GATEWAY_APP_DIR}' PROCESS_NAME='${NLI_GATEWAY_PROCESS}' PREVIOUS_SHA='${PREVIOUS_SHA}' bash -s" <<'REMOTE'
+            "APP_DIR='${NLI_GATEWAY_APP_DIR}' PROCESS_NAME='${NLI_GATEWAY_PROCESS}' NLI_GATEWAY_PORT='${NLI_GATEWAY_PORT}' PREVIOUS_SHA='${PREVIOUS_SHA}' bash -s" <<'REMOTE'
           set -euo pipefail
+          wait_for_pm2_listener_match() {
+            local attempt pm2_pid listener_pid
+            for attempt in 1 2 3 4 5 6 7 8 9 10; do
+              pm2_pid="$(pm2 jlist | node -e '
+                let raw = "";
+                process.stdin.on("data", (chunk) => raw += chunk);
+                process.stdin.on("end", () => {
+                  const processName = process.env.PROCESS_NAME;
+                  const p = JSON.parse(raw).find((item) => item.name === processName);
+                  if (p?.pid) console.log(p.pid);
+                });
+              ')"
+              listener_pid="$(ss -ltnp "sport = :${NLI_GATEWAY_PORT}" | awk 'NR > 1 { if (match($0, /pid=([0-9]+)/, m)) { print m[1]; exit } }')"
+              if [ -n "${pm2_pid}" ] && [ -n "${listener_pid}" ] && [ "${pm2_pid}" = "${listener_pid}" ]; then
+                return 0
+              fi
+              sleep 1
+            done
+            echo "PM2 process PID and listener PID did not match on port ${NLI_GATEWAY_PORT}"
+            echo "PM2 PID: ${pm2_pid:-unset}"
+            echo "Listener PID: ${listener_pid:-unset}"
+            return 1
+          }
           APP_DIR="${APP_DIR/#\~/$HOME}"
           cd "${APP_DIR}"
           git checkout --detach "${PREVIOUS_SHA}"
           if command -v pm2 >/dev/null 2>&1; then
             pm2 restart "${PROCESS_NAME}" --update-env
             pm2 save
+            wait_for_pm2_listener_match
           else
             systemctl --user restart "${PROCESS_NAME}.service"
           fi
