@@ -37,6 +37,8 @@ jobs:
           node --check data/portfolio.js
           node --check tools/static-server.mjs
           node --check tools/static-server.test.mjs
+          node --check tools/test-server.mjs
+          node --check tools/test-server.test.mjs
           node --check tools/nli-gateway.mjs
           node --check tools/nli-test.mjs
           for file in tools/nli/*.mjs; do node --check "$file"; done
@@ -52,7 +54,7 @@ jobs:
           node tools/nli-test.mjs --local --cases nli/live-test-cases.json --min-pass-rate 1
           node tools/nli-test.mjs --local --cases nli/live-test-cases.json --kind success --min-pass-rate 1
           node tools/nli-test.mjs --local --cases nli/adversarial-test-cases.json --min-pass-rate 1
-          node --test tools/nli-gateway.test.mjs
+          node --test tools/nli-gateway.test.mjs tools/test-server.test.mjs
           node --test tools/static-server.test.mjs
 
       - name: Smoke test static server

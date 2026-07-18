@@ -8,6 +8,7 @@ import { isOriginAllowed } from "./nli/http.mjs";
 import { createModelClient } from "./nli/model-client.mjs";
 import { resolveLocally } from "./nli/router.mjs";
 import { createNliServer, loadNliContext, resolveNliRequest, validateNliResponse } from "./nli-gateway.mjs";
+import { listenForFetch } from "./test-server.mjs";
 
 const context = await loadNliContext();
 const openServers = [];
@@ -365,15 +366,10 @@ function createTestConfig(overrides = {}) {
   };
 }
 
-function listen(server) {
+async function listen(server) {
+  const baseUrl = await listenForFetch(server);
   openServers.push(server);
-  return new Promise((resolvePromise, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      resolvePromise(`http://127.0.0.1:${address.port}`);
-    });
-  });
+  return baseUrl;
 }
 
 function closeServer(server) {

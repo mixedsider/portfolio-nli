@@ -5,6 +5,7 @@ import { basename, dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { createStaticServer, resolveStaticPath } from "./static-server.mjs";
+import { listenForFetch } from "./test-server.mjs";
 
 let root;
 let sibling;
@@ -22,7 +23,7 @@ before(async () => {
   ]);
 
   server = createStaticServer({ root });
-  baseUrl = await listen(server);
+  baseUrl = await listenForFetch(server);
 });
 
 after(async () => {
@@ -57,16 +58,6 @@ test("rejects methods other than GET and HEAD", async () => {
   assert.equal(response.status, 405);
   assert.equal(response.headers.get("allow"), "GET, HEAD");
 });
-
-function listen(serverToListen) {
-  return new Promise((resolvePromise, reject) => {
-    serverToListen.once("error", reject);
-    serverToListen.listen(0, "127.0.0.1", () => {
-      const address = serverToListen.address();
-      resolvePromise(`http://127.0.0.1:${address.port}`);
-    });
-  });
-}
 
 function closeServer(serverToClose) {
   if (!serverToClose) return Promise.resolve();
