@@ -16,31 +16,34 @@ import {
 } from "./responses.mjs";
 import { findSkillExperienceMatch } from "./skills.mjs";
 import { compact, hasAny, normalize } from "./text.mjs";
+import { isPromptInjectionAttempt } from "./prompt-safety.mjs";
+import {
+  isDependentFollowUp,
+  isDirectNavigationRequest,
+  shouldUseGroundedSynthesis
+} from "./model-routing-policy.mjs";
+import {
+  achievementWords,
+  assistantIdentityWords,
+  blockedGenerationWords,
+  capabilityWords,
+  contactWords,
+  currentProjectWords,
+  defineWords,
+  explicitNavigationWords,
+  navigateWords,
+  portfolioSummaryWords,
+  profileWords,
+  projectListWords,
+  projectSummaryWords,
+  scopeWords,
+  skillExperienceWords,
+  summarizeWords,
+  tocWords
+} from "./routing-vocabulary.mjs";
 
-const navigateWords = ["보여", "이동", "열어", "가줘", "보고", "찾아", "섹션", "어디"];
-const defineWords = ["뭐야", "뜻", "설명", "의미", "알려줘", "무슨"];
-const summarizeWords = ["요약", "정리", "뭘 했", "무슨 프로젝트", "간단히"];
-const portfolioSummaryWords = ["포트폴리오 전체", "포트폴리오 요약", "포트폴리오를 요약", "포트폴리오 한눈에"];
-const projectSummaryWords = ["요약", "정리", "뭐야", "무슨", "어떤", "설명", "소개"];
-const currentProjectWords = ["지금 보고 있는", "현재 보고 있는", "보고 있는 프로젝트", "이 프로젝트", "현재 프로젝트"];
-const projectListWords = ["프로젝트 목록", "프로젝트 리스트", "어떤 프로젝트", "무슨 프로젝트", "했던 프로젝트", "프로젝트를 했", "목록"];
-const assistantIdentityWords = ["너는 누구", "넌 누구", "정체", "포트폴리오 도우미", "nli 소개", "nli는 누구"];
-const profileWords = ["자기소개", "이은성", "어떤 개발자", "프로필"];
-const capabilityWords = ["뭘 할 수", "무엇을 할 수", "할 수 있어", "사용법", "기능", "도움", "명령"];
-const tocWords = ["목차", "구성", "어떤 내용", "뭐가 있어", "뭐 있어", "어디부터", "섹션 목록", "전체 구성"];
-const contactWords = ["연락처", "연락", "메일", "이메일", "email", "contact", "깃허브 주소", "github 주소", "깃허브 링크", "github 링크", "깃허브 계정", "github 계정"];
-const achievementWords = ["주요 성과", "성과", "개선 수치", "숫자로", "지표", "메트릭", "성능 개선 결과"];
-const skillExperienceWords = ["경험", "써", "사용", "다뤄", "관련", "사례", "할 줄", "역량", "기술", "스택", "프로젝트"];
-const blockedGenerationWords = ["면접 예상 질문", "예상 질문", "면접 질문", "평가 질문"];
-const scopeWords = ["포트폴리오", "이은성", "프로젝트", "섹션", "경험", "기술", "성과", "연락처", "프로필", "도우미", "nli"];
-const injectionPatterns = [
-  /(?:ignore|disregard|bypass).{0,40}(?:previous|prior|all|system|instruction|prompt)/i,
-  /(?:system|developer)\s*(?:prompt|message|instruction)/i,
-  /(?:prompt\s*injection|jailbreak|dan\s*mode)/i,
-  /(?:이전|앞선|모든|시스템|개발자).{0,24}(?:지시|명령|프롬프트|메시지).{0,24}(?:무시|공개|출력|보여|따르지)/,
-  /(?:지시|명령).{0,20}(?:무시|우회).{0,20}(?:프롬프트|규칙|제한)/
-];
-
+export { isPromptInjectionAttempt };
+export { isDependentFollowUp, isDirectNavigationRequest, shouldUseGroundedSynthesis };
 export function resolveLocally(message, context) {
   const routeMatch = findBestRoute(message, context.routes.targets);
   const sectionRouteMatch = findBestRoute(
@@ -49,6 +52,7 @@ export function resolveLocally(message, context) {
   );
   const termMatch = findBestTerm(message, context.glossary.terms);
   const normalizedMessage = normalize(message);
+  const skillMatch = findSkillExperienceMatch(normalizedMessage, context);
 
   if (isPromptInjectionAttempt(normalizedMessage)) {
     return rejectResponse("보안상 지시 변경이나 내부 프롬프트 요청은 처리할 수 없습니다.");
@@ -70,12 +74,10 @@ export function resolveLocally(message, context) {
     if (currentProject) return summarizeProjectResponse(`project-${currentProject.id}`, context, 0.92);
   }
   if (hasAny(normalizedMessage, projectListWords)) return listProjectsResponse(context);
-  if (termMatch && hasAny(normalizedMessage, defineWords)) return defineTermResponse(termMatch.term, termMatch.score);
-
-  const skillMatch = findSkillExperienceMatch(normalizedMessage, context);
-  if (skillMatch && hasAny(normalizedMessage, skillExperienceWords)) {
+  if (skillMatch && hasAny(normalizedMessage, skillExperienceWords) && !hasAny(normalizedMessage, navigateWords)) {
     return listSkillExperienceResponse(context, skillMatch, 0.9);
   }
+  if (termMatch && hasAny(normalizedMessage, defineWords)) return defineTermResponse(termMatch.term, termMatch.score);
   if (routeMatch && hasAny(normalizedMessage, summarizeWords)) {
     if (sectionRouteMatch && sectionRouteMatch.score >= 0.72) {
       return summarizeSectionResponse(sectionRouteMatch.target.id, context, sectionRouteMatch.score);
@@ -116,7 +118,7 @@ export function isModelEligible(message, context, localResult) {
   );
 }
 
-export function isModelIntentGrounded(message, modelResponse, context) {
+export function isModelIntentGrounded(message, modelResponse, context, options = {}) {
   const normalizedMessage = normalize(message);
   if (isPromptInjectionAttempt(normalizedMessage)) return false;
 
@@ -160,6 +162,8 @@ export function isModelIntentGrounded(message, modelResponse, context) {
       );
     case "list_capabilities":
       return hasAny(normalizedMessage, capabilityWords) || hasAny(normalizedMessage, assistantIdentityWords);
+    case "answer_portfolio":
+      return Boolean(options.allowPortfolioAnswer && Array.isArray(options.candidateSources) && options.candidateSources.length > 0);
     case "reject_out_of_scope":
       return true;
     default:
@@ -209,11 +213,7 @@ function keywordScore(normalizedMessage, keyword) {
 }
 
 function hasExplicitNavigation(normalizedMessage) {
-  return hasAny(normalizedMessage, ["이동", "페이지", "영역", "섹션으로", "위치"]);
-}
-
-function isPromptInjectionAttempt(normalizedMessage) {
-  return injectionPatterns.some((pattern) => pattern.test(normalizedMessage));
+  return hasAny(normalizedMessage, explicitNavigationWords);
 }
 
 function isProjectTarget(target) {

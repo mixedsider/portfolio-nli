@@ -1,10 +1,10 @@
-import { buildContextBlock } from "./context.mjs";
+import { buildGroundedRequestBlock } from "./context.mjs";
 
 export function createModelClient(config) {
   const limiter = new ConcurrencyLimiter(config.model.maxConcurrentRequests);
 
-  return async function askModel(message, context) {
-    return limiter.run(() => requestModel(message, context, config));
+  return async function askModel(message, context, groundedRequest = {}) {
+    return limiter.run(() => requestModel(message, context, config, groundedRequest));
   };
 }
 
@@ -18,7 +18,7 @@ export function buildLmStudioChatCompletionsUrl(baseUrl) {
   return url.toString();
 }
 
-async function requestModel(message, context, config) {
+async function requestModel(message, context, config, groundedRequest) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.model.timeoutMs);
   const payload = {
@@ -27,7 +27,7 @@ async function requestModel(message, context, config) {
     max_tokens: config.model.maxTokens,
     messages: [
       { role: "system", content: context.prompt },
-      { role: "system", content: buildContextBlock(context) },
+      { role: "system", content: buildGroundedRequestBlock(groundedRequest) },
       { role: "user", content: message }
     ]
   };
@@ -89,9 +89,7 @@ function parseJsonObject(content) {
   const trimmed = content.trim();
   if (!trimmed) return null;
 
-  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  const candidate = fenced ? fenced[1] : trimmed;
-  const parsed = JSON.parse(candidate);
+  const parsed = JSON.parse(trimmed);
   return isPlainObject(parsed) ? parsed : null;
 }
 

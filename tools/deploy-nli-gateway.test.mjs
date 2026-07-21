@@ -66,6 +66,22 @@ test("rollback reconciles a stale Gateway listener before restoring the previous
   assert.ok(pm2Block.indexOf("wait_for_nli_listener_identity") > pm2Block.indexOf("pm2 start"));
 });
 
+test("deployment preflight covers grounded fixtures and maintained tests without a browser dependency", () => {
+  const preflight = extractPreflightScript(workflow);
+
+  assert.match(preflight, /for file in app\.js nli-history\.js nli-widget\.js data\/portfolio\.js tools\/\*\.mjs/);
+  assert.match(preflight, /node --check "\$file"/);
+  assert.match(preflight, /grounded-category-test-cases\.json/);
+  assert.match(
+    preflight,
+    /node tools\/nli-test\.mjs --fake --cases nli\/grounded-category-test-cases\.json --min-pass-rate 1/
+  );
+  assert.match(preflight, /node --test tools\/\*\.test\.mjs/);
+  assert.match(preflight, /node --test tools\/nli\/\*\.test\.mjs/);
+  assert.match(preflight, /node --test tools\/nli-widget\.browser-test\.mjs/);
+  assert.doesNotMatch(preflight, /NLI_WIDGET_BROWSER_MODULE|playwright/i);
+});
+
 test(
   "deployment lifecycle terminates an orphaned listener with the expected script and cwd",
   { skip: process.platform !== "linux" },
@@ -137,6 +153,17 @@ function extractDeploymentRemoteScript(source) {
   assert.ok(scriptStart >= 0, "deployment remote script must exist");
   assert.ok(scriptEnd >= 0, "deployment remote script must terminate");
   return source.slice(scriptStart, scriptEnd).replace(/^          /gm, "");
+}
+
+function extractPreflightScript(source) {
+  const stepStart = source.indexOf("      - name: Verify Gateway source before deployment");
+  const scriptStart = source.indexOf("        run: |", stepStart);
+  const nextStep = source.indexOf("\n      - name:", scriptStart);
+
+  assert.ok(stepStart >= 0, "preflight job must exist");
+  assert.ok(scriptStart >= 0, "preflight script must exist");
+  assert.ok(nextStep > scriptStart, "preflight script must end before the next step");
+  return source.slice(scriptStart, nextStep);
 }
 
 function extractLifecycleHelpers(script) {

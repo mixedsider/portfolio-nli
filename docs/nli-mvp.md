@@ -166,7 +166,33 @@ NLI 도우미 자기소개:
 }
 ```
 
+## 근거 기반 답변과 대화 문맥
+
+`answer_portfolio`는 한 가지 intent에 맞춘 고정 문구가 아니라, 포트폴리오 근거 안에서 한국어로 자유롭게 서술하는 응답입니다. 모델에는 Gateway가 검색한 후보 근거와 해당 ID만 전달됩니다. 모델의 `sourceIds`는 후보 집합, 중복, 개수 제한을 통과해야 하며, 브라우저로 보내는 `sources`의 label은 Gateway가 포트폴리오 target에서 다시 만듭니다.
+
+```json
+{
+  "intent": "answer_portfolio",
+  "confidence": 0.9,
+  "answer": "DB 튜닝과 메인 홈페이지 캐싱, N+1 쿼리 개선 사례를 비교해 설명합니다.",
+  "sources": [
+    { "id": "project-makertion-db", "label": "DB 성능 최적화" }
+  ]
+}
+```
+
+성능, AWS, 관측성, 동시성, Redis/Valkey, CI/CD, 비용, AI/LLM, 데이터 모델링 같은 범주는 별도의 고정 intent로 분기하지 않습니다. 검색 점수와 현재 근거에 따라 후보를 자동 선택하고, fixture는 source ID 및 답변의 포함/제외 문구로 결과를 검증합니다. 직접 이동과 용어 설명은 기존의 결정적 로컬 해석을 우선합니다.
+
+브라우저 요청은 `{ message, currentTargetId, history }`이며, `history`에는 완료된 최근 user/assistant 메시지 최대 6개만 `{ role, text }`로 포함됩니다. Gateway는 사용자별 대화를 저장하지 않습니다. 형식이 잘못된 history, 너무 큰 history, prompt injection은 HTTP 경계에서 거절됩니다. 현재 위치와 유효한 최근 대화는 후속 질문의 근거 검색에만 사용합니다.
+
+UI는 `answer_portfolio.sources`를 근거 버튼으로 렌더링하고 클릭할 때만 해당 섹션으로 이동합니다. 답변의 렌더링 자체는 자동 스크롤하지 않습니다. 모든 답변과 label은 text API로 렌더링하므로 HTML로 실행되지 않습니다.
+
+모델 timeout, malformed JSON, 후보 밖 source ID, 검증되지 않은 intent는 로컬 fallback이 있으면 그 결과로, 없으면 canonical `reject_out_of_scope` 응답으로 바꿉니다. 모델의 원본 응답은 이 검증을 통과하지 않으면 브라우저에 전달되지 않습니다.
+
 ## 검증 원칙
+
+- `nli/grounded-category-test-cases.json`은 fake model로 성능, AWS, 관측성, 동시성, Redis/Valkey, CI/CD, 비용, AI/LLM, 데이터 모델링, 전체 소개와 문맥 후속 질문을 검증합니다. source ID, 포함/제외 문구, timeout·잘못된 source ID·잘못된 history fallback도 포함합니다.
+- `node --test tools/*.test.mjs`와 `node --test tools/nli/*.test.mjs`는 Gateway HTTP 경계와 모델 계약, retrieval, history, evidence ranking, 배포 lifecycle, 정적 서버를 함께 실행합니다. 배포 preflight는 이어서 UI browser regression harness를 별도로 실행합니다. Chrome-capable Playwright module이 주입되지 않은 기본 환경에서는 browser regression이 명시적으로 skip되며, 이를 실제 Chrome 검증으로 간주하지 않습니다.
 
 - 로컬 라우팅 fixture는 100% 통과해야 합니다.
 - fake LM Studio 기반 `node --test tools/nli-gateway.test.mjs`는 모델 출력 반사, 모델 경로의 범위 혼동, HTTP 제한을 결정적으로 검증합니다.

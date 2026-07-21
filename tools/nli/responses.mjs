@@ -77,6 +77,20 @@ export function listCapabilitiesResponse(confidence = 0.96) {
   };
 }
 
+export function answerPortfolioResponse(answer, sourceIds, context, confidence = 0.8) {
+  const sources = sourceIds.map((sourceId) => {
+    const target = context.targetById.get(sourceId);
+    return { id: target.id, label: target.label };
+  });
+
+  return {
+    intent: "answer_portfolio",
+    confidence: clampConfidence(confidence),
+    answer,
+    sources
+  };
+}
+
 export function listProjectsResponse(context, confidence = 0.93) {
   const answer = context.portfolio.projects
     .map((project) => {

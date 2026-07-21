@@ -133,6 +133,39 @@ node --check tools/nli-test.mjs
 node --test tools/nli-gateway.test.mjs
 ```
 
+## 근거 기반 포트폴리오 도우미
+
+`answer_portfolio`는 포트폴리오 전체, 자기소개, 프로젝트 비교와 카테고리 질문에 사용하는 근거 기반 응답입니다. Gateway가 포트폴리오 데이터에서 후보 근거를 찾고, 모델은 그 후보 안의 ID만 선택할 수 있습니다. 최종 `sources`의 ID와 label은 Gateway가 다시 조립하므로 모델이 만든 출처 표기를 신뢰하지 않습니다.
+
+- 예시 범주는 성능 최적화(DB 튜닝, 메인 홈페이지 캐싱, N+1, HTTPS), AWS, 관측성, 동시성, Redis/Valkey, CI/CD, 비용, AI/LLM, 데이터 모델링입니다. 범주 이름으로 고정 라우팅하지 않고, 질문과 현재 근거에 따라 후보를 자동으로 고릅니다.
+- 직접 이동과 용어 설명은 결정적 로컬 경로를 우선 사용합니다. 자유 서술이 필요한 질문만 근거 후보와 함께 모델에 전달합니다.
+- 브라우저는 현재 위치와 완료된 최근 대화 최대 6개를 `{ role, text }` 형태로만 보냅니다. 대화는 Gateway에 저장되지 않으며, 형식이 잘못됐거나 지시 탈취가 포함된 history는 모델에 전달하기 전에 거절됩니다.
+- 근거 버튼은 해당 섹션으로만 이동합니다. 답변을 표시할 때는 자동 스크롤하지 않고, 이동 intent 또는 요약 intent의 대상만 자동 이동합니다. 답변 텍스트와 근거 label은 HTML로 해석하지 않습니다.
+- 모델 timeout, 잘못된 JSON, 허용되지 않은 source ID는 검증된 로컬 응답이 있으면 그 응답으로, 없으면 canonical 거절 응답으로 처리합니다. 원본 모델 문장은 이 경계를 우회해 브라우저로 전달되지 않습니다.
+
+## 배포 전 NLI 검증
+
+다음 명령은 LAN의 LM Studio나 배포 Gateway를 호출하지 않습니다. category fixture는 요청별 fake model 응답만 사용하며, source ID와 포함/제외 문구를 함께 확인합니다.
+
+```bash
+for file in app.js nli-history.js nli-widget.js data/portfolio.js tools/*.mjs; do node --check "$file"; done
+for file in tools/nli/*.mjs; do node --check "$file"; done
+node -e "for (const f of ['nli/routes.json','nli/glossary.json','nli/intents.json','nli/response.schema.json','nli/model-decision.schema.json','nli/test-cases.json','nli/live-test-cases.json','nli/adversarial-test-cases.json','nli/grounded-category-test-cases.json']) JSON.parse(require('fs').readFileSync(f, 'utf8')); console.log('json ok')"
+node tools/nli-test.mjs
+node tools/nli-test.mjs --local --cases nli/live-test-cases.json --min-pass-rate 1
+node tools/nli-test.mjs --fake --cases nli/grounded-category-test-cases.json --min-pass-rate 1
+node tools/nli-test.mjs --local --cases nli/adversarial-test-cases.json --min-pass-rate 1
+node --test tools/*.test.mjs
+node --test tools/nli/*.test.mjs
+node --test tools/nli-widget.browser-test.mjs
+```
+
+배포 preflight는 root와 `tools/nli/`의 test glob 실행 뒤 `tools/nli-widget.browser-test.mjs`를 별도로 실행합니다. 기본 환경에서는 Chrome 또는 Playwright 의존성을 설치하지 않으므로 해당 browser regression은 명시적으로 skip됩니다. Chrome-capable Playwright module을 외부 runner가 주입한 경우에만 아래처럼 실제 브라우저 회귀를 실행합니다.
+
+```bash
+NLI_WIDGET_BROWSER_MODULE=/absolute/path/to/playwright-module.mjs node tools/nli-widget.browser-test.mjs
+```
+
 ## 문서
 
 - [NLI MVP 설계](docs/nli-mvp.md)

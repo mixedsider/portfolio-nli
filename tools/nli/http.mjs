@@ -1,3 +1,9 @@
+import { isPromptInjectionAttempt } from "./router.mjs";
+
+export const MAX_HISTORY_ITEMS = 6;
+export const MAX_HISTORY_ENTRY_BYTES = 480;
+export const MAX_HISTORY_BYTES = 2_400;
+
 export class HttpRequestError extends Error {
   constructor(statusCode, publicMessage) {
     super(publicMessage);
@@ -72,7 +78,11 @@ export function readNliRequest(body, maxMessageLength) {
     throw new HttpRequestError(400, "현재 위치 정보가 올바르지 않습니다.");
   }
 
-  return { message: body.message, currentTargetId: body.currentTargetId || null };
+  return {
+    message: body.message,
+    currentTargetId: body.currentTargetId || null,
+    history: readNliHistory(body.history)
+  };
 }
 
 export function isOriginAllowed(request, config) {
@@ -135,4 +145,48 @@ function evictBuckets(buckets, now, maxBuckets) {
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+export function readNliHistory(value) {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new HttpRequestError(400, "Invalid conversation history.");
+  if (value.length > MAX_HISTORY_ITEMS) {
+    throw new HttpRequestError(413, "Conversation history has too many entries.");
+  }
+
+  const history = [];
+  let totalBytes = 0;
+  for (const entry of value) {
+    if (!isPlainObject(entry) || !hasExactHistoryKeys(entry) || !isHistoryRole(entry.role)) {
+      throw new HttpRequestError(400, "Invalid conversation history entry.");
+    }
+    if (typeof entry.text !== "string" || !entry.text.trim()) {
+      throw new HttpRequestError(400, "Invalid conversation history entry.");
+    }
+    if (isPromptInjectionAttempt(entry.text)) {
+      throw new HttpRequestError(400, "Conversation history contains an unsupported instruction.");
+    }
+
+    const text = entry.text.trim();
+    const entryBytes = Buffer.byteLength(text, "utf8");
+    if (entryBytes > MAX_HISTORY_ENTRY_BYTES) {
+      throw new HttpRequestError(413, "Conversation history entry is too large.");
+    }
+    totalBytes += entryBytes;
+    if (totalBytes > MAX_HISTORY_BYTES) {
+      throw new HttpRequestError(413, "Conversation history is too large.");
+    }
+    history.push({ role: entry.role, text });
+  }
+
+  return history;
+}
+
+function hasExactHistoryKeys(entry) {
+  const keys = Object.keys(entry);
+  return keys.length === 2 && keys.includes("role") && keys.includes("text");
+}
+
+function isHistoryRole(value) {
+  return value === "user" || value === "assistant";
 }

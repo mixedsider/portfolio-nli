@@ -9,7 +9,10 @@ const testCases = selectTestCases(await loadTestCases(options.casesPath), option
 const context = await loadNliContext();
 const endpoint = options.mode === "live" ? buildNliEndpoint(options.baseUrl) : null;
 const minimumPassRate = resolveMinimumPassRate(options);
-const caseCounts = countCasesByKind(testCases);
+const caseCounts = {
+  success: testCases.filter((testCase) => testCase.kind === "success").length,
+  failure: testCases.filter((testCase) => testCase.kind === "failure").length
+};
 
 console.log(
   `NLI ${options.mode} tests: ${testCases.length} cases ` +
@@ -44,14 +47,22 @@ if (passRate < minimumPassRate) {
 
 async function runTestCase(testCase, nliContext, runOptions, liveEndpoint) {
   try {
+    let modelCalls = 0;
+    const modelClient = async () => {
+      modelCalls += 1;
+      if (testCase.model?.behavior === "timeout") throw new Error("fixture model timeout");
+      return testCase.model?.response || null;
+    };
     const result =
       runOptions.mode === "live"
         ? await requestLiveNli(testCase, liveEndpoint)
         : await resolveNliRequest(testCase.message, nliContext, {
-            useModel: false,
-            currentTargetId: testCase.currentTargetId
+            useModel: runOptions.mode === "fake" ? undefined : false,
+            modelClient,
+            currentTargetId: testCase.currentTargetId,
+            history: testCase.history
           });
-    return { result, errors: validateResult(result, testCase, nliContext) };
+    return { result, errors: validateResult(result, testCase, nliContext, modelCalls) };
   } catch (error) {
     return { result: null, errors: [`request failed: ${formatError(error)}`] };
   }
@@ -65,9 +76,10 @@ async function requestLiveNli(testCase, endpointUrl) {
     const response = await fetch(endpointUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        message: testCase.message,
-        currentTargetId: testCase.currentTargetId
+        body: JSON.stringify({
+          message: testCase.message,
+          currentTargetId: testCase.currentTargetId,
+          history: testCase.history
       }),
       signal: controller.signal
     });
@@ -79,9 +91,12 @@ async function requestLiveNli(testCase, endpointUrl) {
   }
 }
 
-function validateResult(result, testCase, nliContext) {
-  const validation = validateNliResponse(result, nliContext);
+function validateResult(result, testCase, nliContext, modelCalls) {
   const errors = [];
+  const sourceIds = Array.isArray(result?.sources) ? result.sources.map((source) => source.id) : [];
+  const validation = validateNliResponse(result, nliContext, {
+    candidateSources: result?.intent === "answer_portfolio" ? sourceIds : undefined
+  });
 
   if (!validation.ok) errors.push(...validation.errors);
   if (!result || typeof result !== "object" || Array.isArray(result)) return errors;
@@ -89,9 +104,13 @@ function validateResult(result, testCase, nliContext) {
   assertEqual("intent", result.intent, testCase.expect.intent, errors);
   assertEqual("targetId", result.targetId, testCase.expect.targetId, errors);
   assertEqual("term", result.term, testCase.expect.term, errors);
+  assertEqual("modelCalls", modelCalls, testCase.expect.modelCalls, errors);
+  if (testCase.expect.sourceIds !== undefined && JSON.stringify(sourceIds) !== JSON.stringify(testCase.expect.sourceIds)) {
+    errors.push(`sourceIds expected "${testCase.expect.sourceIds}", got "${sourceIds}"`);
+  }
 
-  if (testCase.expect.answerIncludes && !String(result.answer || "").includes(testCase.expect.answerIncludes)) {
-    errors.push(`answer does not include "${testCase.expect.answerIncludes}"`);
+  for (const requiredText of readExpectedList(testCase.expect.answerIncludes)) {
+    if (!String(result.answer || "").includes(requiredText)) errors.push(`answer does not include "${requiredText}"`);
   }
 
   for (const excludedText of readExpectedList(testCase.expect.answerExcludes)) {
@@ -122,14 +141,11 @@ function validateResult(result, testCase, nliContext) {
   return errors;
 }
 
-function readExpectedList(value) {
-  if (value === undefined) return [];
-  return Array.isArray(value) ? value : [value];
-}
+function readExpectedList(value) { return value === undefined ? [] : Array.isArray(value) ? value : [value]; }
 
 function parseOptions(args) {
   const parsed = {
-    mode: process.env.NLI_TEST_MODE === "live" ? "live" : "local",
+    mode: ["live", "fake"].includes(process.env.NLI_TEST_MODE) ? process.env.NLI_TEST_MODE : "local",
     baseUrl: process.env.NLI_TEST_BASE_URL || "",
     minimumPassRate: parsePassRate(process.env.NLI_TEST_MIN_PASS_RATE),
     casesPath: process.env.NLI_TEST_CASES || null,
@@ -144,6 +160,8 @@ function parseOptions(args) {
       parsed.mode = "live";
     } else if (arg === "--local") {
       parsed.mode = "local";
+    } else if (arg === "--fake") {
+      parsed.mode = "fake";
     } else if (arg === "--base-url") {
       parsed.baseUrl = readOptionValue(args, index, arg);
       index += 1;
@@ -207,7 +225,6 @@ function resolveCasePath(casesPath) {
 
 function selectTestCases(testCases, caseKind) {
   if (!caseKind) return testCases;
-
   const selected = testCases.filter((testCase) => testCase.kind === caseKind);
   if (selected.length === 0) throw new Error(`No ${caseKind} cases found in fixture`);
   return selected;
@@ -260,29 +277,15 @@ function buildNliEndpoint(baseUrl) {
   return url.toString();
 }
 
-function countCasesByKind(cases) {
-  return cases.reduce(
-    (counts, testCase) => {
-      if (testCase.kind === "success") counts.success += 1;
-      if (testCase.kind === "failure") counts.failure += 1;
-      return counts;
-    },
-    { success: 0, failure: 0 }
-  );
-}
-
 function assertEqual(label, actual, expected, errors) {
-  if (expected === undefined) return;
-  if (actual !== expected) errors.push(`${label} expected "${expected}", got "${actual}"`);
+  if (expected !== undefined && actual !== expected) errors.push(`${label} expected "${expected}", got "${actual}"`);
 }
 
 function formatResult(result) {
   return `${result.intent}${result.targetId ? `:${result.targetId}` : ""}${result.term ? `:${result.term}` : ""}`;
 }
 
-function formatRate(rate) {
-  return `${(rate * 100).toFixed(1)}%`;
-}
+function formatRate(rate) { return `${(rate * 100).toFixed(1)}%`; }
 
 function formatError(error) {
   return error instanceof Error ? error.message : String(error);

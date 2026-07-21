@@ -69,7 +69,10 @@ function sendText(response, statusCode, body, headers = {}) {
   response.end(body);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+const isDirectExecution =
+  typeof process !== "undefined" && process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isDirectExecution) {
   const root = resolve(process.cwd());
   const port = Number(process.env.PORT || 4173);
   const host = process.env.HOST || "127.0.0.1";

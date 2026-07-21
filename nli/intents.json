@@ -137,6 +137,16 @@
       ]
     },
     {
+      "name": "answer_portfolio",
+      "description": "Answer a portfolio question with grounded Korean prose and only gateway-provided candidate source IDs.",
+      "requiredSlots": ["answer", "sourceIds"],
+      "allowedSources": ["gateway-retrieved candidates"],
+      "examples": [
+        "CateQuest와 Bookking 경험을 바탕으로 성능 문제 해결 방식을 비교해줘",
+        "포트폴리오에서 동시성 제어 경험을 근거와 함께 설명해줘"
+      ]
+    },
+    {
       "name": "reject_out_of_scope",
       "description": "포트폴리오 이동, 요약, 목차, 연락처, 성과, 기술별 경험, 자기소개, 기능 안내, 등록된 용어 설명에 해당하지 않는 요청일 때 사용합니다.",
       "requiredSlots": [],

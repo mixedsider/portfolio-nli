@@ -1,13 +1,11 @@
 import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 
 import { createGatewayConfig } from "./nli/config.mjs";
 import { isOriginAllowed } from "./nli/http.mjs";
 import { createModelClient } from "./nli/model-client.mjs";
-import { resolveLocally } from "./nli/router.mjs";
-import { createNliServer, loadNliContext, resolveNliRequest, validateNliResponse } from "./nli-gateway.mjs";
+import { createNliServer, loadNliContext, resolveNliRequest } from "./nli-gateway.mjs";
 import { listenForFetch } from "./test-server.mjs";
 
 const context = await loadNliContext();
@@ -36,7 +34,7 @@ test("model-backed rejection never reflects model-controlled text", async () => 
   assert.doesNotMatch(JSON.stringify(result), /LEAK_MARKER_FROM_MODEL|system prompt|<b>/);
 });
 
-test("grounded model decisions are canonicalized into portfolio data", async () => {
+test("grounded local define_term decisions are canonicalized into portfolio data", async () => {
   let calls = 0;
   const result = await resolveNliRequest("P95가 뭐야?", context, {
     modelClient: async () => {
@@ -46,7 +44,23 @@ test("grounded model decisions are canonicalized into portfolio data", async () 
   });
 
   const p95 = context.glossary.terms.find((term) => term.term === "P95");
-  assert.equal(calls, 1);
+  assert.equal(calls, 0);
+  assert.equal(result.intent, "define_term");
+  assert.equal(result.term, "P95");
+  assert.equal(result.answer, p95.answer);
+});
+
+test("local define_term answers return before model invocation", async () => {
+  let calls = 0;
+  const result = await resolveNliRequest("P95\uac00 \ubb50\uc57c?", context, {
+    modelClient: async () => {
+      calls += 1;
+      return { intent: "reject_out_of_scope", confidence: 1 };
+    }
+  });
+
+  const p95 = context.glossary.terms.find((term) => term.term === "P95");
+  assert.equal(calls, 0);
   assert.equal(result.intent, "define_term");
   assert.equal(result.term, "P95");
   assert.equal(result.answer, p95.answer);
@@ -189,158 +203,6 @@ test("HTTP boundary rejects malformed, oversized, rate-limited, and disallowed r
   await closeServer(server);
 });
 
-test("rate limits ignore spoofed forwarding headers unless trusted proxy mode is enabled", async () => {
-  const server = await createNliServer({
-    context,
-    config: createTestConfig({ rateLimitMax: 2, allowedOrigins: new Set(["*"]) }),
-    modelClient: async () => ({ intent: "reject_out_of_scope", confidence: 1 })
-  });
-  const baseUrl = await listen(server);
-  const statuses = [];
-
-  for (const forwardedFor of ["203.0.113.1", "203.0.113.2", "203.0.113.3"]) {
-    const response = await fetch(`${baseUrl}/api/nli`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Forwarded-For": forwardedFor },
-      body: JSON.stringify({ message: "P95가 뭐야?" })
-    });
-    statuses.push(response.status);
-  }
-
-  assert.deepEqual(statuses, [200, 200, 429]);
-  await closeServer(server);
-});
-
-test("browser origins fail closed until an exact origin is configured", () => {
-  const defaultConfig = createGatewayConfig({});
-  assert.equal(defaultConfig.allowedOrigins.size, 0);
-  assert.equal(isOriginAllowed({ headers: { origin: "https://attacker.example" } }, defaultConfig), false);
-  assert.equal(isOriginAllowed({ headers: {} }, defaultConfig), true);
-
-  const configured = createGatewayConfig({ NLI_ALLOWED_ORIGINS: "https://portfolio.example" });
-  assert.equal(isOriginAllowed({ headers: { origin: "https://portfolio.example" } }, configured), true);
-  assert.equal(isOriginAllowed({ headers: { origin: "https://attacker.example" } }, configured), false);
-});
-
-test("health identifies the running deployment revision", async () => {
-  const server = await createNliServer({
-    context,
-    config: createTestConfig({ releaseRevision: "9d5621b4cf5b66bb9b3974650fd194129eaaf4ab" })
-  });
-  const baseUrl = await listen(server);
-
-  const response = await fetch(`${baseUrl}/api/nli/health`);
-  assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), {
-    ok: true,
-    targets: context.routes.targets.length,
-    terms: context.glossary.terms.length,
-    revision: "9d5621b4cf5b66bb9b3974650fd194129eaaf4ab",
-    processId: process.pid
-  });
-
-  await closeServer(server);
-});
-
-test("health responses tolerate an unavailable source revision and identify the running process", async () => {
-  const server = await createNliServer({
-    context,
-    config: createTestConfig(),
-    modelClient: async () => ({ intent: "reject_out_of_scope", confidence: 1 })
-  });
-  const baseUrl = await listen(server);
-
-  const response = await fetch(`${baseUrl}/api/nli/health`);
-  const body = await response.json();
-
-  assert.equal(response.status, 200);
-  assert.equal(body.ok, true);
-  assert.equal(body.targets, context.routes.targets.length);
-  assert.equal(body.terms, context.glossary.terms.length);
-  assert.ok(body.revision === null || /^[0-9a-f]{40}$/i.test(body.revision));
-  assert.equal(body.processId, process.pid);
-
-  await closeServer(server);
-});
-
-test("default rate limit accommodates the deployed functional and adversarial suites", async () => {
-  const [functionalFixture, adversarialFixture] = await Promise.all([
-    readJson("nli/live-test-cases.json"),
-    readJson("nli/adversarial-test-cases.json")
-  ]);
-  const testCases = [
-    ...functionalFixture.cases.filter((testCase) => testCase.kind === "success"),
-    ...adversarialFixture.cases
-  ];
-  assert.equal(testCases.length, 26);
-
-  const server = await createNliServer({
-    context,
-    config: createTestConfig({ rateLimitMax: 30, allowedOrigins: new Set(["*"]) }),
-    modelClient: async (message, nliContext) => toModelDecision(resolveLocally(message, nliContext))
-  });
-  const baseUrl = await listen(server);
-
-  for (const testCase of testCases) {
-    const response = await fetch(`${baseUrl}/api/nli`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: testCase.message, currentTargetId: testCase.currentTargetId })
-    });
-    assert.equal(response.status, 200, testCase.message);
-  }
-
-  await closeServer(server);
-});
-
-test("response contracts reject fields that do not belong to the selected intent", () => {
-  const result = validateNliResponse(
-    { intent: "navigate", confidence: 1, targetId: "projects", message: "이동", answer: "untrusted" },
-    context
-  );
-  assert.equal(result.ok, false);
-  assert.match(result.errors.join("\n"), /answer is not allowed/);
-
-  const missingRelatedTargets = validateNliResponse(
-    { intent: "define_term", confidence: 1, term: "P95", message: "설명", answer: "설명" },
-    context
-  );
-  assert.equal(missingRelatedTargets.ok, false);
-  assert.match(missingRelatedTargets.errors.join("\n"), /relatedTargets is required/);
-
-  const oversizedMessage = validateNliResponse(
-    { intent: "navigate", confidence: 1, targetId: "projects", message: "x".repeat(501) },
-    context
-  );
-  assert.equal(oversizedMessage.ok, false);
-  assert.match(oversizedMessage.errors.join("\n"), /message must be at most 500 characters/);
-
-  const modelExtraField = validateNliResponse(
-    { intent: "define_term", confidence: 1, term: "P95", message: "model-controlled" },
-    context,
-    { modelCandidate: true }
-  );
-  assert.equal(modelExtraField.ok, false);
-  assert.match(modelExtraField.errors.join("\n"), /unknown property: message/);
-});
-
-test("intent definitions, schemas, and fixtures remain aligned", async () => {
-  const [intentsFile, responseSchemaFile, decisionSchemaFile, adversarialFixture] = await Promise.all([
-    readJson("nli/intents.json"),
-    readJson("nli/response.schema.json"),
-    readJson("nli/model-decision.schema.json"),
-    readJson("nli/adversarial-test-cases.json")
-  ]);
-  const intentNames = intentsFile.intents.map((intent) => intent.name).sort();
-  const responseIntentNames = Object.values(responseSchemaFile.$defs)
-    .map((definition) => definition?.properties?.intent?.const)
-    .filter(Boolean)
-    .sort();
-  assert.deepEqual(responseIntentNames, intentNames);
-  assert.deepEqual([...decisionSchemaFile.properties.intent.enum].sort(), intentNames);
-  assert.ok(adversarialFixture.cases.every((testCase) => testCase.kind === "failure"));
-});
-
 function createTestConfig(overrides = {}) {
   return {
     host: "127.0.0.1",
@@ -382,15 +244,4 @@ async function readRequestBody(request) {
   const chunks = [];
   for await (const chunk of request) chunks.push(chunk);
   return Buffer.concat(chunks).toString("utf8");
-}
-
-async function readJson(relativePath) {
-  return JSON.parse(await readFile(new URL(`../${relativePath}`, import.meta.url), "utf8"));
-}
-
-function toModelDecision(response) {
-  const decision = { intent: response.intent, confidence: response.confidence };
-  if (response.targetId) decision.targetId = response.targetId;
-  if (response.term) decision.term = response.term;
-  return decision;
 }

@@ -20,12 +20,21 @@
         "list_achievements",
         "list_skill_experience",
         "list_capabilities",
+        "answer_portfolio",
         "reject_out_of_scope"
       ]
     },
     "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
     "targetId": { "type": "string", "minLength": 1, "maxLength": 128 },
-    "term": { "type": "string", "minLength": 1, "maxLength": 128 }
+    "term": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "answer": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "sourceIds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 6,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+    }
   },
   "allOf": [
     {
@@ -35,6 +44,35 @@
     {
       "if": { "properties": { "intent": { "enum": ["define_term", "list_skill_experience"] } } },
       "then": { "required": ["term"] }
+    },
+    {
+      "if": {
+        "properties": { "intent": { "const": "answer_portfolio" } },
+        "required": ["intent"]
+      },
+      "then": {
+        "required": ["answer", "sourceIds"],
+        "not": {
+          "anyOf": [
+            { "required": ["targetId"] },
+            { "required": ["term"] }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "intent": { "not": { "const": "answer_portfolio" } } },
+        "required": ["intent"]
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            { "required": ["answer"] },
+            { "required": ["sourceIds"] }
+          ]
+        }
+      }
     }
   ]
 }

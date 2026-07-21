@@ -15,6 +15,7 @@
     { "$ref": "#/$defs/listAchievements" },
     { "$ref": "#/$defs/listSkillExperience" },
     { "$ref": "#/$defs/listCapabilities" },
+    { "$ref": "#/$defs/answerPortfolio" },
     { "$ref": "#/$defs/reject" }
   ],
   "$defs": {
@@ -23,6 +24,16 @@
     "term": { "type": "string", "minLength": 1, "maxLength": 128 },
     "message": { "type": "string", "minLength": 1, "maxLength": 500 },
     "answer": { "type": "string", "minLength": 1, "maxLength": 12000 },
+    "portfolioAnswer": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label"],
+      "properties": {
+        "id": { "$ref": "#/$defs/targetId" },
+        "label": { "type": "string", "minLength": 1, "maxLength": 200 }
+      }
+    },
     "navigate": {
       "type": "object",
       "additionalProperties": false,
@@ -158,6 +169,22 @@
         "confidence": { "$ref": "#/$defs/confidence" },
         "message": { "$ref": "#/$defs/message" },
         "answer": { "$ref": "#/$defs/answer" }
+      }
+    },
+    "answerPortfolio": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["intent", "confidence", "answer", "sources"],
+      "properties": {
+        "intent": { "const": "answer_portfolio" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "answer": { "$ref": "#/$defs/portfolioAnswer" },
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 6,
+          "items": { "$ref": "#/$defs/source" }
+        }
       }
     },
     "reject": {

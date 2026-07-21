@@ -5,9 +5,27 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { createGatewayConfig, loadDotEnv } from "./nli/config.mjs";
 import { loadNliContext as loadContext } from "./nli/context.mjs";
-import { assertJsonContentType, createRateLimiter, HttpRequestError, isOriginAllowed, readNliRequest, readRequestJson, sendJson, setCorsHeaders } from "./nli/http.mjs";
+import {
+  assertJsonContentType,
+  createRateLimiter,
+  HttpRequestError,
+  isOriginAllowed,
+  readNliHistory,
+  readNliRequest,
+  readRequestJson,
+  sendJson,
+  setCorsHeaders
+} from "./nli/http.mjs";
+import { buildEvidenceIndex, retrieveEvidenceCandidates } from "./nli/evidence.mjs";
 import { createModelClient } from "./nli/model-client.mjs";
-import { isModelEligible, isModelIntentGrounded, resolveLocally } from "./nli/router.mjs";
+import {
+  isDependentFollowUp,
+  isDirectNavigationRequest,
+  isModelEligible,
+  isModelIntentGrounded,
+  resolveLocally,
+  shouldUseGroundedSynthesis
+} from "./nli/router.mjs";
 import { rejectResponse } from "./nli/responses.mjs";
 import { canonicalizeModelResponse, validateNliResponse } from "./nli/validation.mjs";
 
@@ -29,25 +47,56 @@ export async function loadNliContext() {
 export async function resolveNliRequest(message, context = null, options = {}) {
   const safeMessage = String(message || "").trim();
   const baseContext = context || (await defaultContextPromise);
+  const history = readHistoryOrNull(options.history);
   const nliContext = {
     ...baseContext,
-    currentTargetId: typeof options.currentTargetId === "string" ? options.currentTargetId : null
+    currentTargetId: resolveCurrentTargetId(baseContext, options.currentTargetId),
+    history: history || []
   };
   if (!safeMessage) return rejectResponse();
 
   const local = resolveLocally(safeMessage, nliContext);
-  if (local.confidence >= localResolutionConfidence) return local;
-  if (options.useModel === false || !isModelEligible(safeMessage, nliContext, local)) {
-    return local.confidence > 0 ? local : rejectResponse();
+  const fallback = local.confidence > 0 ? local : rejectResponse();
+  if (local.intent === "define_term" && local.confidence > 0) return local;
+  if (!history) return fallback;
+  if (isDirectNavigationRequest(safeMessage, local)) return local;
+  if (isDependentFollowUp(safeMessage) && history.length === 0) {
+    return rejectResponse("\uC774\uC804 \uB300\uD654 \uB9E5\uB77D\uC774 \uC5C6\uC5B4 \uC5B4\uB5A4 \uD56D\uBAA9\uC744 \uAC00\uB9AC\uD0A4\uB294\uC9C0 \uD655\uC778\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.", 0.8);
   }
+
+  const evidenceIndex = buildEvidenceIndex(baseContext);
+  const candidateSources = retrieveEvidenceCandidates(evidenceIndex, {
+    message: safeMessage,
+    history,
+    currentTargetId: nliContext.currentTargetId
+  });
+  const modelEligible = isModelEligible(safeMessage, nliContext, local);
+  const useGroundedSynthesis =
+    modelEligible && shouldUseGroundedSynthesis(safeMessage, local, candidateSources, history);
+  const shouldAskModel =
+    modelEligible &&
+    ((candidateSources.length > 0 && useGroundedSynthesis) || local.confidence < localResolutionConfidence);
+
+  if (options.useModel === false || !shouldAskModel) return fallback;
 
   const modelClient = options.modelClient || defaultModelClient;
-  const modelResponse = await modelClient(safeMessage, nliContext).catch(() => null);
-  if (!modelResponse || !isModelIntentGrounded(safeMessage, modelResponse, nliContext)) {
-    return local.confidence > 0 ? local : rejectResponse();
+  const groundedRequest = {
+    candidateSources,
+    history,
+    currentTargetId: nliContext.currentTargetId
+  };
+  const modelResponse = await modelClient(safeMessage, nliContext, groundedRequest).catch(() => null);
+  if (
+    !modelResponse ||
+    !isModelIntentGrounded(safeMessage, modelResponse, nliContext, {
+      allowPortfolioAnswer: useGroundedSynthesis,
+      candidateSources
+    })
+  ) {
+    return fallback;
   }
 
-  return canonicalizeModelResponse(modelResponse, nliContext) || (local.confidence > 0 ? local : rejectResponse());
+  return canonicalizeModelResponse(modelResponse, nliContext, { candidateSources }) || fallback;
 }
 
 export async function createNliServer(options = {}) {
@@ -97,6 +146,7 @@ export async function createNliServer(options = {}) {
       const nliRequest = readNliRequest(body, config.maxMessageLength);
       const result = await resolveNliRequest(nliRequest.message, context, {
         currentTargetId: nliRequest.currentTargetId,
+        history: nliRequest.history,
         modelClient
       });
       sendJson(response, 200, result);
@@ -118,6 +168,19 @@ function resolveGatewayRevision(rootDir) {
   } catch {
     return null;
   }
+}
+
+function readHistoryOrNull(value) {
+  try {
+    return readNliHistory(value);
+  } catch {
+    return null;
+  }
+}
+
+function resolveCurrentTargetId(context, requestedTargetId) {
+  if (typeof requestedTargetId !== "string" || !context.targetById?.has(requestedTargetId)) return null;
+  return requestedTargetId;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
