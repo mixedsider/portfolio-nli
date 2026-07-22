@@ -114,6 +114,20 @@ test("performance wording prioritizes measured optimization evidence over monito
   );
 });
 
+test("broad performance evidence ranks ahead of the metric summary while an explicit metrics request keeps it available", () => {
+  const index = [
+    { targetId: "metrics", label: "Metrics", type: "page", evidence: "Performance optimization metrics summary", metricCount: 2 },
+    { targetId: "project-case", label: "Performance case", type: "section", evidence: "Performance optimization experience case" }
+  ];
+  const broadCandidates = retrieveEvidenceCandidates(index, {
+    message: "performance optimization experience summary"
+  });
+  const metricsCandidates = retrieveEvidenceCandidates(index, { message: "metrics" });
+
+  assert.notEqual(broadCandidates[0]?.targetId, "metrics");
+  assert.equal(metricsCandidates[0]?.targetId, "metrics");
+});
+
 test("AWS wording surfaces AWS-backed evidence", async () => {
   const index = buildEvidenceIndex(await loadNliContext(root));
   const candidates = retrieveEvidenceCandidates(index, { message: awsQuestion });

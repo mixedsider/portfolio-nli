@@ -19,12 +19,8 @@ import {
 import { buildEvidenceIndex, retrieveEvidenceCandidates } from "./nli/evidence.mjs";
 import { createModelClient } from "./nli/model-client.mjs";
 import {
-  isDependentFollowUp,
-  isDirectNavigationRequest,
-  isModelEligible,
-  isModelIntentGrounded,
-  resolveLocally,
-  shouldUseGroundedSynthesis
+  isPromptInjectionAttempt,
+  resolveLocally
 } from "./nli/router.mjs";
 import { rejectResponse } from "./nli/responses.mjs";
 import { canonicalizeModelResponse, validateNliResponse } from "./nli/validation.mjs";
@@ -35,7 +31,6 @@ await loadDotEnv(root);
 const defaultConfig = createGatewayConfig();
 const defaultContextPromise = loadContext(root);
 const defaultModelClient = createModelClient(defaultConfig);
-const localResolutionConfidence = 0.8;
 const gatewayRevision = defaultConfig.releaseRevision || resolveGatewayRevision(root);
 
 export { validateNliResponse };
@@ -54,15 +49,12 @@ export async function resolveNliRequest(message, context = null, options = {}) {
     history: history || []
   };
   if (!safeMessage) return rejectResponse();
+  if (!history) return rejectResponse();
 
   const local = resolveLocally(safeMessage, nliContext);
   const fallback = local.confidence > 0 ? local : rejectResponse();
-  if (local.intent === "define_term" && local.confidence > 0) return local;
-  if (!history) return fallback;
-  if (isDirectNavigationRequest(safeMessage, local)) return local;
-  if (isDependentFollowUp(safeMessage) && history.length === 0) {
-    return rejectResponse("\uC774\uC804 \uB300\uD654 \uB9E5\uB77D\uC774 \uC5C6\uC5B4 \uC5B4\uB5A4 \uD56D\uBAA9\uC744 \uAC00\uB9AC\uD0A4\uB294\uC9C0 \uD655\uC778\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.", 0.8);
-  }
+  if (isPromptInjectionAttempt(safeMessage)) return fallback;
+  if (options.useModel === false) return fallback;
 
   const evidenceIndex = buildEvidenceIndex(baseContext);
   const candidateSources = retrieveEvidenceCandidates(evidenceIndex, {
@@ -70,31 +62,16 @@ export async function resolveNliRequest(message, context = null, options = {}) {
     history,
     currentTargetId: nliContext.currentTargetId
   });
-  const modelEligible = isModelEligible(safeMessage, nliContext, local);
-  const useGroundedSynthesis =
-    modelEligible && shouldUseGroundedSynthesis(safeMessage, local, candidateSources, history);
-  const shouldAskModel =
-    modelEligible &&
-    ((candidateSources.length > 0 && useGroundedSynthesis) || local.confidence < localResolutionConfidence);
-
-  if (options.useModel === false || !shouldAskModel) return fallback;
 
   const modelClient = options.modelClient || defaultModelClient;
-  const groundedRequest = {
+  const proposalContext = {
     candidateSources,
     history,
-    currentTargetId: nliContext.currentTargetId
+    currentTargetId: nliContext.currentTargetId,
+    targets: baseContext.routes.targets,
+    terms: baseContext.glossary.terms
   };
-  const modelResponse = await modelClient(safeMessage, nliContext, groundedRequest).catch(() => null);
-  if (
-    !modelResponse ||
-    !isModelIntentGrounded(safeMessage, modelResponse, nliContext, {
-      allowPortfolioAnswer: useGroundedSynthesis,
-      candidateSources
-    })
-  ) {
-    return fallback;
-  }
+  const modelResponse = await modelClient(safeMessage, nliContext, proposalContext).catch(() => null);
 
   return canonicalizeModelResponse(modelResponse, nliContext, { candidateSources }) || fallback;
 }

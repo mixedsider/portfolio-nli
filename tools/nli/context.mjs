@@ -9,6 +9,9 @@ const MAX_GROUNDED_HISTORY_ITEMS = 6;
 const MAX_GROUNDED_HISTORY_ENTRY_BYTES = 480;
 const MAX_GROUNDED_HISTORY_BYTES = 2_400;
 const MAX_GROUNDED_CARD_EVIDENCE_BYTES = 3_000;
+const MAX_GROUNDED_TARGETS = 64;
+const MAX_GROUNDED_TERMS = 64;
+const MAX_GROUNDED_ALIASES = 12;
 
 export async function loadNliContext(root) {
   const [routes, glossary, prompt, portfolio] = await Promise.all([
@@ -70,7 +73,9 @@ export function buildGroundedRequestBlock(request = {}) {
     untrustedData: true,
     currentTargetId: boundedString(request.currentTargetId, 128) || null,
     conversation: boundedConversation(request.history),
-    candidateSources: boundedCandidateSources(request.candidateSources)
+    candidateSources: boundedCandidateSources(request.candidateSources),
+    targets: boundedTargets(request.targets),
+    terms: boundedTerms(request.terms)
   });
 }
 
@@ -120,6 +125,51 @@ function boundedCandidateSources(value) {
     if (candidates.length === MAX_GROUNDED_CANDIDATES) break;
   }
   return candidates;
+}
+
+function boundedTargets(value) {
+  if (!Array.isArray(value)) return [];
+
+  const targets = [];
+  for (const target of value) {
+    if (!target || typeof target !== "object") continue;
+    const id = boundedString(target.id, 128);
+    if (!id || targets.some((item) => item.id === id)) continue;
+    targets.push({
+      id,
+      label: boundedString(target.label, 256),
+      type: boundedString(target.type, 64),
+      aliases: boundedAliases(target.aliases)
+    });
+    if (targets.length === MAX_GROUNDED_TARGETS) break;
+  }
+  return targets;
+}
+
+function boundedTerms(value) {
+  if (!Array.isArray(value)) return [];
+
+  const terms = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const term = boundedString(entry.term, 128);
+    if (!term || terms.some((item) => item.term === term)) continue;
+    terms.push({ term, aliases: boundedAliases(entry.aliases) });
+    if (terms.length === MAX_GROUNDED_TERMS) break;
+  }
+  return terms;
+}
+
+function boundedAliases(value) {
+  if (!Array.isArray(value)) return [];
+  const aliases = [];
+  for (const alias of value) {
+    const text = boundedString(alias, 128);
+    if (!text || aliases.includes(text)) continue;
+    aliases.push(text);
+    if (aliases.length === MAX_GROUNDED_ALIASES) break;
+  }
+  return aliases;
 }
 
 function boundedConversation(value) {

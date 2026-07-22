@@ -34,7 +34,7 @@ test("model-backed rejection never reflects model-controlled text", async () => 
   assert.doesNotMatch(JSON.stringify(result), /LEAK_MARKER_FROM_MODEL|system prompt|<b>/);
 });
 
-test("grounded local define_term decisions are canonicalized into portfolio data", async () => {
+test("model-proposed define_term decisions are canonicalized into portfolio data", async () => {
   let calls = 0;
   const result = await resolveNliRequest("P95가 뭐야?", context, {
     modelClient: async () => {
@@ -44,29 +44,29 @@ test("grounded local define_term decisions are canonicalized into portfolio data
   });
 
   const p95 = context.glossary.terms.find((term) => term.term === "P95");
-  assert.equal(calls, 0);
+  assert.equal(calls, 1);
   assert.equal(result.intent, "define_term");
   assert.equal(result.term, "P95");
   assert.equal(result.answer, p95.answer);
 });
 
-test("local define_term answers return before model invocation", async () => {
+test("known glossary requests make one model proposal before returning a gateway-owned definition", async () => {
   let calls = 0;
   const result = await resolveNliRequest("P95\uac00 \ubb50\uc57c?", context, {
     modelClient: async () => {
       calls += 1;
-      return { intent: "reject_out_of_scope", confidence: 1 };
+      return { intent: "define_term", confidence: 0.91, term: "P95" };
     }
   });
 
   const p95 = context.glossary.terms.find((term) => term.term === "P95");
-  assert.equal(calls, 0);
+  assert.equal(calls, 1);
   assert.equal(result.intent, "define_term");
   assert.equal(result.term, "P95");
   assert.equal(result.answer, p95.answer);
 });
 
-test("out-of-scope prompts never call the model or accept a valid-looking intent", async () => {
+test("out-of-scope prompts use one proposal but reject unsupported model intents", async () => {
   let calls = 0;
   const result = await resolveNliRequest("비트코인 전체 요약해줘", context, {
     modelClient: async () => {
@@ -75,7 +75,7 @@ test("out-of-scope prompts never call the model or accept a valid-looking intent
     }
   });
 
-  assert.equal(calls, 0);
+  assert.equal(calls, 1);
   assert.equal(result.intent, "reject_out_of_scope");
 });
 

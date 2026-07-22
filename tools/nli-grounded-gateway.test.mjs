@@ -11,7 +11,7 @@ const awsQuestion = "AWS 경험을 설명해줘";
 const cloudWatchExperienceQuestion = "CloudWatch를 사용한 모니터링과 관측성 경험을 설명해줘.";
 const currentTargetId = "project-makertion-db";
 
-test("gateway sends only request-local candidates, history, and current target to a loopback LM", async () => {
+test("gateway sends bounded proposal context to a loopback LM", async () => {
   const history = [
     { role: "user", text: "성능을 최적화한 사례를 보여줘" },
     { role: "assistant", text: "성능 개선 사례를 정리했습니다." }
@@ -57,26 +57,30 @@ test("gateway sends only request-local candidates, history, and current target t
     assert.equal(receivedPayload.messages.length, 3);
 
     const envelope = JSON.parse(receivedPayload.messages[1].content);
-    assert.deepEqual(Object.keys(envelope).sort(), ["candidateSources", "conversation", "currentTargetId", "untrustedData"]);
+    assert.deepEqual(Object.keys(envelope).sort(), ["candidateSources", "conversation", "currentTargetId", "targets", "terms", "untrustedData"]);
     assert.equal(envelope.untrustedData, true);
     assert.deepEqual(envelope.conversation, history);
     assert.equal(envelope.currentTargetId, currentTargetId);
+    assert.ok(envelope.targets.some((target) => target.id === currentTargetId));
+    assert.ok(envelope.terms.some((term) => term.term === "P95"));
     assert.ok(envelope.candidateSources.length > 0 && envelope.candidateSources.length <= 8);
     assert.ok(envelope.candidateSources.every((candidate) => candidate.id === candidate.targetId));
     assert.equal(Object.hasOwn(envelope, "projects"), false);
     assert.equal(Object.hasOwn(envelope, "routes"), false);
-    assert.equal(Object.hasOwn(envelope, "terms"), false);
   } finally {
     await close(upstream);
     await close(gateway);
   }
 });
 
-test("broad evidence-backed questions use synthesis, while explicit target navigation bypasses it", async () => {
+test("broad evidence-backed questions and explicit targets each use one model proposal", async () => {
   let modelCalls = 0;
   const modelClient = async (_message, _nliContext, groundedRequest) => {
     modelCalls += 1;
     assert.ok(groundedRequest.candidateSources.length > 0 && groundedRequest.candidateSources.length <= 8);
+    if (_message.startsWith("DB ")) {
+      return { intent: "navigate", confidence: 0.9, targetId: currentTargetId };
+    }
     return {
       intent: "answer_portfolio",
       confidence: 0.82,
@@ -88,7 +92,7 @@ test("broad evidence-backed questions use synthesis, while explicit target navig
   const broad = await resolveNliRequest(awsQuestion, context, { modelClient });
   const direct = await resolveNliRequest("DB 최적화 보여줘", context, { modelClient });
 
-  assert.equal(modelCalls, 1);
+  assert.equal(modelCalls, 2);
   assert.equal(broad.intent, "answer_portfolio");
   assert.equal(direct.intent, "navigate");
   assert.equal(direct.targetId, currentTargetId);
@@ -114,7 +118,7 @@ test("CloudWatch experience wording uses grounded portfolio answer rather than g
   assert.deepEqual(result.sources.map((source) => source.id), ["project-makertion-observability"]);
 });
 
-test("explicit CloudWatch monitoring navigation bypasses grounded synthesis with history", async () => {
+test("explicit CloudWatch monitoring navigation falls back safely after one unavailable proposal", async () => {
   let modelCalls = 0;
   const modelClient = async () => {
     modelCalls += 1;
@@ -123,15 +127,18 @@ test("explicit CloudWatch monitoring navigation bypasses grounded synthesis with
 
   const result = await resolveNliRequest("CloudWatch 모니터링 보고 싶어", context, { history: [], modelClient });
 
-  assert.equal(modelCalls, 0);
+  assert.equal(modelCalls, 1);
   assert.equal(result.intent, "navigate");
   assert.equal(result.targetId, "project-makertion-observability");
 });
 
-test("only unambiguous navigation bypasses synthesis for target-like questions", async () => {
+test("target-like requests use validated model navigation while broader requests use grounded answers", async () => {
   const modelCalls = [];
   const modelClient = async (message, _nliContext, groundedRequest) => {
     modelCalls.push({ message, candidateCount: groundedRequest.candidateSources.length });
+    if (message === "P95" || message === "open P95") {
+      return { intent: "navigate", confidence: 0.9, targetId: currentTargetId };
+    }
     return {
       intent: "answer_portfolio",
       confidence: 0.82,
@@ -143,22 +150,22 @@ test("only unambiguous navigation bypasses synthesis for target-like questions",
   const targetOnly = await resolveNliRequest("P95", context, { modelClient });
   assert.equal(targetOnly.intent, "navigate");
   assert.equal(targetOnly.targetId, currentTargetId);
-  assert.equal(modelCalls.length, 0);
+  assert.equal(modelCalls.length, 1);
 
   const explicitEnglishNavigation = await resolveNliRequest("open P95", context, { modelClient });
   assert.equal(explicitEnglishNavigation.intent, "navigate");
   assert.equal(explicitEnglishNavigation.targetId, currentTargetId);
-  assert.equal(modelCalls.length, 0);
+  assert.equal(modelCalls.length, 2);
 
   const categoryCapable = await resolveNliRequest("open AWS experience", context, { modelClient });
   assert.equal(categoryCapable.intent, "answer_portfolio");
-  assert.equal(modelCalls.length, 1);
-  assert.ok(modelCalls[0].candidateCount > 0 && modelCalls[0].candidateCount <= 8);
+  assert.equal(modelCalls.length, 3);
+  assert.ok(modelCalls[2].candidateCount > 0 && modelCalls[2].candidateCount <= 8);
 
   const broad = await resolveNliRequest("DB 최적화는 어디에 있나요?", context, { modelClient });
   assert.equal(broad.intent, "answer_portfolio");
-  assert.equal(modelCalls.length, 2);
-  assert.ok(modelCalls[1].candidateCount > 0 && modelCalls[1].candidateCount <= 8);
+  assert.equal(modelCalls.length, 4);
+  assert.ok(modelCalls[3].candidateCount > 0 && modelCalls[3].candidateCount <= 8);
 });
 
 test("model timeout, invalid JSON, and invalid source IDs fall back to a trusted local answer", async () => {

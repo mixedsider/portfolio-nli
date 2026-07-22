@@ -44,6 +44,43 @@ test("baseline: existing model decisions remain strictly validated and gateway-c
   assert.deepEqual(defineTerm.relatedTargets, context.termByCanonical.get("p95").relatedTargets || []);
 });
 
+test("model proposals reject inactive slots and irrelevant fields for every non-answer intent", () => {
+  const cases = [
+    {
+      name: "navigate with inactive term",
+      candidate: { intent: "navigate", confidence: 0.9, targetId: "project-makertion-db", term: "UNKNOWN" },
+      error: "unknown property: term"
+    },
+    {
+      name: "define term with inactive target",
+      candidate: { intent: "define_term", confidence: 0.9, term: "P95", targetId: "project-unknown" },
+      error: "unknown property: targetId"
+    },
+    {
+      name: "reject with inactive IDs",
+      candidate: { intent: "reject_out_of_scope", confidence: 1, targetId: "project-unknown", term: "UNKNOWN" },
+      error: "unknown property: targetId"
+    },
+    {
+      name: "navigate with answer fields",
+      candidate: { intent: "navigate", confidence: 0.9, targetId: "project-makertion-db", answer: "extra", sourceIds: ["project-makertion-db"] },
+      error: "unknown property: answer"
+    },
+    {
+      name: "reject with irrelevant field",
+      candidate: { intent: "reject_out_of_scope", confidence: 1, irrelevant: "extra" },
+      error: "unknown property: irrelevant"
+    }
+  ];
+
+  for (const testCase of cases) {
+    const result = validateNliResponse(testCase.candidate, context, { modelCandidate: true });
+    assert.equal(result.ok, false, testCase.name);
+    assert.match(result.errors.join("\n"), new RegExp(escapeRegExp(testCase.error)), testCase.name);
+    assert.equal(canonicalizeModelResponse(testCase.candidate, context), null, testCase.name);
+  }
+});
+
 test("answer_portfolio accepts grounded Korean prose and gateway-builds safe source labels", () => {
   const candidateSources = [
     { id: "project-catequest", label: "model-supplied labels must be ignored" },

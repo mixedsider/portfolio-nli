@@ -41,7 +41,7 @@ flowchart LR
   User["사용자 자연어 입력"] --> Frontend["Portfolio UI"]
   Frontend --> Gateway["NLI Gateway"]
   Gateway --> Context["routes + glossary + portfolio data"]
-  Gateway --> LMStudio["LM Studio / Gemma"]
+  Gateway --> LMStudio["LM Studio / Qwen"]
   LMStudio --> Gateway
   Gateway --> Guard["JSON 검증 + 허용 범위 검사"]
   Guard --> Frontend
@@ -54,6 +54,7 @@ Gateway는 모델보다 더 엄격해야 합니다.
 
 - 시스템 프롬프트와 context를 조립합니다.
 - LM Studio OpenAI-compatible API로 요청합니다.
+- OpenAI-compatible Chat Completions 요청에는 `reasoning_effort: "none"`을 고정으로 보내 reasoning을 visible answer로 섞지 않도록 합니다.
 - 모델 응답을 최소 결정 JSON으로만 파싱합니다.
 - 입력의 포트폴리오 근거와 모델 intent를 교차 검증합니다.
 - `targetId`와 `term`을 allowlist로 확인한 뒤, 사용자 문장과 답변은 서버 데이터로 다시 생성합니다.
@@ -69,8 +70,9 @@ node tools/nli-gateway.mjs
 
 - `NLI_HOST`: `127.0.0.1`
 - `NLI_PORT`: `8787`
-- `LM_STUDIO_BASE_URL`: `http://192.168.0.58:1234/v1`
-- `LM_STUDIO_MODEL`: `google/gemma-4-e4b`
+- `LM_STUDIO_BASE_URL`: `http://192.168.0.57:1234/v1`
+- `LM_STUDIO_MODEL`: `qwen/qwen3.5-9b`
+- `reasoning_effort`: Gateway 고정값 `none` (환경 변수 없음; 모델 또는 LM Studio 버전을 변경하면 direct strict JSON probe를 다시 실행)
 - `LM_STUDIO_TIMEOUT_MS`: `8000`
 - `NLI_MAX_REQUEST_BYTES`: `16384`
 - `NLI_MAX_MESSAGE_LENGTH`: `500`
@@ -82,6 +84,8 @@ node tools/nli-gateway.mjs
 - `LM_STUDIO_MAX_TOKENS`: `256`
 - `LM_STUDIO_MAX_RESPONSE_BYTES`: `65536`
 - `LM_STUDIO_MAX_CONCURRENT_REQUESTS`: `4`
+
+운영 모델 선택은 경험적 검증 결과입니다. 기본 Qwen은 8초 제한에서 이동·용어·카테고리·후속 질문의 네 동작 매트릭스를 완료했기 때문에 사용합니다. `LM_STUDIO_BASE_URL`과 `LM_STUDIO_MODEL` 환경 변수로 Gemma를 포함한 다른 모델을 선택할 수 있지만, Gemma는 같은 매트릭스를 8초 안에 완료하지 못했습니다. 이 경우 Gateway는 검증된 안전한 fallback으로 처리하며, 이 결과는 성능 보장이 아닙니다.
 
 예시 값은 `.env.example`에도 정리되어 있습니다.
 

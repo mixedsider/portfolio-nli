@@ -76,8 +76,8 @@ NLI Gateway는 Node.js 서버입니다. LM Studio가 떠 있는 같은 네트워
 ```text
 NLI_HOST=0.0.0.0
 NLI_PORT=8787
-LM_STUDIO_BASE_URL=http://192.168.0.58:1234/v1
-LM_STUDIO_MODEL=google/gemma-4-e4b
+LM_STUDIO_BASE_URL=http://192.168.0.57:1234/v1
+LM_STUDIO_MODEL=qwen/qwen3.5-9b
 LM_STUDIO_TIMEOUT_MS=8000
 NLI_MAX_REQUEST_BYTES=16384
 NLI_MAX_MESSAGE_LENGTH=500
@@ -91,6 +91,8 @@ LM_STUDIO_MAX_TOKENS=256
 LM_STUDIO_MAX_RESPONSE_BYTES=65536
 LM_STUDIO_MAX_CONCURRENT_REQUESTS=4
 ```
+
+Gateway는 Chat Completions 요청마다 `reasoning_effort: "none"`을 고정으로 전송합니다. 이 값은 환경 변수로 노출하지 않습니다. LM Studio 버전 또는 모델을 교체하기 전에는 같은 strict JSON prompt로 해당 대상의 직접 probe를 다시 실행해 visible JSON 응답을 확인해야 합니다.
 
 서버에서는 `.env.example`을 `.env`로 복사한 뒤 값을 수정해서 사용할 수 있습니다. `tools/nli-gateway.mjs`는 시작할 때 프로젝트 루트의 `.env` 파일을 자동으로 읽습니다.
 

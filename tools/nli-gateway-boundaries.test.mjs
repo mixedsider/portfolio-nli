@@ -5,7 +5,7 @@ import { after, test } from "node:test";
 import { createGatewayConfig } from "./nli/config.mjs";
 import { isOriginAllowed } from "./nli/http.mjs";
 import { resolveLocally } from "./nli/router.mjs";
-import { createNliServer, loadNliContext, validateNliResponse } from "./nli-gateway.mjs";
+import { createNliServer, loadNliContext, resolveNliRequest, validateNliResponse } from "./nli-gateway.mjs";
 import { listenForFetch } from "./test-server.mjs";
 
 const context = await loadNliContext();
@@ -46,6 +46,71 @@ test("browser origins fail closed until an exact origin is configured", () => {
   const configured = createGatewayConfig({ NLI_ALLOWED_ORIGINS: "https://portfolio.example" });
   assert.equal(isOriginAllowed({ headers: { origin: "https://portfolio.example" } }, configured), true);
   assert.equal(isOriginAllowed({ headers: { origin: "https://attacker.example" } }, configured), false);
+});
+
+test("single-target show requests use one model proposal before gateway-owned navigation", async () => {
+  const modelCalls = [];
+  const modelClient = async (message) => {
+    modelCalls.push(message);
+    return {
+      intent: "navigate",
+      confidence: 0.9,
+      targetId: message.includes("CloudWatch") ? "project-makertion-observability" : "project-makertion-db"
+    };
+  };
+
+  for (const [message, targetId] of [
+    ["DB 최적화 보여줘", "project-makertion-db"],
+    ["CloudWatch 모니터링 보여줘", "project-makertion-observability"]
+  ]) {
+    const result = await resolveNliRequest(message, context, { modelClient });
+
+    assert.equal(result.intent, "navigate");
+    assert.equal(result.targetId, targetId);
+  }
+
+  assert.equal(modelCalls.length, 2);
+});
+
+test("category examples with show wording use grounded synthesis", async () => {
+  const responses = new Map([
+    [
+      "성능을 최적화한 사례를 보여줘",
+      {
+        intent: "answer_portfolio",
+        confidence: 0.92,
+        answer: "DB 성능 최적화, Main 홈페이지 캐싱 최적화, 다대다 관계 N+1 쿼리 해결, HTTPS 아키텍처 개선 사례를 통해 병목을 줄였습니다.",
+        sourceIds: ["project-makertion-db", "project-makertion-cache", "project-catequest-n1", "project-bookking-https"]
+      }
+    ],
+    [
+      "AWS 경험을 보여줘",
+      {
+        intent: "answer_portfolio",
+        confidence: 0.9,
+        answer: "AWS 기반 CloudWatch 모니터링과 AWS Native HTTPS 아키텍처를 운영했습니다.",
+        sourceIds: ["project-makertion-db", "project-bookking-https"]
+      }
+    ]
+  ]);
+  const modelCalls = [];
+  const modelClient = async (message, _nliContext, groundedRequest) => {
+    modelCalls.push(message);
+    const response = responses.get(message);
+
+    assert.ok(response);
+    assert.ok(response.sourceIds.every((sourceId) => groundedRequest.candidateSources.some((source) => source.id === sourceId)));
+    return response;
+  };
+
+  for (const [message, expected] of responses) {
+    const result = await resolveNliRequest(message, context, { modelClient });
+
+    assert.equal(result.intent, "answer_portfolio");
+    assert.deepEqual(result.sources.map((source) => source.id), expected.sourceIds);
+  }
+
+  assert.deepEqual(modelCalls, [...responses.keys()]);
 });
 
 test("health identifies the running deployment revision", async () => {
@@ -163,7 +228,12 @@ test("intent definitions, schemas, and fixtures remain aligned", async () => {
     .filter(Boolean)
     .sort();
   assert.deepEqual(responseIntentNames, intentNames);
-  assert.deepEqual([...decisionSchemaFile.properties.intent.enum].sort(), intentNames);
+  assert.deepEqual([...decisionSchemaFile.properties.intent.enum].sort(), [
+    "answer_portfolio",
+    "define_term",
+    "navigate",
+    "reject_out_of_scope"
+  ]);
   assert.ok(adversarialFixture.cases.every((testCase) => testCase.kind === "failure"));
 });
 

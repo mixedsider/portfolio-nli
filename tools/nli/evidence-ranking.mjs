@@ -7,8 +7,8 @@ export const MAX_EVIDENCE_HISTORY_ITEMS = 6;
 const MAX_HISTORY_ENTRY_CHARS = 480;
 const MAX_HISTORY_CHARS = 2_400;
 const MAX_MESSAGE_CHARS = 1_200;
-const BROAD_QUERY_SCORE = 3;
 const DIRECT_METRIC_BONUS = 7;
+const metricTerms = new Set(["metric", "metrics", "\uC9C0\uD45C", "\uC218\uCE58", "\uBA54\uD2B8\uB9AD"]);
 const performanceTerms = new Set(["performance", "성능"]);
 const optimizationTerms = new Set(["개선", "단축", "줄", "줄인", "최적", "최적화", "튜닝", "optimization", "optimize", "reduced"]);
 const optimizationEvidencePattern =
@@ -29,8 +29,7 @@ export function retrieveEvidenceCandidates(index, request = {}) {
     const historyScore = scoreHistory(card, historyTerms);
     return { card, order, semanticScore: messageScore + historyScore };
   });
-  const strongestScore = Math.max(...scored.map((candidate) => candidate.semanticScore), 0);
-  const hasBroadQuery = allTerms.size >= 3 && strongestScore >= BROAD_QUERY_SCORE;
+  const hasExplicitMetricRequest = isExplicitMetricRequest(messageTerms);
   const matchedAnchors = [...allTerms].filter(
     (term) => isTechnicalAnchor(term) && cards.some((card) => scoreTerms(card, [term]) > 0)
   );
@@ -39,19 +38,19 @@ export function retrieveEvidenceCandidates(index, request = {}) {
   const currentCard = cards.find((card) => card.targetId === currentTargetId) || null;
 
   return scored
-    .map((candidate) => scoreCandidate(candidate, { currentCard, hasBroadQuery, matchedAnchors, requiresOptimizationEvidence }))
+    .map((candidate) => scoreCandidate(candidate, { currentCard, hasExplicitMetricRequest, matchedAnchors, requiresOptimizationEvidence }))
     .filter(Boolean)
     .sort(compareCandidates)
     .slice(0, MAX_EVIDENCE_CANDIDATES)
     .map(({ card }) => publicCard(card));
 }
 
-function scoreCandidate(candidate, { currentCard, hasBroadQuery, matchedAnchors, requiresOptimizationEvidence }) {
+function scoreCandidate(candidate, { currentCard, hasExplicitMetricRequest, matchedAnchors, requiresOptimizationEvidence }) {
   const { card, semanticScore } = candidate;
   if (matchedAnchors.length && !matchedAnchors.some((term) => scoreTerms(card, [term]) > 0)) return null;
   if (requiresOptimizationEvidence && !hasOptimizationEvidence(card)) return null;
 
-  const structuralScore = hasBroadQuery ? metricCount(card) * DIRECT_METRIC_BONUS : 0;
+  const structuralScore = hasExplicitMetricRequest ? metricCount(card) * DIRECT_METRIC_BONUS : 0;
   if (semanticScore <= 0 && structuralScore <= 0) return null;
 
   let score = semanticScore + structuralScore;
@@ -128,6 +127,10 @@ function searchTerms(value) {
 
 function isTechnicalAnchor(term) {
   return /^[a-z0-9+#.]{2,}$/i.test(term);
+}
+
+function isExplicitMetricRequest(terms) {
+  return terms.some((term) => metricTerms.has(term));
 }
 
 function isPerformanceOptimizationQuery(terms) {

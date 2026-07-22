@@ -1,91 +1,49 @@
-# Grounded Portfolio NLI — Handoff Plan
+# 포트폴리오 NLI 인수인계
 
-Updated: 2026-07-22 (Asia/Seoul)
+갱신: 2026-07-22 (Asia/Seoul)
 
-## Current snapshot
+## 현재 상태
 
-The working tree contains the grounded portfolio-assistant implementation. It extends the existing NLI widget and gateway so that the assistant can:
+- 브랜치: `main` (`origin/main` 추적).
+- 작업 트리에는 하나의 응집된 **LLM-first NLI 변경**이 아직 커밋되지 않은 상태이며, 이 핸드오프 뒤 상위 작업자가 커밋할 예정이다.
+- 배포는 실행하지 않았다.
+- 최종 전역 5-레인 리뷰는 사용자의 인수인계 요청으로 의도적으로 중단되었다. 재개 시 반드시 처음부터 다시 실행하며, 최종 승인으로 간주하지 않는다.
 
-- navigate to known portfolio sections deterministically;
-- define registered terms deterministically;
-- answer profile, whole-portfolio, project, section, and category questions using retrieved portfolio evidence;
-- generate Korean free prose only when selected evidence supports it;
-- show source buttons that move to the corresponding portfolio sections;
-- use at most six finalized browser-side conversation turns plus the current visible target for follow-up questions.
+## 구현된 내용
 
-The implementation is **not yet final-acceptance complete**. The latest three boundary repairs have passed their focused and broad local regression suites, but the final independent five-lane audit still needs to be rerun and recorded.
+- 일반적인 안전 요청은 모델이 `navigate` / `define_term` / `answer_portfolio` / `reject` 중 하나를 제안한다.
+- 게이트웨이는 canonical ID, 근거, 화면에 보이는 JSON을 검증한다.
+- `reasoning_effort: none`을 사용한다.
+- 기본 모델은 Qwen `.57` / `qwen/qwen3.5-9b`이며 환경 변수로 재정의할 수 있다.
+- Gemma `.58`은 알려진 8초 타임아웃 문제가 있어 기본 모델이 아니다. 8초 조건 통과를 주장하면 안 된다.
+- 카테고리 프롬프트와 랭킹은 넓은 다중 사례 답변과 명시적인 지표 탐색을 구분한다.
+- 유효하지 않은 히스토리와 프롬프트 인젝션은 모델 호출 전에 거절한다.
+- 비활성 intent 필드도 거절한다.
 
-## Completed implementation
+## 확인된 결과
 
-1. Derived evidence cards and deterministic candidate retrieval from portfolio data, routes, and glossary.
-2. Strict `answer_portfolio` response protocol: canonical source IDs only, plain text only, and no model-provided labels, URLs, or HTML.
-3. Grounded gateway routing with bounded validated history, safe fallback, prompt-injection rejection, and no server-side session storage.
-4. Category coverage for performance, AWS, observability, concurrency, Redis, CI/CD, cost, AI/LLM, and data modelling.
-5. NLI UI source buttons, reduced-motion navigation, safe text rendering, and client history that keeps the welcome message visible without sending it as conversation context.
-6. Deployment/CI preflight coverage and explicit optional browser-test handling.
-7. Final boundary repairs:
-   - concise unsupported technical claims are rejected instead of being treated as grounded;
-   - the generated welcome message is UI-only and excluded from persisted/request history;
-   - local glossary definitions such as `P95가 뭐야?` return before any model call.
+- LAN을 사용하지 않은 최신 결과: 루트 Node 스위트 `56 pass / 0 fail / 2 skip`, 일반 fixture `37/37`, grounded category fixture `17/17`.
+- loopback에서 카테고리 답변과 명시적 metrics 탐색을 각각 확인했다.
+- 승인된 최신 Qwen 매트릭스: 네 액션 모두 8초 이내 통과(`4/4`), 액션당 모델 호출은 정확히 1회. 근거: `.omo/evidence/task-8-qwen-final-matrix.md`.
+- Gemma는 이전에 8초 타임아웃으로 실패했다. 통과 결과로 기록하지 않는다.
 
-## Verified before handoff
+## 다음 컴퓨터에서 재개 순서
 
-The latest repair pass recorded these successful local checks. They do not call the LAN LM Studio or a deployed gateway.
+1. 먼저 `git status`로 브랜치와 작업 트리를 확인한다. 현재 변경을 보존하고 관련 없는 변경을 되돌리지 않는다.
+2. 루트 및 중첩 NLI 테스트와 fixture를 다시 실행해 현재 변경을 검증한다.
+3. 필요할 때만 현재 Qwen 네 액션 매트릭스를 다시 실행하고, 8초 제한 및 액션당 정확히 한 번의 모델 호출을 확인한다.
+4. 최종 5-레인 리뷰를 다시 실행한다: 목표/제약, 실사용 QA, 코드 품질, 보안, 문맥·문서·CI.
+5. 다섯 레인이 모두 끝나기 전에는 최종 승인이라고 기록하지 않는다. 배포는 사용자가 명시적으로 요청한 경우에만 실행한다.
 
-```powershell
-node --test tools/nli/portfolio-answer-validation.test.mjs
-node --test tools/nli-history-boundary.test.mjs
-node --test tools/nli-gateway-boundaries.test.mjs
-node tools/nli-test.mjs --local --cases nli/live-test-cases.json --min-pass-rate 1
-node tools/nli-test.mjs --local --cases nli/adversarial-test-cases.json --min-pass-rate 1
-node tools/nli-test.mjs --fake --cases nli/grounded-category-test-cases.json --min-pass-rate 1
-node --test tools/*.test.mjs
-node --test tools/nli/*.test.mjs
-```
+## 알려진 위험
 
-Recorded results at the handoff point:
+- Qwen은 소형 로컬 모델이므로 프롬프트 변화에 민감하다.
+- Gemma는 8초 타임아웃 조건과 호환되지 않는다.
+- 최종 리뷰 게이트가 아직 완료되지 않았다.
 
-- focused support/history/gateway tests: 30 passing;
-- local fixture: 37/37;
-- adversarial fixture: 8/8;
-- grounded fake category fixture: 17/17;
-- root suite: 66 passing, 0 failing, 2 explicit platform skips;
-- nested NLI suite: 21 passing;
-- browser CDP evidence confirms the welcome remains visible while the first request sends `history: []`.
+## 주요 파일
 
-## Required continuation on the other computer
-
-1. Clone or pull this commit on `main`, then confirm a clean working tree.
-2. Run the verification commands above. Do not point tests at production or `LM_STUDIO_BASE_URL`.
-3. Re-run the final independent review lanes and write fresh evidence:
-   - goal/constraint review;
-   - hands-on QA, including loopback HTTP and browser evidence where available;
-   - code-quality review;
-   - security review;
-   - context/docs/CI review.
-4. The final audit must specifically prove all of the following:
-   - `P95 shared_buffers Kubernetes` cannot be accepted as an evidence-grounded answer;
-   - a concise supported Korean answer remains accepted;
-   - the visible default welcome does not appear in the first API request history;
-   - `P95가 뭐야?` returns `define_term` with zero model calls;
-   - direct `CloudWatch 모니터링 보여줘` navigation remains model-free;
-   - `CloudWatch` experience questions can still produce grounded synthesis;
-   - performance answers include DB/cache/N+1/HTTPS evidence and exclude monitoring and distributed-lock examples unless explicitly requested.
-5. Only after all five lanes pass, mark the final gates complete in `.omo/plans/grounded-portfolio-nli.md` and append the evidence ledger. Do not deploy automatically as part of this handoff.
-
-## Important boundaries
-
-- Never expose or commit `.env` values, SSH keys, gateway host details, or LAN model endpoints.
-- Model output is untrusted. Keep source IDs validated against retrieved candidates and render answer text with `textContent`, not HTML.
-- Preserve deterministic navigation and glossary answers. Do not broaden model calls merely to make answers sound more conversational.
-- Keep history browser-owned, capped at six finalized entries, and avoid server-side conversation persistence.
-- Do not add external search, embeddings, a vector database, caching, or a manually maintained category-to-section map.
-- The browser test can skip explicitly when no Chrome-capable Playwright module is supplied. It must not install a browser dependency during CI.
-
-## Main files to inspect
-
-- Gateway and policy: `tools/nli-gateway.mjs`, `tools/nli/router.mjs`, `tools/nli/model-routing-policy.mjs`.
-- Evidence and grounding guard: `tools/nli/evidence*.mjs`, `tools/nli/portfolio-answer-validation.mjs`, `tools/nli/answer-evidence-support.mjs`.
-- Browser behavior: `app.js`, `nli-widget.js`, `nli-history.js`, `styles.css`.
-- Contracts and fixtures: `nli/*.json`, `nli/system-prompt.md`, `tools/*nli*.test.mjs`.
-- Prior detailed plan and evidence: `.omo/plans/grounded-portfolio-nli.md` and `.omo/evidence/` (these may be ignored by Git, so retain them locally if needed).
+- 게이트웨이 및 라우팅: `tools/nli-gateway.mjs`, `tools/nli/router.mjs`, `tools/nli/model-client.mjs`, `tools/nli/config.mjs`.
+- 근거 선택/검증: `tools/nli/evidence-ranking.mjs`, `tools/nli/response-contract-validation.mjs`.
+- 계약, 프롬프트, fixture: `nli/model-decision.schema.json`, `nli/system-prompt.md`, `nli/grounded-category-test-cases.json`.
+- 최신 Qwen 실행 근거: `.omo/evidence/task-8-qwen-final-matrix.md`.

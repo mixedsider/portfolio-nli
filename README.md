@@ -84,8 +84,8 @@ PowerShell 환경 변수 예시:
 ```powershell
 $env:NLI_HOST="127.0.0.1"
 $env:NLI_PORT="8787"
-$env:LM_STUDIO_BASE_URL="http://192.168.0.58:1234/v1"
-$env:LM_STUDIO_MODEL="google/gemma-4-e4b"
+$env:LM_STUDIO_BASE_URL="http://192.168.0.57:1234/v1"
+$env:LM_STUDIO_MODEL="qwen/qwen3.5-9b"
 $env:LM_STUDIO_TIMEOUT_MS="8000"
 $env:LM_STUDIO_MAX_TOKENS="256"
 $env:LM_STUDIO_MAX_RESPONSE_BYTES="65536"
@@ -99,6 +99,8 @@ $env:NLI_REQUEST_TIMEOUT_MS="15000"
 $env:NLI_ALLOWED_ORIGINS="http://127.0.0.1:4173"
 node tools/nli-gateway.mjs
 ```
+
+Gateway는 OpenAI-compatible Chat Completions 요청마다 `reasoning_effort: "none"`을 고정으로 보냅니다. 이 값은 환경 변수로 변경하지 않습니다. LM Studio 버전이나 모델을 바꾸면 실제 strict JSON probe로 해당 모델의 호환성을 다시 확인해야 합니다.
 
 ## 테스트
 

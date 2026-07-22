@@ -18,11 +18,6 @@ import { findSkillExperienceMatch } from "./skills.mjs";
 import { compact, hasAny, normalize } from "./text.mjs";
 import { isPromptInjectionAttempt } from "./prompt-safety.mjs";
 import {
-  isDependentFollowUp,
-  isDirectNavigationRequest,
-  shouldUseGroundedSynthesis
-} from "./model-routing-policy.mjs";
-import {
   achievementWords,
   assistantIdentityWords,
   blockedGenerationWords,
@@ -36,14 +31,12 @@ import {
   profileWords,
   projectListWords,
   projectSummaryWords,
-  scopeWords,
   skillExperienceWords,
   summarizeWords,
   tocWords
 } from "./routing-vocabulary.mjs";
 
 export { isPromptInjectionAttempt };
-export { isDependentFollowUp, isDirectNavigationRequest, shouldUseGroundedSynthesis };
 export function resolveLocally(message, context) {
   const routeMatch = findBestRoute(message, context.routes.targets);
   const sectionRouteMatch = findBestRoute(
@@ -103,72 +96,6 @@ export function resolveLocally(message, context) {
   if (routeMatch) return navigateResponse(routeMatch.target.id, Math.min(routeMatch.score, 0.72));
 
   return rejectResponse("이 포트폴리오에서 이동하거나 설명할 수 있는 내용을 찾지 못했습니다.", 0);
-}
-
-export function isModelEligible(message, context, localResult) {
-  const normalizedMessage = normalize(message);
-  if (isPromptInjectionAttempt(normalizedMessage)) return false;
-  if (localResult.intent !== "reject_out_of_scope" || localResult.confidence > 0) return true;
-
-  return (
-    hasAny(normalizedMessage, scopeWords) ||
-    Boolean(findBestRoute(message, context.routes.targets)) ||
-    Boolean(findBestTerm(message, context.glossary.terms)) ||
-    Boolean(findSkillExperienceMatch(message, context))
-  );
-}
-
-export function isModelIntentGrounded(message, modelResponse, context, options = {}) {
-  const normalizedMessage = normalize(message);
-  if (isPromptInjectionAttempt(normalizedMessage)) return false;
-
-  const routeMatch = findBestRoute(message, context.routes.targets);
-  const termMatch = findBestTerm(message, context.glossary.terms);
-  const skillMatch = findSkillExperienceMatch(message, context);
-
-  switch (modelResponse.intent) {
-    case "navigate":
-      return Boolean(routeMatch && routeMatch.target.id === modelResponse.targetId && hasAny(normalizedMessage, navigateWords));
-    case "define_term":
-      return Boolean(termMatch && normalize(termMatch.term.term) === normalize(modelResponse.term) && hasAny(normalizedMessage, defineWords));
-    case "summarize_section":
-      return Boolean(
-        routeMatch && routeMatch.target.id === modelResponse.targetId && hasAny(normalizedMessage, summarizeWords)
-      );
-    case "summarize_project":
-      return Boolean(
-        routeMatch &&
-          routeMatch.target.id === modelResponse.targetId &&
-          isProjectTarget(routeMatch.target) &&
-          hasAny(normalizedMessage, projectSummaryWords)
-      );
-    case "introduce_profile":
-      return hasAny(normalizedMessage, profileWords);
-    case "list_projects":
-      return hasAny(normalizedMessage, projectListWords);
-    case "summarize_portfolio":
-      return hasAny(normalizedMessage, portfolioSummaryWords);
-    case "list_toc":
-      return hasAny(normalizedMessage, tocWords);
-    case "list_contacts":
-      return hasAny(normalizedMessage, contactWords);
-    case "list_achievements":
-      return hasAny(normalizedMessage, achievementWords);
-    case "list_skill_experience":
-      return Boolean(
-        skillMatch &&
-          normalize(skillMatch.label) === normalize(modelResponse.term) &&
-          hasAny(normalizedMessage, skillExperienceWords)
-      );
-    case "list_capabilities":
-      return hasAny(normalizedMessage, capabilityWords) || hasAny(normalizedMessage, assistantIdentityWords);
-    case "answer_portfolio":
-      return Boolean(options.allowPortfolioAnswer && Array.isArray(options.candidateSources) && options.candidateSources.length > 0);
-    case "reject_out_of_scope":
-      return true;
-    default:
-      return false;
-  }
 }
 
 function findBestRoute(message, targets) {

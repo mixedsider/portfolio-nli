@@ -32,10 +32,11 @@ export function createGatewayConfig(env = process.env) {
     trustProxy: env.NLI_TRUST_PROXY === "true",
     releaseRevision: env.GIT_COMMIT_SHA || null,
     model: {
-      baseUrl: env.LM_STUDIO_BASE_URL || "http://192.168.0.58:1234/v1",
-      name: env.LM_STUDIO_MODEL || "google/gemma-4-e4b",
+      baseUrl: env.LM_STUDIO_BASE_URL || "http://192.168.0.57:1234/v1",
+      name: env.LM_STUDIO_MODEL || "qwen/qwen3.5-9b",
       timeoutMs: readPositiveIntegerEnv(env, "LM_STUDIO_TIMEOUT_MS", 8_000),
       maxTokens: readPositiveIntegerEnv(env, "LM_STUDIO_MAX_TOKENS", 768),
+      reasoningEffort: "none",
       maxResponseBytes: readPositiveIntegerEnv(env, "LM_STUDIO_MAX_RESPONSE_BYTES", 65_536),
       maxConcurrentRequests: readPositiveIntegerEnv(env, "LM_STUDIO_MAX_CONCURRENT_REQUESTS", 4)
     }

@@ -1,18 +1,7 @@
 import {
-  assistantIdentityResponse,
   defineTermResponse,
-  introduceProfileResponse,
-  listAchievementsResponse,
-  listCapabilitiesResponse,
-  listContactsResponse,
-  listProjectsResponse,
-  listSkillExperienceResponse,
-  listTocResponse,
   navigateResponse,
-  rejectResponse,
-  summarizePortfolioResponse,
-  summarizeProjectResponse,
-  summarizeSectionResponse
+  rejectResponse
 } from "./responses.mjs";
 import { findSkillExperienceMatch } from "./skills.mjs";
 import { normalize } from "./text.mjs";
@@ -33,10 +22,16 @@ const intentNames = new Set([
   "answer_portfolio",
   "reject_out_of_scope"
 ]);
+const modelProposalIntentNames = new Set(["navigate", "define_term", "answer_portfolio", "reject_out_of_scope"]);
 
 const responseKeys = new Set(["intent", "confidence", "targetId", "term", "message", "answer", "relatedTargets", "sources"]);
-const modelDecisionKeys = new Set(["intent", "confidence", "targetId", "term"]);
-const answerPortfolioCandidateKeys = new Set(["intent", "confidence", "answer", "sourceIds"]);
+const modelProposalKeysByIntent = new Map([
+  ["navigate", new Set(["intent", "confidence", "targetId"])],
+  ["define_term", new Set(["intent", "confidence", "term"])],
+  ["answer_portfolio", new Set(["intent", "confidence", "answer", "sourceIds"])],
+  ["reject_out_of_scope", new Set(["intent", "confidence"])]
+]);
+const noModelProposalKeys = new Set();
 const MAX_MESSAGE_LENGTH = 500;
 const MAX_ANSWER_LENGTH = 12_000;
 const MAX_PORTFOLIO_ANSWER_LENGTH = 4_000;
@@ -61,16 +56,14 @@ const canonicalKeysByIntent = {
 };
 
 export function validateResponseContract(response, context, errors, modelCandidate) {
-  const allowedKeys = modelCandidate
-    ? response.intent === "answer_portfolio"
-      ? answerPortfolioCandidateKeys
-      : modelDecisionKeys
-    : responseKeys;
+  const allowedKeys = modelCandidate ? modelProposalKeysByIntent.get(response.intent) || noModelProposalKeys : responseKeys;
   for (const key of Object.keys(response)) {
     if (!allowedKeys.has(key)) errors.push(`unknown property: ${key}`);
   }
 
-  if (!intentNames.has(response.intent)) errors.push("intent is invalid");
+  if (modelCandidate ? !modelProposalIntentNames.has(response.intent) : !intentNames.has(response.intent)) {
+    errors.push(modelCandidate ? "model proposal intent is invalid" : "intent is invalid");
+  }
   if (!Number.isFinite(response.confidence) || response.confidence < 0 || response.confidence > 1) {
     errors.push("confidence must be a number between 0 and 1");
   }
@@ -85,26 +78,6 @@ export function canonicalizeGeneralModelResponse(modelResponse, context) {
       return navigateResponse(modelResponse.targetId, modelResponse.confidence);
     case "define_term":
       return defineTermResponse(context.termByCanonical.get(normalize(modelResponse.term)), modelResponse.confidence);
-    case "summarize_section":
-      return summarizeSectionResponse(modelResponse.targetId, context, modelResponse.confidence);
-    case "introduce_profile":
-      return introduceProfileResponse(context, modelResponse.confidence);
-    case "summarize_project":
-      return summarizeProjectResponse(modelResponse.targetId, context, modelResponse.confidence);
-    case "list_projects":
-      return listProjectsResponse(context, modelResponse.confidence);
-    case "summarize_portfolio":
-      return summarizePortfolioResponse(context, modelResponse.confidence);
-    case "list_toc":
-      return listTocResponse(context, modelResponse.confidence);
-    case "list_contacts":
-      return listContactsResponse(context, modelResponse.confidence);
-    case "list_achievements":
-      return listAchievementsResponse(context, modelResponse.confidence);
-    case "list_skill_experience":
-      return listSkillExperienceResponse(context, modelResponse.term, modelResponse.confidence);
-    case "list_capabilities":
-      return listCapabilitiesResponse(modelResponse.confidence);
     case "reject_out_of_scope":
       return rejectResponse();
     default:
@@ -165,6 +138,7 @@ function validateIntentSlots(response, context, errors, options) {
       errors.push(`unknown skill experience term: ${response.term}`);
     }
   }
+
 }
 
 function requiresAnswer(intent) {

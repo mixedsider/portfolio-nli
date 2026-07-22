@@ -25,6 +25,7 @@ async function requestModel(message, context, config, groundedRequest) {
     model: config.model.name,
     temperature: 0,
     max_tokens: config.model.maxTokens,
+    reasoning_effort: config.model.reasoningEffort || "none",
     messages: [
       { role: "system", content: context.prompt },
       { role: "system", content: buildGroundedRequestBlock(groundedRequest) },

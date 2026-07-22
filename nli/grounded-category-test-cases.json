@@ -187,12 +187,12 @@
           "intent": "answer_portfolio",
           "confidence": 0.9,
           "answer": "이은성은 DB 성능 최적화, CI 품질 검증 자동화, CD 및 ARM 기반 배포 자동화를 연결해 프로젝트를 완성해 왔습니다.",
-          "sourceIds": ["project-makertion-db", "project-makertion-ci", "project-makertion-cd"]
+          "sourceIds": ["about", "project-makertion-ci", "project-makertion-cd"]
         }
       },
       "expect": {
         "intent": "answer_portfolio",
-        "sourceIds": ["project-makertion-db", "project-makertion-ci", "project-makertion-cd"],
+        "sourceIds": ["about", "project-makertion-ci", "project-makertion-cd"],
         "answerIncludes": ["DB 성능 최적화", "CI 품질 검증 자동화", "CD 및 ARM 기반 배포 자동화"],
         "modelCalls": 1
       }
@@ -212,7 +212,7 @@
       "expect": {
         "intent": "navigate",
         "targetId": "project-makertion-db",
-        "modelCalls": 0
+        "modelCalls": 1
       }
     },
     {

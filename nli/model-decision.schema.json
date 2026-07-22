@@ -10,16 +10,6 @@
       "enum": [
         "navigate",
         "define_term",
-        "summarize_section",
-        "introduce_profile",
-        "summarize_project",
-        "list_projects",
-        "summarize_portfolio",
-        "list_toc",
-        "list_contacts",
-        "list_achievements",
-        "list_skill_experience",
-        "list_capabilities",
         "answer_portfolio",
         "reject_out_of_scope"
       ]
@@ -38,12 +28,30 @@
   },
   "allOf": [
     {
-      "if": { "properties": { "intent": { "enum": ["navigate", "summarize_section", "summarize_project"] } } },
-      "then": { "required": ["targetId"] }
+      "if": { "properties": { "intent": { "const": "navigate" } } },
+      "then": {
+        "required": ["targetId"],
+        "not": {
+          "anyOf": [
+            { "required": ["term"] },
+            { "required": ["answer"] },
+            { "required": ["sourceIds"] }
+          ]
+        }
+      }
     },
     {
-      "if": { "properties": { "intent": { "enum": ["define_term", "list_skill_experience"] } } },
-      "then": { "required": ["term"] }
+      "if": { "properties": { "intent": { "const": "define_term" } } },
+      "then": {
+        "required": ["term"],
+        "not": {
+          "anyOf": [
+            { "required": ["targetId"] },
+            { "required": ["answer"] },
+            { "required": ["sourceIds"] }
+          ]
+        }
+      }
     },
     {
       "if": {
@@ -68,6 +76,22 @@
       "then": {
         "not": {
           "anyOf": [
+            { "required": ["answer"] },
+            { "required": ["sourceIds"] }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "intent": { "const": "reject_out_of_scope" } },
+        "required": ["intent"]
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            { "required": ["targetId"] },
+            { "required": ["term"] },
             { "required": ["answer"] },
             { "required": ["sourceIds"] }
           ]
