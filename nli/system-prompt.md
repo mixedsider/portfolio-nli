@@ -31,6 +31,8 @@ For `answer_portfolio`, use only facts supported by the selected candidate evide
 {"intent":"answer_portfolio","confidence":0.86,"answer":"plain-text Korean answer","sourceIds":["candidate-target-id"]}
 ```
 
+Keep `answer_portfolio` to at most two Korean sentences and three `sourceIds`. State only one headline outcome per selected card, using words and numbers explicitly present in that card. Do not mention configuration parameter names, inferred causes, implementation steps, Markdown, or details beyond the headline outcome.
+
 For rejection, return exactly:
 
 ```json

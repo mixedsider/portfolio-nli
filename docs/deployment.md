@@ -12,20 +12,19 @@
 배포 전에 로컬에서 다음 명령을 실행합니다.
 
 ```bash
-node --check app.js
-node --check data/portfolio.js
-node --check tools/static-server.mjs
-node --check tools/static-server.test.mjs
-node --check tools/nli-gateway.mjs
-node --check tools/nli-test.mjs
-node --check tools/nli-gateway.test.mjs
+for file in app.js nli-history.js nli-widget.js data/portfolio.js tools/*.mjs; do node --check "$file"; done
 for file in tools/nli/*.mjs; do node --check "$file"; done
+node -e "for (const f of ['nli/routes.json','nli/glossary.json','nli/intents.json','nli/response.schema.json','nli/model-decision.schema.json','nli/test-cases.json','nli/live-test-cases.json','nli/adversarial-test-cases.json','nli/grounded-category-test-cases.json']) JSON.parse(require('fs').readFileSync(f, 'utf8')); console.log('json ok')"
 node tools/nli-test.mjs
 node tools/nli-test.mjs --local --cases nli/live-test-cases.json --min-pass-rate 1
+node tools/nli-test.mjs --fake --cases nli/grounded-category-test-cases.json --min-pass-rate 1
 node tools/nli-test.mjs --local --cases nli/adversarial-test-cases.json --min-pass-rate 1
-node --test tools/nli-gateway.test.mjs
-node --test tools/static-server.test.mjs
+node --test tools/*.test.mjs
+node --test tools/nli/*.test.mjs
+node --test tools/nli-widget.browser-test.mjs
 ```
+
+기본 환경에서 `tools/nli-widget.browser-test.mjs`는 Chrome-capable Playwright module이 없으면 명시적으로 skip됩니다. 실제 브라우저 회귀를 실행할 때는 `NLI_WIDGET_BROWSER_MODULE=/absolute/path/to/playwright-module.mjs node tools/nli-widget.browser-test.mjs`를 사용합니다.
 
 배포된 Gateway를 직접 호출하는 기능 검증은 다음 명령으로 실행합니다. `nli/live-test-cases.json`의 성공 18개만 호출하며, 이어지는 adversarial 8개와 합쳐 기본 30회/분 rate limit 안에서 실행되도록 구성했습니다.
 

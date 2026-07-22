@@ -485,9 +485,12 @@ jobs:
             pm2 start "${APP_DIR}/tools/nli-gateway.mjs" --name "${PROCESS_NAME}" --cwd "${APP_DIR}" --update-env
             pm2 save
             wait_for_nli_listener_identity
-          else
+          elif command -v systemctl >/dev/null 2>&1 && systemctl --user list-unit-files | grep -q "^${PROCESS_NAME}.service"; then
             systemctl --user restart "${PROCESS_NAME}.service"
             wait_for_nli_listener_identity
+          else
+            echo "Neither pm2 process nor user systemd service was found for ${PROCESS_NAME}"
+            exit 1
           fi
           REMOTE
 

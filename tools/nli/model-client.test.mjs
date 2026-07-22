@@ -43,6 +43,7 @@ test("model client disables reasoning, ignores reasoning_content, and accepts on
     assert.equal(await askModel("empty", context), null);
     await assert.rejects(askModel("reasoning-only", context), SyntaxError);
     assert.deepEqual(receivedPayloads.map((payload) => payload.reasoning_effort), ["none", "none", "none"]);
+    assert.match(receivedPayloads[0].messages[0].content, /at most two Korean sentences and three `sourceIds`/);
   } finally {
     await close(upstream);
   }
