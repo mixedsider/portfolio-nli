@@ -125,7 +125,7 @@ export function createNliWidget({
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, history, currentTargetId: getCurrentTargetId() })
+      body: JSON.stringify({ message, history, currentTargetId: getCurrentTargetId() || undefined })
     });
     if (!response.ok) throw new Error("NLI request failed");
     return response.json();
