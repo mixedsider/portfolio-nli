@@ -185,7 +185,7 @@ img {
 
 .eyebrow {
   margin: 0 0 10px;
-  color: var(--green);
+  color: var(--blue);
   font-size: 0.78rem;
   font-weight: 800;
   text-transform: uppercase;
@@ -532,7 +532,7 @@ h3 {
 
 .case-result {
   margin-bottom: 14px;
-  color: var(--green);
+  color: var(--blue);
   font-weight: 800;
 }
 
@@ -761,12 +761,12 @@ body.is-nli-open .site-footer {
   position: absolute;
   right: 0;
   bottom: 0;
-  min-width: 198px;
+  min-width: 176px;
   min-height: 58px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 8px;
   border: 1px solid rgba(24, 34, 53, 0.14);
   border-radius: var(--radius);
   background: var(--ink);
@@ -778,16 +778,19 @@ body.is-nli-open .site-footer {
 .nli-launcher strong {
   display: inline-grid;
   place-items: center;
-  min-width: 48px;
-  height: 38px;
-  padding: 0 8px;
-  border-radius: calc(var(--radius) - 2px);
+  min-width: 0;
+  padding: 5px 8px;
+  border-radius: 999px;
   background: rgba(255, 255, 255, 0.14);
   font-size: 0.92rem;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .nli-launcher span {
   font-weight: 800;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .nli-panel {
@@ -866,7 +869,7 @@ body.is-nli-open .site-footer {
 
 .nli-kicker {
   margin: 0 0 2px;
-  color: var(--green);
+  color: var(--blue);
   font-size: 0.72rem;
   font-weight: 800;
   text-transform: uppercase;
