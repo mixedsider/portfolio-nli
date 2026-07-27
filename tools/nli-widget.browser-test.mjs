@@ -24,7 +24,8 @@ export async function runNliWidgetBrowserTest({ chromium, root = defaultRoot, la
   try {
     const primary = await runPrimaryScenario(browser, baseUrl);
     const persistence = await runPersistenceScenario(browser, baseUrl);
-    return { baseUrl, primary, persistence };
+    const mobile = await runMobileScenario(browser, baseUrl);
+    return { baseUrl, primary, persistence, mobile };
   } finally {
     await browser.close();
     await closeServer(server);
@@ -58,13 +59,17 @@ async function runPrimaryScenario(browser, baseUrl) {
 
     await page.locator("[data-nli-open]").click();
     const panelBox = await page.locator("[data-nli-panel]").boundingBox();
-    assert.equal(Math.round(panelBox.x), 0);
+    assert.equal(Math.round(panelBox.x + panelBox.width), 1280);
     assert.equal(Math.round(panelBox.height), 900);
+    assert.equal(
+      Math.round(await page.locator(".site-header").evaluate((element) => element.getBoundingClientRect().right)),
+      Math.round(panelBox.x)
+    );
 
     const resizeHandle = page.locator("[data-nli-resize]");
     const widthBeforeResize = panelBox.width;
     await resizeHandle.focus();
-    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowLeft");
     assert.equal(Math.round((await page.locator("[data-nli-panel]").boundingBox()).width), Math.round(widthBeforeResize + 24));
 
     assert.equal(await page.locator(".nli-message").count(), 1);
@@ -135,6 +140,23 @@ async function runPersistenceScenario(browser, baseUrl) {
   }
 }
 
+async function runMobileScenario(browser, baseUrl) {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await context.newPage();
+
+  try {
+    await page.goto(baseUrl, { waitUntil: "load" });
+    await page.locator("[data-nli-open]").click();
+    const panelBox = await page.locator("[data-nli-panel]").boundingBox();
+    assert.equal(Math.round(panelBox.x), 0);
+    assert.equal(Math.round(panelBox.width), 390);
+    assert.equal(Math.round(panelBox.height), 844);
+    return { width: panelBox.width };
+  } finally {
+    await context.close();
+  }
+}
+
 async function submit(page, message) {
   await page.locator("[data-nli-input]").fill(message);
   await page.locator("[data-nli-form]").press("Enter");
@@ -181,6 +203,7 @@ if (isDirectExecution) {
       const result = await runConfiguredBrowserTest();
       assert.equal(result.primary.historyEntries, 6);
       assert.equal(result.persistence.sourceButtonsAfterReload, performanceSources.length);
+      assert.equal(Math.round(result.mobile.width), 390);
     }
   );
 }

@@ -108,6 +108,7 @@ export function createNliWidget({
 
     widget.classList.toggle("is-collapsed", !isOpen);
     widget.classList.remove("is-minimized");
+    documentRoot.body?.classList.toggle("is-nli-open", isOpen);
     openButton.setAttribute("aria-expanded", String(isOpen));
     if (isOpen) {
       renderMessages();
@@ -140,6 +141,7 @@ export function createNliWidget({
       const { minimum, maximum } = getBounds();
       const nextWidth = Math.round(Math.min(Math.max(width, minimum), maximum));
       widget.style.setProperty("--nli-sidebar-width", `${nextWidth}px`);
+      documentRoot.body?.style.setProperty("--nli-sidebar-width", `${nextWidth}px`);
       handle.setAttribute("aria-valuemin", String(minimum));
       handle.setAttribute("aria-valuemax", String(maximum));
       handle.setAttribute("aria-valuenow", String(nextWidth));
@@ -155,7 +157,7 @@ export function createNliWidget({
 
     function resizeFromPointer(event) {
       if (event.pointerId !== activePointerId) return;
-      setWidth(event.clientX);
+      setWidth(windowRef.innerWidth - event.clientX);
     }
 
     handle.addEventListener("pointerdown", (event) => {
@@ -171,7 +173,7 @@ export function createNliWidget({
     handle.addEventListener("keydown", (event) => {
       const rect = widget.getBoundingClientRect();
       const { minimum, maximum } = getBounds();
-      const delta = event.key === "ArrowLeft" ? -24 : event.key === "ArrowRight" ? 24 : 0;
+      const delta = event.key === "ArrowLeft" ? 24 : event.key === "ArrowRight" ? -24 : 0;
 
       if (event.key === "Home") {
         event.preventDefault();

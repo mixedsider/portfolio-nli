@@ -731,7 +731,8 @@ h3 {
   --nli-sidebar-width: 440px;
   position: fixed;
   top: 0;
-  left: 0;
+  right: 0;
+  left: auto;
   bottom: 0;
   z-index: 30;
   width: min(var(--nli-sidebar-width), calc(100vw - 44px));
@@ -746,6 +747,12 @@ h3 {
 
 .nli-command:not(.is-collapsed) {
   pointer-events: auto;
+}
+
+body.is-nli-open .site-header,
+body.is-nli-open main,
+body.is-nli-open .site-footer {
+  margin-right: min(var(--nli-sidebar-width), calc(100vw - 44px));
 }
 
 .nli-launcher {
@@ -817,7 +824,7 @@ h3 {
 .nli-resize-handle {
   position: absolute;
   top: 0;
-  right: -8px;
+  left: -8px;
   bottom: 0;
   z-index: 1;
   width: 16px;
@@ -1196,6 +1203,27 @@ h3 {
   .site-footer a {
     display: inline-flex;
     margin-top: 12px;
+  }
+
+  body.is-nli-open .site-header,
+  body.is-nli-open main,
+  body.is-nli-open .site-footer {
+    margin-right: 0;
+  }
+
+  .nli-command:not(.is-collapsed) {
+    top: 0;
+    right: 0;
+    left: 0;
+    bottom: 0;
+    width: 100vw;
+    min-width: 0;
+    max-width: none;
+    height: 100svh;
+  }
+
+  .nli-command:not(.is-collapsed) .nli-resize-handle {
+    display: none;
   }
 }
 
