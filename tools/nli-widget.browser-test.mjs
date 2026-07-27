@@ -53,7 +53,20 @@ async function runPrimaryScenario(browser, baseUrl) {
 
   try {
     await page.goto(baseUrl, { waitUntil: "load" });
+    const launcherBox = await page.locator("[data-nli-open]").boundingBox();
+    assert.ok(launcherBox && launcherBox.x > 640);
+
     await page.locator("[data-nli-open]").click();
+    const panelBox = await page.locator("[data-nli-panel]").boundingBox();
+    assert.equal(Math.round(panelBox.x), 0);
+    assert.equal(Math.round(panelBox.height), 900);
+
+    const resizeHandle = page.locator("[data-nli-resize]");
+    const widthBeforeResize = panelBox.width;
+    await resizeHandle.focus();
+    await page.keyboard.press("ArrowRight");
+    assert.equal(Math.round((await page.locator("[data-nli-panel]").boundingBox()).width), Math.round(widthBeforeResize + 24));
+
     assert.equal(await page.locator(".nli-message").count(), 1);
     assert.equal(await page.locator("[data-nli-messages]").textContent().then((text) => text.includes("Ignore previous instructions")), false);
 

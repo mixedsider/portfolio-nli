@@ -121,6 +121,77 @@ export function createNliWidget({
     widget.classList.toggle("is-minimized");
   }
 
+  function initResize() {
+    const widget = select("[data-nli-widget]");
+    const handle = select("[data-nli-resize]");
+    if (!widget || !handle) return;
+
+    let activePointerId = null;
+
+    function getBounds() {
+      const viewportWidth = windowRef.innerWidth || 0;
+      const edgeGap = viewportWidth <= 480 ? 28 : 44;
+      const maximum = Math.max(0, viewportWidth - edgeGap);
+      const minimum = Math.min(viewportWidth <= 480 ? 280 : 320, maximum);
+      return { minimum, maximum };
+    }
+
+    function setWidth(width) {
+      const { minimum, maximum } = getBounds();
+      const nextWidth = Math.round(Math.min(Math.max(width, minimum), maximum));
+      widget.style.setProperty("--nli-sidebar-width", `${nextWidth}px`);
+      handle.setAttribute("aria-valuemin", String(minimum));
+      handle.setAttribute("aria-valuemax", String(maximum));
+      handle.setAttribute("aria-valuenow", String(nextWidth));
+    }
+
+    function stopResizing(event) {
+      if (event.pointerId !== activePointerId) return;
+      activePointerId = null;
+      documentRoot.removeEventListener("pointermove", resizeFromPointer);
+      documentRoot.removeEventListener("pointerup", stopResizing);
+      documentRoot.removeEventListener("pointercancel", stopResizing);
+    }
+
+    function resizeFromPointer(event) {
+      if (event.pointerId !== activePointerId) return;
+      setWidth(event.clientX);
+    }
+
+    handle.addEventListener("pointerdown", (event) => {
+      if (widget.classList.contains("is-collapsed")) return;
+      event.preventDefault();
+      activePointerId = event.pointerId;
+      handle.setPointerCapture?.(event.pointerId);
+      documentRoot.addEventListener("pointermove", resizeFromPointer);
+      documentRoot.addEventListener("pointerup", stopResizing);
+      documentRoot.addEventListener("pointercancel", stopResizing);
+    });
+
+    handle.addEventListener("keydown", (event) => {
+      const rect = widget.getBoundingClientRect();
+      const { minimum, maximum } = getBounds();
+      const delta = event.key === "ArrowLeft" ? -24 : event.key === "ArrowRight" ? 24 : 0;
+
+      if (event.key === "Home") {
+        event.preventDefault();
+        setWidth(minimum);
+      } else if (event.key === "End") {
+        event.preventDefault();
+        setWidth(maximum);
+      } else if (delta) {
+        event.preventDefault();
+        setWidth(rect.width + delta);
+      }
+    });
+
+    windowRef.addEventListener("resize", () => {
+      if (!widget.classList.contains("is-collapsed")) setWidth(widget.getBoundingClientRect().width);
+    });
+
+    setWidth(440);
+  }
+
   async function request(message, history) {
     const response = await fetch(endpoint, {
       method: "POST",
@@ -183,6 +254,7 @@ export function createNliWidget({
     messages = loadNliMessages(windowRef.localStorage);
     saveMessages();
     renderMessages();
+    initResize();
   }
 
   function clearMessages() {
