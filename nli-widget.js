@@ -200,7 +200,14 @@ export function createNliWidget({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message, history, currentTargetId: getCurrentTargetId() || undefined })
     });
-    if (!response.ok) throw new Error("NLI request failed");
+    if (!response.ok) {
+      const result = await response.json().catch(() => null);
+      const userMessage =
+        response.status >= 400 && response.status < 500 && typeof result?.message === "string" ? result.message.trim() : "";
+      const error = new Error("NLI request failed");
+      error.userMessage = userMessage;
+      throw error;
+    }
     return response.json();
   }
 
@@ -243,8 +250,12 @@ export function createNliWidget({
     try {
       const answer = getResult(await request(message, history));
       updateMessage(pendingId, answer.text, { sources: answer.sources });
-    } catch {
-      updateMessage(pendingId, "도우미 Gateway에 연결할 수 없습니다. Gateway가 켜져 있는지 확인해주세요.");
+    } catch (error) {
+      if (error?.userMessage) {
+        updateMessage(pendingId, error.userMessage);
+      } else {
+        updateMessage(pendingId, "도우미 Gateway에 연결할 수 없습니다. Gateway가 켜져 있는지 확인해주세요.");
+      }
     } finally {
       clearDelayTimers();
       setPending(false);

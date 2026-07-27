@@ -4,7 +4,6 @@ const data = window.PORTFOLIO_DATA;
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
 const toneMap = {
-  green: "var(--green)",
   blue: "var(--blue)",
   amber: "var(--amber)",
   red: "var(--red)"
@@ -34,7 +33,7 @@ function initMetrics() {
   metricGrid.innerHTML = data.metrics
     .map(
       (metric) => `
-        <article class="metric-card" style="--accent: ${toneMap[metric.tone] || toneMap.green}">
+        <article class="metric-card" style="--accent: ${toneMap[metric.tone] || toneMap.blue}">
           <button type="button" data-scroll-target="${metric.target}">
             <span class="metric-label">${metric.label}</span>
             <span class="metric-value">${metric.value}</span>

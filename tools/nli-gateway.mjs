@@ -73,7 +73,12 @@ export async function resolveNliRequest(message, context = null, options = {}) {
   };
   const modelResponse = await modelClient(safeMessage, nliContext, proposalContext).catch(() => null);
 
-  return canonicalizeModelResponse(modelResponse, nliContext, { candidateSources }) || fallback;
+  const canonical = canonicalizeModelResponse(modelResponse, nliContext, { candidateSources });
+  if (fallback.intent === "navigate" && canonical?.intent === "navigate" && canonical.targetId !== fallback.targetId) {
+    return fallback;
+  }
+
+  return canonical || fallback;
 }
 
 export async function createNliServer(options = {}) {

@@ -8,6 +8,7 @@ const navigationMessage = "DB \uCD5C\uC801\uD654 \uBCF4\uC5EC\uC918";
 const definitionMessage = "P95\uAC00 \uBB50\uC57C?";
 const categoryMessage = "\uC131\uB2A5 \uCD5C\uC801\uD654 \uACBD\uD5D8\uC744 \uC885\uD569\uD574 \uC124\uBA85\uD574\uC918.";
 const metricsNavigationMessage = "\uC131\uACFC \uC9C0\uD45C \uBCF4\uC5EC\uC918";
+const bookkingNavigationMessage = "Bookking\uC73C\uB85C \uC774\uB3D9\uD574\uC918";
 
 test("Given an explicit target request when the model proposes a known target then the gateway performs one canonical navigation", async () => {
   let calls = 0;
@@ -27,6 +28,15 @@ test("Given an explicit target request when the model proposes a known target th
   assert.ok(proposalContext.targets.some((target) => target.id === "project-makertion-db"));
   assert.ok(proposalContext.terms.some((term) => term.term === "P95"));
   assert.ok(proposalContext.candidateSources.length <= 8);
+});
+
+test("Given a Bookking navigation request when the model proposes another known target then the gateway preserves the local route", async () => {
+  const result = await resolveNliRequest(bookkingNavigationMessage, context, {
+    modelClient: async () => ({ intent: "navigate", confidence: 0.99, targetId: "top" })
+  });
+
+  assert.equal(result.intent, "navigate");
+  assert.equal(result.targetId, "project-bookking");
 });
 
 test("Given a glossary request when the model proposes a known term then the gateway supplies the canonical definition", async () => {

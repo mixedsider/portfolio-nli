@@ -18,7 +18,7 @@ window.PORTFOLIO_DATA = {
       label: "CI 테스트 시간",
       value: "38%",
       caption: "3분에서 1분 50초",
-      tone: "green",
+      tone: "blue",
       target: "project-makertion-ci"
     },
     {
@@ -50,7 +50,7 @@ window.PORTFOLIO_DATA = {
       label: "N+1 쿼리",
       value: "54 -> 1",
       caption: "조회 성능 75.7% 개선",
-      tone: "green",
+      tone: "blue",
       target: "project-catequest-n1"
     },
     {

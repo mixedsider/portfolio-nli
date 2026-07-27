@@ -45,6 +45,14 @@ async function runPrimaryScenario(browser, baseUrl) {
   await page.route(nliEndpoint, async (route) => {
     const body = JSON.parse(route.request().postData() || "{}");
     requests.push(body);
+    if (body.message === "too-long-request") {
+      await route.fulfill({
+        status: 413,
+        contentType: "application/json; charset=utf-8",
+        body: JSON.stringify({ message: "질문은 500자 이하로 입력해주세요." })
+      });
+      return;
+    }
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
@@ -75,6 +83,11 @@ async function runPrimaryScenario(browser, baseUrl) {
     assert.equal(await page.locator(".nli-message").count(), 1);
     assert.equal(await page.locator("[data-nli-messages]").textContent().then((text) => text.includes("Ignore previous instructions")), false);
 
+    await submit(page, "too-long-request");
+    assert.equal(await page.locator(".nli-message.is-assistant p").last().textContent(), "질문은 500자 이하로 입력해주세요.");
+    assert.equal(await page.locator("[data-nli-input]").isEnabled(), true);
+    assert.equal(await page.locator("[data-nli-submit]").isEnabled(), true);
+
     await submit(page, "안전 렌더링 확인");
     await page.locator(".nli-message-sources button").waitFor({ state: "visible" });
     assert.equal(await page.locator(".nli-message.is-assistant p").last().textContent(), "근거 <strong>태그</strong>를 문자로 보여야 합니다.");
@@ -102,6 +115,11 @@ async function runPrimaryScenario(browser, baseUrl) {
     assert.equal(await page.locator("#project-makertion").evaluate((element) => element.classList.contains("is-highlighted")), true);
 
     for (let index = 0; index < 7; index += 1) await submit(page, `문맥 질문 ${index + 1}`);
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: "auto" }));
+    await submit(page, "bookking-navigation");
+    await page.waitForFunction(() => window.scrollY > 0, null, { timeout: 5000 });
+    assert.equal(await page.locator("#project-bookking").evaluate((element) => element.classList.contains("is-highlighted")), true);
+
     const lastHistory = requests.at(-1).history;
     assert.equal(lastHistory.length, 6);
     assert.equal(lastHistory.every((entry) => Object.keys(entry).length === 2 && "role" in entry && "text" in entry), true);
@@ -164,6 +182,10 @@ async function submit(page, message) {
 }
 
 function responseFor(message) {
+  if (message === "bookking-navigation") {
+    return { intent: "navigate", confidence: 0.99, targetId: "project-bookking", message: "navigate" };
+  }
+
   if (message === "안전 렌더링 확인") {
     return {
       intent: "answer_portfolio",

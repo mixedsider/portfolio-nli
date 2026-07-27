@@ -5,7 +5,6 @@
   --ink: #182235;
   --muted: #6d798b;
   --line: #dce3ed;
-  --green: #197361;
   --blue: #2d68a7;
   --amber: #ae6d22;
   --red: #bd4c5a;
@@ -43,7 +42,7 @@ body::before {
   z-index: -1;
   background:
     radial-gradient(circle at 86% 4%, rgba(45, 104, 167, 0.13), transparent 25rem),
-    radial-gradient(circle at 4% 76%, rgba(25, 115, 97, 0.08), transparent 29rem),
+    radial-gradient(circle at 4% 76%, rgba(45, 104, 167, 0.08), transparent 29rem),
     linear-gradient(180deg, #fbfcfe 0%, var(--bg) 100%);
 }
 
@@ -231,7 +230,7 @@ h3 {
 
 .hero-summary {
   max-width: 700px;
-  color: #34413d;
+  color: #405168;
   font-size: 1.08rem;
 }
 
@@ -438,7 +437,7 @@ h3 {
 }
 
 .project-card.is-highlighted {
-  outline: 3px solid rgba(31, 122, 85, 0.28);
+  outline: 3px solid rgba(45, 104, 167, 0.32);
 }
 
 .project-top {
@@ -497,8 +496,8 @@ h3 {
 }
 
 .focus-row span {
-  border: 1px solid rgba(39, 106, 159, 0.22);
-  background: rgba(39, 106, 159, 0.06);
+  border: 1px solid rgba(45, 104, 167, 0.22);
+  background: rgba(45, 104, 167, 0.06);
   color: #46606f;
   font-size: 0.78rem;
 }
@@ -539,8 +538,8 @@ h3 {
 .case-copy {
   display: grid;
   gap: 0;
-  border-top: 1px solid rgba(22, 32, 30, 0.08);
-  border-bottom: 1px solid rgba(22, 32, 30, 0.08);
+  border-top: 1px solid rgba(24, 34, 53, 0.08);
+  border-bottom: 1px solid rgba(24, 34, 53, 0.08);
 }
 
 .case-step {
@@ -548,7 +547,7 @@ h3 {
   grid-template-columns: 92px minmax(0, 1fr);
   gap: 14px;
   padding: 13px 0;
-  border-bottom: 1px solid rgba(22, 32, 30, 0.08);
+  border-bottom: 1px solid rgba(24, 34, 53, 0.08);
 }
 
 .case-step:last-child {
@@ -586,7 +585,7 @@ h3 {
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: var(--green);
+  background: var(--blue);
 }
 
 .case-tables {
@@ -645,7 +644,7 @@ h3 {
 }
 
 .case-table tbody tr:last-child {
-  background: rgba(31, 122, 85, 0.08);
+  background: rgba(45, 104, 167, 0.08);
 }
 
 .case-table tbody tr:last-child td {
@@ -849,7 +848,7 @@ body.is-nli-open .site-footer {
 
 .nli-resize-handle:hover::after,
 .nli-resize-handle:focus-visible::after {
-  background: var(--green);
+  background: var(--blue);
 }
 
 .nli-resize-handle:focus-visible {
@@ -1005,7 +1004,7 @@ body.is-nli-open .site-footer {
 }
 
 .nli-message-sources button:focus-visible {
-  outline: 2px solid rgba(25, 115, 97, 0.32);
+  outline: 2px solid rgba(45, 104, 167, 0.32);
   outline-offset: 2px;
 }
 
@@ -1020,7 +1019,7 @@ body.is-nli-open .site-footer {
   width: 6px;
   height: 6px;
   border-radius: 999px;
-  background: var(--green);
+  background: var(--blue);
   animation: nli-pulse 1s infinite ease-in-out;
 }
 
@@ -1054,7 +1053,7 @@ body.is-nli-open .site-footer {
 }
 
 .nli-form input:focus {
-  box-shadow: inset 0 0 0 2px rgba(25, 115, 97, 0.32);
+  box-shadow: inset 0 0 0 2px rgba(45, 104, 167, 0.32);
 }
 
 .nli-form button {
