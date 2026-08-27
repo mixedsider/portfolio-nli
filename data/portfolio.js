@@ -66,7 +66,7 @@ window.PORTFOLIO_DATA = {
     {
       id: "makertion",
       title: "사장님 피규어 만들어주세요!",
-      period: "2025.12 ~ 진행 중",
+      period: "2025.12 ~ 2026.05",
       description: "이미지만으로 3D 모델링을 만들고 출력까지 연결하는 서비스",
       link: "https://makertion.com/",
       tags: ["Java 21", "Spring Boot", "PostgreSQL", "Redis/Valkey", "AWS", "K6"],
