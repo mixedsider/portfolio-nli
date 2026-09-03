@@ -92,7 +92,7 @@ test("history and current target resolve a follow-up without retaining it for la
     return {
       intent: "answer_portfolio",
       confidence: 0.85,
-      answer: "P95 지연 개선 사례를 근거로 답합니다.",
+      answer: "DB 파라미터 튜닝과 부하 테스트로 평균 응답과 P95 지연을 줄인 사례입니다.",
       sourceIds: [groundedRequest.candidateSources[0].id]
     };
   };

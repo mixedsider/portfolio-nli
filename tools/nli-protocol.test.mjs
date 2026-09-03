@@ -176,7 +176,7 @@ test("answer_portfolio accepts an eight-card candidate pool but rejects seven se
   const candidate = {
     intent: "answer_portfolio",
     confidence: 0.75,
-    answer: "홈은 포트폴리오 첫 화면과 프로필 요약으로 이동하는 메인 화면입니다.",
+    answer: "포트폴리오 첫 화면과 프로필 요약으로 이동합니다.",
     sourceIds: [candidateSources[0]]
   };
 

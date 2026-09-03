@@ -161,6 +161,55 @@
     },
     {
       "kind": "success",
+      "message": "CateQuest 프로젝트 요약해줘",
+      "expect": {
+        "intent": "summarize_project",
+        "targetId": "project-catequest"
+      }
+    },
+    {
+      "kind": "success",
+      "message": "Bookking 프로젝트 요약해줘",
+      "expect": {
+        "intent": "summarize_project",
+        "targetId": "project-bookking"
+      }
+    },
+    {
+      "kind": "success",
+      "message": "Makertion 프로젝트 설명해줘",
+      "expect": {
+        "intent": "summarize_project",
+        "targetId": "project-makertion"
+      }
+    },
+    {
+      "kind": "success",
+      "message": "CateQuest 프로젝트로 이동해 주세요",
+      "expect": {
+        "intent": "navigate",
+        "targetId": "project-catequest"
+      }
+    },
+    {
+      "kind": "success",
+      "message": "오늘의 OTT 프로젝트 요약해줘",
+      "expect": {
+        "intent": "summarize_project",
+        "targetId": "project-ott"
+      }
+    },
+    {
+      "kind": "success",
+      "message": "이 프로젝트에서 비용은 어떻게 줄였어?",
+      "currentTargetId": "project-makertion",
+      "expect": {
+        "intent": "navigate",
+        "targetId": "project-makertion-cost"
+      }
+    },
+    {
+      "kind": "success",
       "message": "이 포트폴리오에서 뭘 할 수 있어?",
       "expect": {
         "intent": "list_capabilities",
