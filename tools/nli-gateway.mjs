@@ -83,8 +83,12 @@ export async function resolveNliRequest(message, context = null, options = {}) {
   }
 
   const canonical = canonicalizeModelResponse(modelResponse, nliContext, { candidateSources });
-  if (fallback.intent === "navigate" && canonical?.intent === "navigate" && canonical.targetId !== fallback.targetId) {
+  if (fallback.intent === "navigate") {
+    if (canonical?.intent === "navigate" && canonical.targetId === fallback.targetId) return canonical;
     return fallback;
+  }
+  if (!canonical && local.confidence <= 0 && options.reportUpstreamFailure) {
+    throw new UpstreamUnavailableError();
   }
 
   return canonical || fallback;
@@ -141,7 +145,13 @@ export async function createNliServer(options = {}) {
         modelClient,
         reportUpstreamFailure: true
       });
-      sendJson(response, 200, result);
+      sendJson(
+        response,
+        200,
+        result.intent === "reject_out_of_scope"
+          ? gatewayErrorResponse("OUT_OF_SCOPE", result.message, result.confidence)
+          : result
+      );
     } catch (error) {
       if (error instanceof UpstreamUnavailableError) {
         sendJson(response, 503, gatewayErrorResponse("UPSTREAM_UNAVAILABLE", "도우미 응답을 일시적으로 가져오지 못했습니다. 잠시 후 다시 시도해주세요."));
@@ -161,8 +171,8 @@ export async function createNliServer(options = {}) {
 
 class UpstreamUnavailableError extends Error {}
 
-function gatewayErrorResponse(errorCode, message) {
-  return { ...rejectResponse(message), errorCode, requestId: randomUUID() };
+function gatewayErrorResponse(errorCode, message, confidence = 1) {
+  return { ...rejectResponse(message, confidence), errorCode, requestId: randomUUID() };
 }
 
 function requestErrorCode(statusCode) {

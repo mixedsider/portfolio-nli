@@ -25,6 +25,22 @@
     "message": { "type": "string", "minLength": 1, "maxLength": 500 },
     "answer": { "type": "string", "minLength": 1, "maxLength": 12000 },
     "portfolioAnswer": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "gatewayErrorCode": {
+      "type": "string",
+      "enum": [
+        "INVALID_REQUEST",
+        "UNSUPPORTED_MEDIA_TYPE",
+        "REQUEST_TOO_LARGE",
+        "RATE_LIMITED",
+        "ORIGIN_NOT_ALLOWED",
+        "UPSTREAM_UNAVAILABLE",
+        "OUT_OF_SCOPE"
+      ]
+    },
+    "requestId": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
     "source": {
       "type": "object",
       "additionalProperties": false,
@@ -191,10 +207,23 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["intent", "confidence", "message"],
+      "anyOf": [
+        {
+          "not": {
+            "anyOf": [
+              { "required": ["errorCode"] },
+              { "required": ["requestId"] }
+            ]
+          }
+        },
+        { "required": ["errorCode", "requestId"] }
+      ],
       "properties": {
         "intent": { "const": "reject_out_of_scope" },
         "confidence": { "$ref": "#/$defs/confidence" },
-        "message": { "$ref": "#/$defs/message" }
+        "message": { "$ref": "#/$defs/message" },
+        "errorCode": { "$ref": "#/$defs/gatewayErrorCode" },
+        "requestId": { "$ref": "#/$defs/requestId" }
       }
     }
   }

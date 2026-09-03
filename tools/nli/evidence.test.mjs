@@ -95,7 +95,10 @@ test("evidence facade keeps public cards compatible with bounded retrieval", asy
 
 test("performance wording prioritizes measured optimization evidence over monitoring and locks", async () => {
   const index = buildEvidenceIndex(await loadNliContext(root));
-  const ids = candidateIds(retrieveEvidenceCandidates(index, { message: performanceQuestion }));
+  const ids = candidateIds(retrieveEvidenceCandidates(index, {
+    message: performanceQuestion,
+    currentTargetId: "project-bookking-lock"
+  }));
   const desiredIds = [
     "project-makertion-db",
     "project-makertion-cache",
@@ -164,6 +167,50 @@ test("a project-root follow-up reserves matching scoped evidence before the glob
   assert.ok(ids.includes("project-makertion-cost"));
 });
 
+test("a project current target seeds its scope for a pronoun-only follow-up", async () => {
+  const index = buildEvidenceIndex(await loadNliContext(root));
+  const ids = candidateIds(retrieveEvidenceCandidates(index, {
+    message: "여기에서는 어떻게 했어?",
+    currentTargetId: "project-makertion"
+  }));
+
+  assert.equal(ids[0], "project-makertion");
+  assert.ok(ids.some((id) => id.startsWith("project-makertion-")));
+});
+
+test("a section current target seeds the exact section before sibling scope for a pronoun-only follow-up", async () => {
+  const index = buildEvidenceIndex(await loadNliContext(root));
+  const ids = candidateIds(retrieveEvidenceCandidates(index, {
+    message: "이 섹션은 어떻게 해결했어?",
+    currentTargetId: "project-makertion-cost"
+  }));
+
+  assert.equal(ids[0], "project-makertion-cost");
+  assert.ok(ids.slice(1).some((id) => id.startsWith("project-makertion-")));
+});
+
+test("a page current target does not seed unrelated evidence", async () => {
+  const index = buildEvidenceIndex(await loadNliContext(root));
+  const candidates = retrieveEvidenceCandidates(index, {
+    message: "unrelated-zzqv",
+    currentTargetId: "about"
+  });
+
+  assert.deepEqual(candidates, []);
+});
+
+test("current-target seeding still obeys technical-anchor filters", async () => {
+  const index = buildEvidenceIndex(await loadNliContext(root));
+  const candidates = retrieveEvidenceCandidates(index, {
+    message: awsQuestion,
+    currentTargetId: "project-catequest-ai"
+  });
+
+  assert.ok(candidates.length > 0);
+  assert.ok(candidates.every((candidate) => candidate.evidence.toLowerCase().includes("aws")));
+  assert.equal(candidateIds(candidates).includes("project-catequest-ai"), false);
+});
+
 test("retrieval bounds direct history input and does not invent evidence for empty or unrelated requests", async () => {
   const index = buildEvidenceIndex(await loadNliContext(root));
   const oversizedHistory = [
@@ -200,7 +247,7 @@ test("retrieval treats prompt-injection-like content as data and keeps ordering 
   );
 });
 
-test("current target boosts only cards with material message or history matches", async () => {
+test("current target seeds its exact card and boosts it when other terms also match", async () => {
   const index = buildEvidenceIndex(await loadNliContext(root));
   const unrelated = retrieveEvidenceCandidates(index, {
     message: "unrelated-zzqv",
@@ -212,7 +259,7 @@ test("current target boosts only cards with material message or history matches"
     currentTargetId: "project-makertion-cache"
   });
 
-  assert.deepEqual(unrelated, []);
+  assert.equal(unrelated[0]?.targetId, "project-makertion-db");
   assert.equal(withoutCurrent[0]?.targetId, "project-makertion-db");
   assert.equal(relevant[0]?.targetId, "project-makertion-cache");
 });

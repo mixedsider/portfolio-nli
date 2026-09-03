@@ -41,6 +41,20 @@ test("explicit project and section phrases retain their targets", () => {
   }
 });
 
+test("explicit named targets beat the current project summary context", () => {
+  const currentProjectContext = { ...fullContext, currentTargetId: "project-makertion" };
+
+  for (const [message, intent, targetId] of [
+    ["CateQuest 이 프로젝트를 요약해줘", "summarize_project", "project-catequest"],
+    ["Bookking 이 프로젝트의 동시성 제어를 설명해줘", "summarize_section", "project-bookking-lock"]
+  ]) {
+    const result = resolveLocally(message, currentProjectContext);
+
+    assert.equal(result.intent, intent, message);
+    assert.equal(result.targetId, targetId, message);
+  }
+});
+
 test("new named-project summary and navigation phrases retain their targets", () => {
   for (const [message, intent, targetId] of [
     ["CateQuest 프로젝트 답변해줘", "summarize_project", "project-catequest"],

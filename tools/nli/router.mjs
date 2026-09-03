@@ -58,19 +58,20 @@ export function resolveLocally(message, context) {
   }
   if (hasAny(normalizedMessage, tocWords)) return listTocResponse(context);
 
+  if (hasAny(normalizedMessage, projectListWords)) return listProjectsResponse(context);
+  if (termMatch && hasAny(normalizedMessage, defineWords)) return defineTermResponse(termMatch.term, termMatch.score);
+  if (routeMatch && routeMatch.target.type !== "page" &&
+      (hasAny(normalizedMessage, summarizeWords) || hasAny(normalizedMessage, projectSummaryWords))) {
+    return isProjectTarget(routeMatch.target)
+      ? summarizeProjectResponse(routeMatch.target.id, context, routeMatch.score)
+      : summarizeSectionResponse(routeMatch.target.id, context, routeMatch.score);
+  }
   if (hasAny(normalizedMessage, currentProjectWords) && hasAny(normalizedMessage, summarizeWords)) {
     const currentProject = context.projectByTargetId.get(context.currentTargetId);
     if (currentProject) return summarizeProjectResponse(`project-${currentProject.id}`, context, 0.92);
   }
-  if (hasAny(normalizedMessage, projectListWords)) return listProjectsResponse(context);
-  if (termMatch && hasAny(normalizedMessage, defineWords)) return defineTermResponse(termMatch.term, termMatch.score);
   if (routeMatch && (hasAny(normalizedMessage, summarizeWords) || hasAny(normalizedMessage, projectSummaryWords))) {
-    if (routeMatch.target.type === "page") {
-      return rejectResponse("요약할 포트폴리오 프로젝트나 사례를 구체적으로 알려주세요.", 0);
-    }
-    return isProjectTarget(routeMatch.target)
-      ? summarizeProjectResponse(routeMatch.target.id, context, routeMatch.score)
-      : summarizeSectionResponse(routeMatch.target.id, context, routeMatch.score);
+    return rejectResponse("요약할 포트폴리오 프로젝트나 사례를 구체적으로 알려주세요.", 0);
   }
   if (routeMatch && isProjectTarget(routeMatch.target) && hasExplicitNavigation(normalizedMessage)) {
     return navigateResponse(routeMatch.target.id, routeMatch.score);

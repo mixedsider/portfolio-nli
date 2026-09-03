@@ -107,7 +107,42 @@ test("a conflicting model proposal cannot override a known local navigation targ
   assert.equal(result.targetId, "project-catequest");
 });
 
-test("category examples with show wording use grounded synthesis", async () => {
+test("only a canonical model navigation to the same target may replace deterministic local navigation", async () => {
+  const message = "CateQuest 프로젝트로 이동해줘";
+  const replacementCandidates = [
+    { intent: "reject_out_of_scope", confidence: 1 },
+    { intent: "define_term", confidence: 0.99, term: "P95" },
+    { intent: "navigate", confidence: 0.99, targetId: "projects" },
+    ({ candidateSources }) => {
+      const source = candidateSources.find((candidate) => candidate.targetId === "project-catequest");
+      return {
+        intent: "answer_portfolio",
+        confidence: 0.99,
+        answer: source.evidence.split(/\n+/).filter(Boolean).slice(0, 4).join(" "),
+        sourceIds: [source.id]
+      };
+    }
+  ];
+
+  for (const candidate of replacementCandidates) {
+    const result = await resolveNliRequest(message, context, {
+      modelClient: async (_message, _context, proposalContext) =>
+        typeof candidate === "function" ? candidate(proposalContext) : candidate
+    });
+
+    assert.equal(result.intent, "navigate");
+    assert.equal(result.targetId, "project-catequest");
+  }
+
+  const sameTarget = await resolveNliRequest(message, context, {
+    modelClient: async () => ({ intent: "navigate", confidence: 0.31, targetId: "project-catequest" })
+  });
+  assert.equal(sameTarget.intent, "navigate");
+  assert.equal(sameTarget.targetId, "project-catequest");
+  assert.equal(sameTarget.confidence, 0.31);
+});
+
+test("category examples with show wording preserve deterministic local navigation", async () => {
   const responses = new Map([
     [
       "성능을 최적화한 사례를 보여줘",
@@ -140,9 +175,14 @@ test("category examples with show wording use grounded synthesis", async () => {
 
   for (const [message, expected] of responses) {
     const result = await resolveNliRequest(message, context, { modelClient });
+    const local = resolveLocally(message, context);
 
-    assert.equal(result.intent, "answer_portfolio");
-    assert.deepEqual(result.sources.map((source) => source.id), expected.sourceIds);
+    if (local.intent === "navigate") {
+      assert.deepEqual(result, local);
+    } else {
+      assert.equal(result.intent, "answer_portfolio");
+      assert.deepEqual(result.sources.map((source) => source.id), expected.sourceIds);
+    }
   }
 
   assert.deepEqual(modelCalls, [...responses.keys()]);

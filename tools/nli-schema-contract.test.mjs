@@ -5,7 +5,12 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 
+import { createGatewayConfig } from "./nli/config.mjs";
+import { createNliServer, loadNliContext } from "./nli-gateway.mjs";
+import { listenForFetch } from "./test-server.mjs";
+
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
+const context = await loadNliContext();
 
 test("NLI schemas remain parseable and reserve answer fields for answer_portfolio", async () => {
   const modelDecisionSchema = await readJson("nli/model-decision.schema.json");
@@ -38,6 +43,42 @@ test("NLI schemas remain parseable and reserve answer fields for answer_portfoli
   }
 });
 
+test("response schema accepts an actual Gateway rejection and rejects malformed error metadata", async () => {
+  const responseSchema = await readJson("nli/response.schema.json");
+  const server = await createNliServer({
+    context,
+    config: createGatewayConfig({
+      NLI_ALLOWED_ORIGINS: "*",
+      NLI_RATE_LIMIT_MAX: "30",
+      LM_STUDIO_BASE_URL: "http://127.0.0.1:1/v1"
+    }),
+    modelClient: async () => {
+      throw new Error("schema contract upstream failure");
+    }
+  });
+  const baseUrl = await listenForFetch(server);
+
+  try {
+    const response = await fetch(`${baseUrl}/api/nli`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "unhandled-schema-contract-probe" })
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 503);
+    assert.equal(matchesJsonSchema(responseSchema, body), true);
+    assert.equal(matchesJsonSchema(responseSchema, { ...body, errorCode: "NOT_A_GATEWAY_CODE" }), false);
+    assert.equal(matchesJsonSchema(responseSchema, { ...body, requestId: "not-a-request-id" }), false);
+    const { requestId: _requestId, ...missingRequestId } = body;
+    assert.equal(matchesJsonSchema(responseSchema, missingRequestId), false);
+  } finally {
+    await new Promise((resolvePromise, reject) => {
+      server.close((error) => (error ? reject(error) : resolvePromise()));
+    });
+  }
+});
+
 async function readJson(relativePath) {
   return JSON.parse(await readFile(resolve(root, relativePath), "utf8"));
 }
@@ -59,6 +100,7 @@ function matchesJsonSchema(schema, value, root = schema) {
   if (schema.type && !matchesType(schema.type, value)) return false;
   if (typeof value === "number" && (value < schema.minimum || value > schema.maximum)) return false;
   if (typeof value === "string" && (value.length < schema.minLength || value.length > schema.maxLength)) return false;
+  if (typeof value === "string" && schema.pattern && !new RegExp(schema.pattern, "u").test(value)) return false;
 
   if (Array.isArray(value)) {
     if (value.length < schema.minItems || value.length > schema.maxItems) return false;

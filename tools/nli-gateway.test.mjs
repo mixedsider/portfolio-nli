@@ -253,6 +253,62 @@ test("HTTP boundary identifies rate limits and unavailable upstream models", asy
   await closeServer(unavailableServer);
 });
 
+test("HTTP boundary reports every unusable model result as unavailable when local routing is only generic rejection", async () => {
+  const modelOutcomes = new Map([
+    ["throw", new Error("upstream unavailable")],
+    ["null", null],
+    ["schema-invalid", { intent: "navigate", confidence: "high", targetId: "projects" }],
+    ["unknown-target", { intent: "navigate", confidence: 0.9, targetId: "project-unknown" }],
+    ["invalid-sources", {
+      intent: "answer_portfolio",
+      confidence: 0.9,
+      answer: "This answer cites a source outside the bounded evidence pool.",
+      sourceIds: ["project-unknown"]
+    }]
+  ]);
+  const server = await createNliServer({
+    context,
+    config: createTestConfig(),
+    modelClient: async (message) => {
+      const outcome = modelOutcomes.get(message);
+      if (outcome instanceof Error) throw outcome;
+      return outcome;
+    }
+  });
+  const baseUrl = await listen(server);
+
+  for (const message of modelOutcomes.keys()) {
+    const response = await fetch(`${baseUrl}/api/nli`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message })
+    });
+
+    assert.equal(response.status, 503, message);
+    await assertGatewayError(response, "UPSTREAM_UNAVAILABLE");
+  }
+
+  await closeServer(server);
+});
+
+test("HTTP boundary gives genuine out-of-scope rejection stable Gateway metadata", async () => {
+  const server = await createNliServer({
+    context,
+    config: createTestConfig(),
+    modelClient: async () => ({ intent: "reject_out_of_scope", confidence: 1 })
+  });
+  const baseUrl = await listen(server);
+  const response = await fetch(`${baseUrl}/api/nli`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message: "bitcoin price tomorrow" })
+  });
+
+  assert.equal(response.status, 200);
+  await assertGatewayError(response, "OUT_OF_SCOPE");
+  await closeServer(server);
+});
+
 test("canonical rejections preserve gateway metadata while model proposals reject it", () => {
   const response = {
     intent: "reject_out_of_scope",
@@ -264,6 +320,18 @@ test("canonical rejections preserve gateway metadata while model proposals rejec
 
   assert.deepEqual(validateNliResponse(response, context), { ok: true, errors: [] });
   assert.equal(validateNliResponse(response, context, { modelCandidate: true }).ok, false);
+
+  const { requestId: _requestId, ...missingRequestId } = response;
+  const { errorCode: _errorCode, ...missingErrorCode } = response;
+
+  for (const invalidResponse of [
+    { ...response, errorCode: "NOT_A_GATEWAY_CODE" },
+    { ...response, requestId: "not-a-request-id" },
+    missingRequestId,
+    missingErrorCode
+  ]) {
+    assert.equal(validateNliResponse(invalidResponse, context).ok, false);
+  }
 });
 
 function createTestConfig(overrides = {}) {

@@ -52,10 +52,12 @@ function scoreCandidate(candidate, { currentCard, hasExplicitMetricRequest, matc
   if (requiresOptimizationEvidence && !hasOptimizationEvidence(card)) return null;
 
   const structuralScore = hasExplicitMetricRequest ? metricCount(card) * DIRECT_METRIC_BONUS : 0;
-  if (semanticScore <= 0 && structuralScore <= 0) return null;
+  const isCurrentScope = currentCard && ["project", "section"].includes(currentCard.type) &&
+    scopeKey(card) === scopeKey(currentCard);
+  if (semanticScore <= 0 && structuralScore <= 0 && !isCurrentScope) return null;
 
   let score = semanticScore + structuralScore;
-  if (semanticScore > 0 && currentCard) {
+  if (currentCard) {
     if (card.targetId === currentCard.targetId) score += 2;
     else if (scopeKey(card) === scopeKey(currentCard)) score += 0.35;
   }
