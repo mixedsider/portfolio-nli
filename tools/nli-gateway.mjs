@@ -54,6 +54,7 @@ export async function resolveNliRequest(message, context = null, options = {}) {
   const local = resolveLocally(safeMessage, nliContext);
   const fallback = local.confidence > 0 ? local : rejectResponse();
   if (isPromptInjectionAttempt(safeMessage)) return fallback;
+  if (fallback.intent === "summarize_project") return fallback;
   if (options.useModel === false) return fallback;
 
   const evidenceIndex = buildEvidenceIndex(baseContext);

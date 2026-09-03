@@ -72,6 +72,41 @@ test("single-target show requests use one model proposal before gateway-owned na
   assert.equal(modelCalls.length, 2);
 });
 
+test("known project aliases resolve to their deterministic project response", async () => {
+  for (const [message, intent, targetId] of [
+    ["Cate Quest 프로젝트를 요약해줘", "summarize_project", "project-catequest"],
+    ["카테 퀘스트 프로젝트를 요약해줘", "summarize_project", "project-catequest"],
+    ["카테 퀘 스트 프로젝트로 이동해줘", "navigate", "project-catequest"],
+    ["북 킹 프로젝트를 요약해줘", "summarize_project", "project-bookking"],
+    ["오늘의OTT 프로젝트를 요약해줘", "summarize_project", "project-ott"],
+    ["오늘의 오티티 프로젝트로 이동해줘", "navigate", "project-ott"],
+    ["오티티 프로젝트로 이동해줘", "navigate", "project-ott"],
+    ["메이커션 프로젝트 설명해줘", "summarize_project", "project-makertion"]
+  ]) {
+    const result = await resolveNliRequest(message, context, { useModel: false });
+
+    assert.equal(result.intent, intent, message);
+    assert.equal(result.targetId, targetId, message);
+  }
+});
+
+test("local project summaries do not consult a model", async () => {
+  const result = await resolveNliRequest("Cate Quest 프로젝트를 요약해줘", context, {
+    modelClient: async () => { throw new Error("local project summaries must not call the model"); }
+  });
+
+  assert.equal(result.intent, "summarize_project");
+  assert.equal(result.targetId, "project-catequest");
+});
+
+test("a conflicting model proposal cannot override a known local navigation target", async () => {
+  const result = await resolveNliRequest("CateQuest 프로젝트로 이동해줘", context, {
+    modelClient: async () => ({ intent: "navigate", confidence: 0.99, targetId: "projects" })
+  });
+
+  assert.equal(result.targetId, "project-catequest");
+});
+
 test("category examples with show wording use grounded synthesis", async () => {
   const responses = new Map([
     [
@@ -163,11 +198,11 @@ test("default rate limit accommodates the deployed functional and adversarial su
     ...functionalFixture.cases.filter((testCase) => testCase.kind === "success"),
     ...adversarialFixture.cases
   ];
-  assert.equal(testCases.length, 26);
+  assert.equal(testCases.length, 34);
 
   const server = await createNliServer({
     context,
-    config: createTestConfig({ rateLimitMax: 30, allowedOrigins: new Set(["*"]) }),
+    config: createTestConfig({ rateLimitMax: testCases.length + 1, allowedOrigins: new Set(["*"]) }),
     modelClient: async (message, nliContext) => toModelDecision(resolveLocally(message, nliContext))
   });
   const baseUrl = await listen(server);

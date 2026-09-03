@@ -26,6 +26,11 @@ test("NLI schemas remain parseable and reserve answer fields for answer_portfoli
   assert.equal(matchesJsonSchema(modelDecisionSchema, legacyCandidate), false);
   assert.equal(matchesJsonSchema(modelDecisionSchema, portfolioCandidate), true);
   assert.equal(matchesJsonSchema(modelDecisionSchema, { ...portfolioCandidate, targetId: "projects" }), false);
+  assert.equal(matchesJsonSchema(modelDecisionSchema, {
+    intent: "summarize_project",
+    confidence: 0.9,
+    targetId: "project-catequest"
+  }), false);
 
   for (const relativePath of ["nli/intents.json", "nli/model-decision.schema.json", "nli/response.schema.json"]) {
     const source = await readFile(resolve(root, relativePath), "utf8");

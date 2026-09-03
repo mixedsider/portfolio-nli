@@ -3,6 +3,70 @@
   "cases": [
     {
       "kind": "success",
+      "message": "Cate Quest 프로젝트를 요약해줘",
+      "expect": {
+        "intent": "summarize_project",
+        "targetId": "project-catequest"
+      }
+    },
+    {
+      "kind": "success",
+      "message": "카테 퀘스트 프로젝트를 요약해줘",
+      "expect": {
+        "intent": "summarize_project",
+        "targetId": "project-catequest"
+      }
+    },
+    {
+      "kind": "success",
+      "message": "카테 퀘 스트 프로젝트로 이동해줘",
+      "expect": {
+        "intent": "navigate",
+        "targetId": "project-catequest"
+      }
+    },
+    {
+      "kind": "success",
+      "message": "북 킹 프로젝트를 요약해줘",
+      "expect": {
+        "intent": "summarize_project",
+        "targetId": "project-bookking"
+      }
+    },
+    {
+      "kind": "success",
+      "message": "오늘의OTT 프로젝트를 요약해줘",
+      "expect": {
+        "intent": "summarize_project",
+        "targetId": "project-ott"
+      }
+    },
+    {
+      "kind": "success",
+      "message": "오늘의 오티티 프로젝트로 이동해줘",
+      "expect": {
+        "intent": "navigate",
+        "targetId": "project-ott"
+      }
+    },
+    {
+      "kind": "success",
+      "message": "오티티 프로젝트로 이동해줘",
+      "expect": {
+        "intent": "navigate",
+        "targetId": "project-ott"
+      }
+    },
+    {
+      "kind": "success",
+      "message": "메이커션 프로젝트 설명해줘",
+      "expect": {
+        "intent": "summarize_project",
+        "targetId": "project-makertion"
+      }
+    },
+    {
+      "kind": "success",
       "message": "DB 최적화 보여줘",
       "expect": {
         "intent": "navigate",
