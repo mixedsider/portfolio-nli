@@ -3,9 +3,9 @@ window.PORTFOLIO_DATA = {
     name: "이은성",
     englishName: "Lee EunSung",
     role: "Backend & Infra Developer",
-    headline: "제약에 갇히지 않고 직접 만들며, 공유하는 개발자",
+    headline: "대용량 데이터 흐름과 운영 안정성을 설계하는 Java·Spring 백엔드 개발자",
     summary:
-      "필요한 기능은 기존 도구의 한계를 넘어 직접 구현하고, 시스템의 전체 흐름을 기준으로 병목과 장애 원인을 추적합니다. 백엔드, 인프라, 성능 최적화, CI/CD 자동화를 연결해 제품이 안정적으로 굴러가게 만드는 데 집중합니다.",
+      "백엔드·인프라·성능 최적화·CI/CD 자동화를 연결해 병목과 장애 원인을 추적하고, 측정과 검증을 통해 운영 가능한 구조를 만듭니다. 필요한 문제는 직접 도구로 해결하고, 학습한 내용은 동료 및 멘티와 공유합니다.",
     contacts: [
       { label: "GitHub", value: "github.com/mixedsider", href: "https://github.com/mixedsider" },
       { label: "Email", value: "mixeddev0812@gmail.com", href: "mailto:mixeddev0812@gmail.com" },
