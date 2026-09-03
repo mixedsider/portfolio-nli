@@ -36,11 +36,12 @@ export function retrieveEvidenceCandidates(index, request = {}) {
   const requiresOptimizationEvidence = isPerformanceOptimizationQuery(allTerms);
   const currentTargetId = stringValue(request?.currentTargetId);
   const currentCard = cards.find((card) => card.targetId === currentTargetId) || null;
-
-  return scored
+  const candidates = scored
     .map((candidate) => scoreCandidate(candidate, { currentCard, hasExplicitMetricRequest, matchedAnchors, requiresOptimizationEvidence }))
     .filter(Boolean)
-    .sort(compareCandidates)
+    .sort(compareCandidates);
+
+  return prioritizeCurrentScope(candidates, currentCard)
     .slice(0, MAX_EVIDENCE_CANDIDATES)
     .map(({ card }) => publicCard(card));
 }
@@ -114,6 +115,8 @@ function searchTerms(value) {
 
   for (const token of tokenizeEvidence(value)) {
     terms.add(token);
+    const latinPrefix = token.match(/^([a-z0-9+#.]+)[\uAC00-\uD7A3]+$/iu)?.[1];
+    if (latinPrefix) terms.add(latinPrefix.toLowerCase());
     if (!/^[\uAC00-\uD7A3]+$/u.test(token)) continue;
 
     const characters = Array.from(token);
@@ -123,6 +126,22 @@ function searchTerms(value) {
   }
 
   return [...terms];
+}
+
+function prioritizeCurrentScope(candidates, currentCard) {
+  if (!currentCard) return candidates;
+
+  const exact = [];
+  const scoped = [];
+  const remaining = [];
+
+  for (const candidate of candidates) {
+    if (candidate.card.targetId === currentCard.targetId) exact.push(candidate);
+    else if (scopeKey(candidate.card) === scopeKey(currentCard)) scoped.push(candidate);
+    else remaining.push(candidate);
+  }
+
+  return [...exact, ...scoped, ...remaining];
 }
 
 function isTechnicalAnchor(term) {

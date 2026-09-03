@@ -139,6 +139,31 @@ test("AWS wording surfaces AWS-backed evidence", async () => {
   assert.ok(candidates.every((candidate) => candidate.evidence.toLowerCase().includes("aws")));
 });
 
+test("named project queries retain evidence for particle-attached and compact project names", async () => {
+  const index = buildEvidenceIndex(await loadNliContext(root));
+  const queries = [
+    ["CateQuest를 요약해줘", "project-catequest"],
+    ["Bookking의 프로젝트를 알려줘", "project-bookking"],
+    ["Cate Quest 프로젝트를 요약해줘", "project-catequest"],
+    ["오늘의OTT 프로젝트를 요약해줘", "project-ott"]
+  ];
+
+  for (const [message, targetId] of queries) {
+    const ids = candidateIds(retrieveEvidenceCandidates(index, { message }));
+    assert.ok(ids.some((id) => id.startsWith(targetId)), `${message} should retain ${targetId} evidence`);
+  }
+});
+
+test("a project-root follow-up reserves matching scoped evidence before the global cutoff", async () => {
+  const index = buildEvidenceIndex(await loadNliContext(root));
+  const ids = candidateIds(retrieveEvidenceCandidates(index, {
+    message: "이 프로젝트에서 비용은 어떻게 줄였어?",
+    currentTargetId: "project-makertion"
+  }));
+
+  assert.ok(ids.includes("project-makertion-cost"));
+});
+
 test("retrieval bounds direct history input and does not invent evidence for empty or unrelated requests", async () => {
   const index = buildEvidenceIndex(await loadNliContext(root));
   const oversizedHistory = [
