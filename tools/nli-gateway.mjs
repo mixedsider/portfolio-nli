@@ -21,6 +21,8 @@ import { buildEvidenceIndex, retrieveEvidenceCandidates } from "./nli/evidence.m
 import { createModelClient } from "./nli/model-client.mjs";
 import {
   isPromptInjectionAttempt,
+  isCurrentProjectScopeConstrained,
+  isTargetInCurrentProjectScope,
   resolveLocally
 } from "./nli/router.mjs";
 import { rejectResponse } from "./nli/responses.mjs";
@@ -83,15 +85,20 @@ export async function resolveNliRequest(message, context = null, options = {}) {
   }
 
   const canonical = canonicalizeModelResponse(modelResponse, nliContext, { candidateSources });
+  const scopedCanonical = canonical?.intent === "navigate" &&
+    isCurrentProjectScopeConstrained(safeMessage, nliContext) &&
+    !isTargetInCurrentProjectScope(canonical.targetId, nliContext)
+    ? null
+    : canonical;
   if (fallback.intent === "navigate") {
-    if (canonical?.intent === "navigate" && canonical.targetId === fallback.targetId) return canonical;
+    if (scopedCanonical?.intent === "navigate" && scopedCanonical.targetId === fallback.targetId) return scopedCanonical;
     return fallback;
   }
-  if (!canonical && local.confidence <= 0 && options.reportUpstreamFailure) {
+  if (!scopedCanonical && local.confidence <= 0 && options.reportUpstreamFailure) {
     throw new UpstreamUnavailableError();
   }
 
-  return canonical || fallback;
+  return scopedCanonical || fallback;
 }
 
 export async function createNliServer(options = {}) {

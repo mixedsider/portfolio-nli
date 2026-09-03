@@ -30,12 +30,12 @@ export function isAnswerSupportedBySelectedEvidence(answer, evidence) {
   const evidenceText = normalize(evidence);
   const evidenceTokens = new Set(tokenizeEvidence(evidence));
   const claimTermGroups = splitAnswerClaims(answer)
-    .map((claim) => meaningfulTerms(claim))
-    .filter((terms) => terms.length > 0);
+    .map((claim) => ({ terms: meaningfulTerms(claim), anchors: directMeaningfulTerms(claim).filter(isAnswerAnchor) }))
+    .filter(({ terms }) => terms.length > 0);
 
   return (
     claimTermGroups.length > 0 &&
-    claimTermGroups.every((terms) => claimSupportedByEvidence(terms, evidenceText, evidenceTokens))
+    claimTermGroups.every(({ terms, anchors }) => claimSupportedByEvidence(terms, anchors, evidenceText, evidenceTokens))
   );
 }
 
@@ -79,9 +79,8 @@ function hasClauseSignal(claim) {
     /[\uAC00-\uD7A3](?:다|요|니다|습니다)[\s.!?。！？,;]*$/u.test(claim);
 }
 
-function claimSupportedByEvidence(terms, evidenceText, evidenceTokens) {
+function claimSupportedByEvidence(terms, anchors, evidenceText, evidenceTokens) {
   const supportedTerms = terms.filter((term) => termSupportedByEvidence(term, evidenceText, evidenceTokens));
-  const anchors = terms.filter(isAnswerAnchor);
   const supportedAnchors = anchors.filter((term) => termSupportedByEvidence(term, evidenceText, evidenceTokens));
 
   if (hasUnsupportedAnchorIsland(terms, evidenceText, evidenceTokens)) return false;
@@ -94,7 +93,7 @@ function claimSupportedByEvidence(terms, evidenceText, evidenceTokens) {
 function hasUnsupportedAnchorIsland(terms, evidenceText, evidenceTokens) {
   let unsupportedAnchors = 0;
   for (const term of terms) {
-    if (!isAnswerAnchor(term) || termSupportedByEvidence(term, evidenceText, evidenceTokens)) {
+    if (!isTechnicalAnchor(term) || termSupportedByEvidence(term, evidenceText, evidenceTokens)) {
       unsupportedAnchors = 0;
       continue;
     }
@@ -108,8 +107,13 @@ function meaningfulTerms(value) {
   return tokenizeEvidence(value).filter((term) => !genericAnswerTerms.has(term));
 }
 
+function directMeaningfulTerms(value) {
+  return (normalize(value).match(/[\p{L}\p{N}+#.]+/gu) || [])
+    .filter((term) => Array.from(term).length >= 2 && !genericAnswerTerms.has(term));
+}
+
 function isConciseTechnicalClaim(terms, anchors) {
-  return terms.length <= 4 && anchors.length >= 2 && anchors.length === terms.length;
+  return terms.length <= 8 && anchors.filter(isTechnicalAnchor).length >= 2;
 }
 
 function termSupportedByEvidence(term, evidenceText, evidenceTokens) {
@@ -132,6 +136,10 @@ function koreanTermVariants(term) {
 
 function isAnswerAnchor(term) {
   return /[0-9+#.]/.test(term) || /^[a-z]{2,}$/i.test(term) || /^[\uAC00-\uD7A3]{3,}$/u.test(term);
+}
+
+function isTechnicalAnchor(term) {
+  return /^[a-z0-9+#.]+$/i.test(term) && (/[0-9+#.]/.test(term) || /^[a-z]{2,}$/i.test(term));
 }
 
 function escapeRegExp(value) {

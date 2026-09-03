@@ -67,6 +67,14 @@ async function runPrimaryScenario(browser, baseUrl) {
       });
       return;
     }
+    if (body.message === "proxy-html-error") {
+      await route.fulfill({
+        status: 502,
+        contentType: "text/html; charset=utf-8",
+        body: "<html><body>bad gateway</body></html>"
+      });
+      return;
+    }
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
@@ -104,6 +112,11 @@ async function runPrimaryScenario(browser, baseUrl) {
 
     await submit(page, "upstream-unavailable");
     assert.equal(await page.locator(".nli-message.is-assistant p").last().textContent(), "잠시 후 다시 시도해주세요.");
+
+    await submit(page, "proxy-html-error");
+    const proxyErrorMessage = await page.locator(".nli-message.is-assistant p").last().textContent();
+    assert.match(proxyErrorMessage, /일시적으로|잠시 후/);
+    assert.doesNotMatch(proxyErrorMessage, /Gateway.*켜져 있는지/);
 
     await submit(page, "안전 렌더링 확인");
     await page.locator(".nli-message-sources button").waitFor({ state: "visible" });

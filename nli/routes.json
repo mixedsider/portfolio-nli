@@ -40,14 +40,14 @@
       "id": "project-catequest",
       "type": "project",
       "label": "CateQuest",
-      "aliases": ["카테퀘스트", "Cate Quest", "카테 퀘스트", "카테 퀘 스트", "질문 생성 앱", "카테고리 질문"],
+      "aliases": ["카테퀘스트", "케이트퀘스트", "케이트 퀘스트", "Cate Quest", "카테 퀘스트", "카테 퀘 스트", "질문 생성 앱", "카테고리 질문"],
       "description": "사용자 맞춤 카테고리별 질문 생성 프로젝트 카드로 이동합니다."
     },
     {
       "id": "project-bookking",
       "type": "project",
       "label": "Bookking",
-      "aliases": ["북킹", "북 킹", "도서 검색", "결제 프로젝트"],
+      "aliases": ["북킹", "북 킹", "부킹", "도서 검색", "결제 프로젝트"],
       "description": "검색과 결제 흐름을 가진 Bookking 프로젝트 카드로 이동합니다."
     },
     {

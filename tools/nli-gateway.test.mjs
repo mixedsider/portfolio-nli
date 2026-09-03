@@ -1,15 +1,20 @@
 import { createServer } from "node:http";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { after, test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { createGatewayConfig } from "./nli/config.mjs";
 import { isOriginAllowed } from "./nli/http.mjs";
 import { createModelClient } from "./nli/model-client.mjs";
+import { resolveLocally } from "./nli/router.mjs";
 import { createNliServer, loadNliContext, resolveNliRequest, validateNliResponse } from "./nli-gateway.mjs";
 import { listenForFetch } from "./test-server.mjs";
 
 const context = await loadNliContext();
 const openServers = [];
+const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 
 after(async () => {
   await Promise.all(openServers.map(closeServer));
@@ -208,6 +213,16 @@ test("HTTP boundary rejects malformed, oversized, rate-limited, and disallowed r
   await closeServer(server);
 });
 
+test("a model proposal cannot override a current-project pronoun with another project navigation", async () => {
+  const result = await resolveNliRequest("여기서 동시성 문제는 어떻게 해결했어?", context, {
+    currentTargetId: "project-makertion",
+    modelClient: async () => ({ intent: "navigate", confidence: 0.99, targetId: "project-bookking-lock" })
+  });
+
+  assert.notEqual(result.targetId, "project-bookking-lock");
+  assert.ok(!result.targetId || result.targetId.startsWith("project-makertion"));
+});
+
 test("HTTP boundary identifies rate limits and unavailable upstream models", async () => {
   const rateLimitedServer = await createNliServer({
     context,
@@ -334,6 +349,53 @@ test("canonical rejections preserve gateway metadata while model proposals rejec
   }
 });
 
+test("HTTP Gateway executes every declared intent example with a contract-valid response", async () => {
+  const intents = JSON.parse(await readFile(resolve(root, "nli/intents.json"), "utf8")).intents;
+  const expectedByMessage = new Map(intents.flatMap((definition) =>
+    definition.examples.map((message) => [message, definition])
+  ));
+  const server = await createNliServer({
+    context,
+    config: createTestConfig({ rateLimitMax: 100 }),
+    modelClient: async (message, nliContext, proposalContext) => {
+      const definition = expectedByMessage.get(message);
+      if (definition?.name === "answer_portfolio") {
+        const source = proposalContext.candidateSources[0];
+        return {
+          intent: "answer_portfolio",
+          confidence: 0.9,
+          answer: source.label,
+          sourceIds: [source.id]
+        };
+      }
+      return toModelDecision(resolveLocally(message, nliContext));
+    }
+  });
+  const baseUrl = await listen(server);
+
+  for (const [message, definition] of expectedByMessage) {
+    const response = await fetch(`${baseUrl}/api/nli`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message })
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 200, message);
+    assert.equal(body.intent, definition.name, message);
+    if (definition.requiredSlots.includes("targetId")) {
+      assert.ok(context.targetById.has(body.targetId), message);
+      if (definition.allowedTargetTypes) {
+        assert.ok(definition.allowedTargetTypes.includes(context.targetById.get(body.targetId).type), message);
+      }
+    }
+    if (definition.requiredSlots.includes("term")) assert.equal(typeof body.term, "string", message);
+    if (definition.requiredSlots.includes("answer")) assert.equal(typeof body.answer, "string", message);
+  }
+
+  await closeServer(server);
+});
+
 function createTestConfig(overrides = {}) {
   return {
     host: "127.0.0.1",
@@ -382,4 +444,11 @@ async function readRequestBody(request) {
   const chunks = [];
   for await (const chunk of request) chunks.push(chunk);
   return Buffer.concat(chunks).toString("utf8");
+}
+
+function toModelDecision(response) {
+  const decision = { intent: response.intent, confidence: response.confidence };
+  if (response.targetId) decision.targetId = response.targetId;
+  if (response.term) decision.term = response.term;
+  return decision;
 }

@@ -38,9 +38,13 @@ import {
 
 export { isPromptInjectionAttempt };
 export function resolveLocally(message, context) {
-  const routeMatch = findBestRoute(message, context.routes.targets);
-  const termMatch = findBestTerm(message, context.glossary.terms);
   const normalizedMessage = normalize(message);
+  const scopeConstrained = isCurrentProjectScopeConstrained(normalizedMessage, context);
+  const routeTargets = scopeConstrained
+    ? context.routes.targets.filter((target) => isTargetInCurrentProjectScope(target.id, context))
+    : context.routes.targets;
+  const routeMatch = findBestRoute(message, routeTargets);
+  const termMatch = findBestTerm(message, context.glossary.terms);
   const skillMatch = findSkillExperienceMatch(normalizedMessage, context);
 
   if (isPromptInjectionAttempt(normalizedMessage)) {
@@ -49,16 +53,25 @@ export function resolveLocally(message, context) {
   if (hasAny(normalizedMessage, blockedGenerationWords)) {
     return rejectResponse("이 도우미는 포트폴리오 탐색만 지원하며 면접 예상 질문이나 평가 질문은 만들지 않습니다.");
   }
+  if (requiresGroundedPortfolioAnswer(normalizedMessage)) return rejectResponse(undefined, 0);
   if (hasAny(normalizedMessage, capabilityWords)) return listCapabilitiesResponse();
   if (hasAny(normalizedMessage, assistantIdentityWords)) return assistantIdentityResponse();
   if (hasAny(normalizedMessage, contactWords)) return listContactsResponse(context);
   if (hasAny(normalizedMessage, profileWords)) return introduceProfileResponse(context);
-  if (hasAny(normalizedMessage, achievementWords) && !hasExplicitNavigation(normalizedMessage)) {
+  if (hasAny(normalizedMessage, achievementWords) && !hasExplicitNavigation(normalizedMessage) &&
+      (!hasAny(normalizedMessage, navigateWords) || !hasSpecificRouteContext(normalizedMessage, routeMatch?.target))) {
     return listAchievementsResponse(context);
   }
   if (hasAny(normalizedMessage, tocWords)) return listTocResponse(context);
 
+  const typoProject = findProjectTypo(normalizedMessage, context.routes.targets);
+  if (typoProject) return rejectResponse(`${typoProject.label} 프로젝트를 찾으셨나요?`, 0.8);
   if (hasAny(normalizedMessage, projectListWords)) return listProjectsResponse(context);
+  if (routeMatch && routeMatch.target.type !== "page" && hasAny(normalizedMessage, summarizeWords)) {
+    return isProjectTarget(routeMatch.target)
+      ? summarizeProjectResponse(routeMatch.target.id, context, routeMatch.score)
+      : summarizeSectionResponse(routeMatch.target.id, context, routeMatch.score);
+  }
   if (termMatch && hasAny(normalizedMessage, defineWords)) return defineTermResponse(termMatch.term, termMatch.score);
   if (routeMatch && routeMatch.target.type !== "page" &&
       (hasAny(normalizedMessage, summarizeWords) || hasAny(normalizedMessage, projectSummaryWords))) {
@@ -76,6 +89,9 @@ export function resolveLocally(message, context) {
   if (routeMatch && isProjectTarget(routeMatch.target) && hasExplicitNavigation(normalizedMessage)) {
     return navigateResponse(routeMatch.target.id, routeMatch.score);
   }
+  if (skillMatch && isGenericSkillExperienceRequest(normalizedMessage, skillMatch, routeMatch)) {
+    return listSkillExperienceResponse(context, skillMatch, 0.9);
+  }
   if (skillMatch && hasAny(normalizedMessage, skillExperienceWords) && !hasAny(normalizedMessage, navigateWords)) {
     return listSkillExperienceResponse(context, skillMatch, 0.9);
   }
@@ -88,8 +104,26 @@ export function resolveLocally(message, context) {
   }
   if (termMatch && termMatch.score >= 0.9) return defineTermResponse(termMatch.term, termMatch.score);
   if (routeMatch) return navigateResponse(routeMatch.target.id, Math.min(routeMatch.score, 0.72));
+  if (scopeConstrained) {
+    return rejectResponse("현재 보고 있는 프로젝트 안에서 확인할 수 있는 내용을 찾지 못했습니다.", 0.8);
+  }
 
   return rejectResponse("이 포트폴리오에서 이동하거나 설명할 수 있는 내용을 찾지 못했습니다.", 0);
+}
+
+export function isCurrentProjectScopeConstrained(message, context) {
+  const normalizedMessage = normalize(message);
+  return Boolean(
+    context.currentTargetId &&
+    currentProjectTargetId(context.currentTargetId, context) &&
+    hasAny(normalizedMessage, currentProjectWords) &&
+    !hasExplicitNamedTarget(normalizedMessage, context.routes.targets)
+  );
+}
+
+export function isTargetInCurrentProjectScope(targetId, context) {
+  const currentProjectId = currentProjectTargetId(context.currentTargetId, context);
+  return Boolean(currentProjectId && currentProjectTargetId(targetId, context) === currentProjectId);
 }
 
 function findBestRoute(message, targets) {
@@ -102,7 +136,8 @@ function findBestRoute(message, targets) {
 
 function createRouteCandidate(normalizedMessage, target, order) {
   const directKeywords = [target.label, ...(target.aliases || [])];
-  const isProjectRootWording = normalizedMessage.includes(normalize("프로젝트"));
+  const isProjectRootWording = normalizedMessage.includes(normalize("프로젝트")) ||
+    (target.project && normalizedMessage.includes(normalize(target.project)));
   const directLabelAliasScore = Math.max(
     ...directKeywords
       .filter((keyword) => !(isProjectRootWording && target.type === "section" && normalize(target.project).includes(normalize(keyword))))
@@ -165,4 +200,78 @@ function hasExplicitNavigation(normalizedMessage) {
 
 function isProjectTarget(target) {
   return target?.type === "project";
+}
+
+function isGenericSkillExperienceRequest(normalizedMessage, skillMatch, routeMatch) {
+  return hasAny(normalizedMessage, skillExperienceWords) &&
+    normalizedMessage.includes(normalize(skillMatch.label)) &&
+    !hasSpecificRouteContext(normalizedMessage, routeMatch?.target, skillMatch.label);
+}
+
+function hasSpecificRouteContext(normalizedMessage, target, genericLabel = "") {
+  if (!target) return false;
+  if (target.type === "page") return normalizedMessage.includes(normalize(target.label));
+  const genericWords = new Set(normalize(genericLabel).split(" "));
+  return normalize(target.label)
+    .split(" ")
+    .filter((word) => word.length >= 2 && !genericWords.has(word))
+    .some((word) => normalizedMessage.includes(word));
+}
+
+function requiresGroundedPortfolioAnswer(normalizedMessage) {
+  return normalizedMessage.includes("비교") ||
+    normalizedMessage.includes("근거와 함께") ||
+    (normalizedMessage.includes("사용한") && normalizedMessage.includes("경험"));
+}
+
+function currentProjectTargetId(targetId, context) {
+  if (context.projectByTargetId.has(targetId)) return targetId;
+  const target = context.targetById.get(targetId);
+  if (target?.type !== "section") return null;
+  return context.routes.targets.find((candidate) =>
+    candidate.type === "project" && candidate.label === target.project
+  )?.id || null;
+}
+
+function hasExplicitNamedTarget(normalizedMessage, targets) {
+  return targets.some((target) => {
+    const keywords = target.type === "project"
+      ? [target.label, ...(target.aliases || [])]
+      : [target.label, ...(target.aliases || []).filter((alias) => compact(normalize(alias)).length >= 4)];
+    return keywords.some((keyword) => normalizedMessage.includes(normalize(keyword)));
+  });
+}
+
+function findProjectTypo(normalizedMessage, targets) {
+  const words = normalizedMessage.match(/[a-z0-9]+/giu) || [];
+  for (const word of words) {
+    if (word.length < 5) continue;
+    for (const target of targets) {
+      if (target.type !== "project") continue;
+      for (const keyword of [target.label, ...(target.aliases || [])]) {
+        const candidate = compact(normalize(keyword));
+        if (candidate.length < 5 || compact(normalizedMessage).includes(candidate)) continue;
+        if (levenshteinDistance(word, candidate) <= 2) return target;
+      }
+    }
+  }
+  return null;
+}
+
+function levenshteinDistance(left, right) {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    let diagonal = previous[0];
+    previous[0] = leftIndex;
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      const above = previous[rightIndex];
+      previous[rightIndex] = Math.min(
+        previous[rightIndex] + 1,
+        previous[rightIndex - 1] + 1,
+        diagonal + (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1)
+      );
+      diagonal = above;
+    }
+  }
+  return previous[right.length];
 }
