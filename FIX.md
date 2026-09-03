@@ -368,3 +368,198 @@ Cate Quest 프로젝트를 요약해 주세요
 - 임의의 LLM 자유 생성 범위 확장
 
 목표는 포트폴리오 내부의 **프로젝트 요약·이동·설명 의도에 대한 결정론적이고 일관된 처리**를 복구하는 것이다.
+
+---
+
+## 8. 구현 후 검증에서 추가 확인된 수정 항목
+
+- 검증 브랜치/commit: `fix/nli-gateway` / `4fde191252ddb9043487c225c464e6d3ff2e95d4`
+- 검증 방법: 로컬 Gateway 실제 기동, HTTP 요청, Node 테스트 104건, 독립 블랙박스·화이트박스·예외상황 검토
+- 판정: 초기 핵심 오거절은 일부 해결됐지만, 아래 항목 때문에 **배포·완료 판정을 금지**한다.
+
+### 8.1 현재 프로젝트 문맥이 다른 프로젝트 target으로 새는 문제 (P0)
+
+#### 재현
+
+```json
+{
+  "message": "여기서 동시성 문제는 어떻게 해결했어?",
+  "history": [],
+  "currentTargetId": "project-makertion"
+}
+```
+
+실제 결과:
+
+```text
+navigate / project-bookking-lock
+```
+
+#### 기대 결과
+
+- `project-makertion` 내부의 동시성 관련 근거/section으로 답변 또는 이동한다.
+- 현재 프로젝트에 해당 주제가 없으면 해당 프로젝트 범위에서 확인 질문 또는 안전한 범위 내 안내를 반환한다.
+- `currentTargetId`가 유효한 경우, 명시적 타 프로젝트명이 없는 대명사 질문이 다른 프로젝트 target으로 이동해서는 안 된다.
+
+#### 수정 요구사항
+
+1. `currentTargetId`가 project일 때 대명사 기반 질문(`이 프로젝트`, `여기`, `이 서비스`, `현재 프로젝트`)은 해당 project의 target/evidence만 먼저 검색한다.
+2. 현재 project 범위 밖 target은 명시적인 다른 프로젝트명·section명이 없는 한 navigation 후보에서 제외한다.
+3. router의 최종 `navigate` fallback과 model proposal canonicalization 모두에 같은 scope 제약을 적용한다.
+4. `currentTargetId`가 section이면 상위 project 범위로 확장하되, 다른 project로 확장하지 않는다.
+
+### 8.2 필수 한글 alias 미구현으로 인한 `503` 응답 (P0)
+
+#### 재현
+
+```text
+케이트퀘스트 프로젝트를 요약해줘
+부킹 프로젝트를 요약해줘
+```
+
+실제 결과:
+
+```text
+503 / UPSTREAM_UNAVAILABLE
+```
+
+별칭을 찾지 못한 상태에서 모델 경로에 의존하고, 해당 경로가 실패하면 사용자 요청이 503으로 끝난다.
+
+#### 수정 요구사항
+
+`nli/routes.json` 또는 단일 정규화 사전에 아래 alias를 반드시 등록하고 deterministic routing으로 처리한다.
+
+| canonical target | 필수 alias |
+|---|---|
+| `project-catequest` | `케이트퀘스트`, `케이트 퀘스트` |
+| `project-bookking` | `부킹` |
+
+기존 최소 alias 요구사항도 함께 유지한다.
+
+```text
+CateQuest, Cate Quest, 카테퀘스트, 케이트퀘스트, 케이트 퀘스트
+Bookking, 북킹, 부킹
+오늘의 OTT, 오늘의OTT, 오늘의 오티티, 오티티
+Makertion, 메이커션
+```
+
+알려진 alias가 매칭된 프로젝트 요약·이동 요청은 모델 upstream 장애 여부와 무관하게 local response를 반환해야 한다.
+
+### 8.3 프로젝트 root와 하위 section 선택 규칙 보강 (P0)
+
+추가 검토에서 다음이 확인됐다.
+
+```text
+오늘의 OTT 요약해줘
+```
+
+이 프로젝트 root 요청이 `project-ott`가 아닌 하위 section으로 축소될 수 있다.
+
+#### 수정 요구사항
+
+1. 프로젝트명만 있거나 `프로젝트 요약/설명/이동` 표현이면 project root를 우선한다.
+2. 하위 section은 section 고유 명칭이 명시됐을 때만 root보다 우선한다.
+3. 예시:
+
+```text
+오늘의 OTT 요약해줘
+→ summarize_project / project-ott
+
+오늘의 OTT 통합 API 사례 설명해줘
+→ summarize_section 또는 answer_portfolio / project-ott-api
+```
+
+### 8.4 고유 오타의 generic target fallback 금지 (P1)
+
+`CateQeust`, `Bookkng`처럼 한 프로젝트로만 유사 매칭되는 오타가 generic `projects` 이동 또는 범위 밖 응답으로 처리될 수 있다.
+
+#### 수정 요구사항
+
+1. 공백·대소문자 정규화 뒤 고유한 소편집거리 후보가 하나이면 해당 project를 제안한다.
+2. 자동 보정 임계값을 넘지 않으면 generic page 이동 대신 확인 질문을 반환한다.
+3. 예시:
+
+```text
+"Bookkng 프로젝트를 보여줘" → "Bookking 프로젝트를 찾으셨나요?"
+```
+
+### 8.5 intent 정의와 실제 Gateway 계약의 전수 검증 (P0)
+
+`nli/intents.json`의 선언 예제 45건 중 실제 Gateway 결과와 일치하지 않는 사례가 확인됐다.
+
+#### 수정 요구사항
+
+1. 모든 intent example을 Router와 HTTP Gateway 양쪽에서 실행하는 contract test를 추가한다.
+2. 테스트는 선언한 `intent`, `targetId`/`term`, 허용되는 응답 형태를 함께 검증한다.
+3. 모델을 끈 local mode만 사용하지 말고 fake model의 valid/invalid proposal, timeout, malformed JSON, invalid source도 포함한다.
+4. `nli/intents.json`, `nli/system-prompt.md`, `nli/model-decision.schema.json`, response contract와 fixture의 허용 intent가 다르면 CI에서 실패해야 한다.
+
+### 8.6 근거 없는 기술 anchor 허용 테스트 실패 (P0)
+
+전체 Node 테스트 결과는 다음과 같았다.
+
+```text
+tests 104
+pass 103
+fail 1
+```
+
+실패 항목:
+
+```text
+answer_portfolio rejects concise mixed technical anchors that selected evidence does not support
+```
+
+선택한 evidence가 뒷받침하지 않는 기술 키워드(예: `Kubernetes`)가 모델 답변에 섞여도 grounding validation이 통과할 수 있음을 의미한다.
+
+#### 수정 요구사항
+
+1. `answer_portfolio`의 기술 anchor 검증을 수정해 선택 evidence에 없는 기술/플랫폼 주장은 reject 또는 trusted fallback 처리한다.
+2. 혼합된 참/거짓 기술 anchor, 한국어/영문 표기, 괄호·슬래시 표기 변형을 모두 회귀 fixture로 추가한다.
+3. 전체 Node test는 **실패 0건**이어야 한다.
+
+### 8.7 Prompt injection 변형 및 오류 UX 보강 (P1)
+
+독립 예외 검토에서 일부 우회 표현이 prompt-injection detector를 통과할 가능성이 확인됐고, 비-JSON 5xx 응답은 위젯이 단순히 Gateway가 꺼졌다고 표시할 수 있다.
+
+#### 수정 요구사항
+
+1. 공백 분리, 유니코드 변형, 인코딩·역할 위장 형태의 injection fixture를 추가한다.
+2. Gateway upstream 5xx와 reverse proxy HTML 5xx를 위젯에서 구분한다.
+3. JSON이 아닌 실패 응답도 안전하게 처리하고, "Gateway가 켜져 있는지"라는 단정 대신 재시도 가능한 일시 장애 안내를 표시한다.
+4. request ID 또는 내부 오류 코드를 반환해 운영 로그와 사용자 오류를 상관 분석할 수 있게 한다.
+
+### 8.8 운영 배포 검증 게이트 (P0)
+
+검증 시 운영 Gateway revision은 `ac2dbc1ad924a5997837f23591b41ec4b2152b31`로, 검증 브랜치의 `4fde191...`와 달랐다. 운영 환경에서는 기존 요청 `CateQuest 프로젝트 요약해줘`가 여전히 `reject_out_of_scope`로 재현됐다.
+
+#### 배포 전/후 필수 절차
+
+1. 배포 대상 Gateway revision이 승인된 source commit과 일치하는지 Health API에서 확인한다.
+2. Health 확인만으로 배포 성공으로 판정하지 않는다.
+3. 허용 Origin `https://portfolio.mixedsider.cloud`을 포함한 운영 live suite를 실행한다.
+4. 아래 최소 smoke test가 100% 통과할 때만 배포 완료로 판정한다.
+
+```text
+CateQuest 프로젝트 요약해줘
+Bookking 프로젝트 요약해줘
+Makertion 프로젝트 설명해줘
+CateQuest 프로젝트로 이동해 주세요
+오늘의 OTT 프로젝트 요약해줘
+케이트퀘스트 프로젝트를 요약해줘
+부킹 프로젝트를 요약해줘
+현재 Makertion 화면에서: 여기서 동시성 문제는 어떻게 해결했어?
+```
+
+### 8.9 완료 기준 추가
+
+아래 항목을 기존 6장의 완료 기준에 추가한다.
+
+- [ ] `currentTargetId=project-makertion` 상태의 대명사 기반 질문이 Bookking 등 타 프로젝트 target으로 이동하지 않음
+- [ ] `케이트퀘스트 프로젝트를 요약해줘` → `summarize_project / project-catequest`이며 503이 아님
+- [ ] `부킹 프로젝트를 요약해줘` → `summarize_project / project-bookking`이며 503이 아님
+- [ ] 프로젝트 root만 명시한 요약/이동 요청이 하위 section으로 임의 축소되지 않음
+- [ ] `nli/intents.json` 선언 example의 Router·Gateway contract test가 전수 통과함
+- [ ] `answer_portfolio`의 unsupported technical anchor regression이 통과함
+- [ ] 전체 Node 테스트가 fail 0임
+- [ ] 운영 Health revision이 배포 source commit과 일치하고, 운영 smoke test가 100% 통과함
