@@ -808,7 +808,7 @@ body.is-nli-open .site-footer {
 
 .nli-command.is-collapsed {
   top: auto;
-  right: 22px;
+  right: 0;
   left: auto;
   bottom: 22px;
   width: auto;
@@ -822,6 +822,19 @@ body.is-nli-open .site-footer {
 .nli-command.is-collapsed .nli-panel,
 .nli-command.is-collapsed .nli-resize-handle,
 .nli-command:not(.is-collapsed) .nli-launcher {
+  display: none;
+}
+
+.nli-command.is-collapsed .nli-launcher {
+  width: 52px;
+  min-width: 52px;
+  min-height: 52px;
+  padding: 0;
+  gap: 0;
+  border-radius: 50%;
+}
+
+.nli-command.is-collapsed .nli-launcher span {
   display: none;
 }
 
