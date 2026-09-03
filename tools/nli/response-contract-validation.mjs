@@ -24,7 +24,8 @@ const intentNames = new Set([
 ]);
 const modelProposalIntentNames = new Set(["navigate", "define_term", "answer_portfolio", "reject_out_of_scope"]);
 
-const responseKeys = new Set(["intent", "confidence", "targetId", "term", "message", "answer", "relatedTargets", "sources"]);
+const responseKeys = new Set(["intent", "confidence", "targetId", "term", "message", "answer", "relatedTargets", "sources", "errorCode", "requestId"]);
+const gatewayErrorKeys = ["errorCode", "requestId"];
 const modelProposalKeysByIntent = new Map([
   ["navigate", new Set(["intent", "confidence", "targetId"])],
   ["define_term", new Set(["intent", "confidence", "term"])],
@@ -102,9 +103,11 @@ export function isPlainObject(value) {
 }
 
 function validateCanonicalShape(response, errors) {
-  const allowedKeys = canonicalKeysByIntent[response.intent];
-  if (!allowedKeys) return;
-  for (const key of allowedKeys) {
+  const requiredKeys = canonicalKeysByIntent[response.intent];
+  if (!requiredKeys) return;
+  const allowedKeys =
+    response.intent === "reject_out_of_scope" ? [...requiredKeys, ...gatewayErrorKeys] : requiredKeys;
+  for (const key of requiredKeys) {
     if (!Object.hasOwn(response, key)) errors.push(`${key} is required for ${response.intent}`);
   }
   for (const key of Object.keys(response)) {

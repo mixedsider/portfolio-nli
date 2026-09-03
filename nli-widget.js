@@ -202,8 +202,7 @@ export function createNliWidget({
     });
     if (!response.ok) {
       const result = await response.json().catch(() => null);
-      const userMessage =
-        response.status >= 400 && response.status < 500 && typeof result?.message === "string" ? result.message.trim() : "";
+      const userMessage = typeof result?.message === "string" ? result.message.trim() : "";
       const error = new Error("NLI request failed");
       error.userMessage = userMessage;
       throw error;

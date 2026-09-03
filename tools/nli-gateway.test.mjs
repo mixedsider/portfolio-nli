@@ -5,7 +5,7 @@ import { after, test } from "node:test";
 import { createGatewayConfig } from "./nli/config.mjs";
 import { isOriginAllowed } from "./nli/http.mjs";
 import { createModelClient } from "./nli/model-client.mjs";
-import { createNliServer, loadNliContext, resolveNliRequest } from "./nli-gateway.mjs";
+import { createNliServer, loadNliContext, resolveNliRequest, validateNliResponse } from "./nli-gateway.mjs";
 import { listenForFetch } from "./test-server.mjs";
 
 const context = await loadNliContext();
@@ -168,6 +168,7 @@ test("HTTP boundary rejects malformed, oversized, rate-limited, and disallowed r
     body: "{"
   });
   assert.equal(malformed.status, 400);
+  await assertGatewayError(malformed, "INVALID_REQUEST");
 
   const wrongContentType = await fetch(`${baseUrl}/api/nli`, {
     method: "POST",
@@ -175,6 +176,7 @@ test("HTTP boundary rejects malformed, oversized, rate-limited, and disallowed r
     body: "P95가 뭐야?"
   });
   assert.equal(wrongContentType.status, 415);
+  await assertGatewayError(wrongContentType, "UNSUPPORTED_MEDIA_TYPE");
 
   const tooLong = await fetch(`${baseUrl}/api/nli`, {
     method: "POST",
@@ -182,6 +184,7 @@ test("HTTP boundary rejects malformed, oversized, rate-limited, and disallowed r
     body: JSON.stringify({ message: "가".repeat(21) })
   });
   assert.equal(tooLong.status, 413);
+  await assertGatewayError(tooLong, "REQUEST_TOO_LARGE");
 
   const tooLarge = await fetch(`${baseUrl}/api/nli`, {
     method: "POST",
@@ -189,6 +192,7 @@ test("HTTP boundary rejects malformed, oversized, rate-limited, and disallowed r
     body: JSON.stringify({ message: "x".repeat(200) })
   });
   assert.equal(tooLarge.status, 413);
+  await assertGatewayError(tooLarge, "REQUEST_TOO_LARGE");
 
   const deniedOrigin = await fetch(`${baseUrl}/api/nli`, {
     method: "POST",
@@ -196,11 +200,70 @@ test("HTTP boundary rejects malformed, oversized, rate-limited, and disallowed r
     body: JSON.stringify({ message: "P95가 뭐야?" })
   });
   assert.equal(deniedOrigin.status, 403);
+  await assertGatewayError(deniedOrigin, "ORIGIN_NOT_ALLOWED");
 
   const options = await fetch(`${baseUrl}/api/nli`, { method: "OPTIONS", headers: { Origin: "https://portfolio.example" } });
   assert.equal(options.status, 204);
 
   await closeServer(server);
+});
+
+test("HTTP boundary identifies rate limits and unavailable upstream models", async () => {
+  const rateLimitedServer = await createNliServer({
+    context,
+    config: createTestConfig({ rateLimitMax: 1 }),
+    modelClient: async () => ({ intent: "reject_out_of_scope", confidence: 1 })
+  });
+  const rateLimitedBaseUrl = await listen(rateLimitedServer);
+  const requestOptions = {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message: "P95가 뭐야?" })
+  };
+
+  await fetch(`${rateLimitedBaseUrl}/api/nli`, requestOptions);
+  const rateLimited = await fetch(`${rateLimitedBaseUrl}/api/nli`, requestOptions);
+  assert.equal(rateLimited.status, 429);
+  await assertGatewayError(rateLimited, "RATE_LIMITED");
+  await closeServer(rateLimitedServer);
+
+  const unavailableServer = await createNliServer({
+    context,
+    config: createTestConfig(),
+    modelClient: async () => {
+      throw new Error("upstream unavailable");
+    }
+  });
+  const unavailableBaseUrl = await listen(unavailableServer);
+  const fallback = await fetch(`${unavailableBaseUrl}/api/nli`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message: "P95가 뭐야?" })
+  });
+  assert.equal(fallback.status, 200);
+  assert.equal((await fallback.json()).intent, "define_term");
+
+  const unavailable = await fetch(`${unavailableBaseUrl}/api/nli`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message: "외부 날씨를 알려줘" })
+  });
+  assert.equal(unavailable.status, 503);
+  await assertGatewayError(unavailable, "UPSTREAM_UNAVAILABLE");
+  await closeServer(unavailableServer);
+});
+
+test("canonical rejections preserve gateway metadata while model proposals reject it", () => {
+  const response = {
+    intent: "reject_out_of_scope",
+    confidence: 1,
+    message: "잠시 후 다시 시도해주세요.",
+    errorCode: "UPSTREAM_UNAVAILABLE",
+    requestId: "e2b30205-7b48-48b8-9f76-5da9c5146206"
+  };
+
+  assert.deepEqual(validateNliResponse(response, context), { ok: true, errors: [] });
+  assert.equal(validateNliResponse(response, context, { modelCandidate: true }).ok, false);
 });
 
 function createTestConfig(overrides = {}) {
@@ -238,6 +301,13 @@ function closeServer(server) {
   const index = openServers.indexOf(server);
   if (index >= 0) openServers.splice(index, 1);
   return new Promise((resolvePromise) => server.close(() => resolvePromise()));
+}
+
+async function assertGatewayError(response, errorCode) {
+  const body = await response.json();
+  assert.equal(body.intent, "reject_out_of_scope");
+  assert.equal(body.errorCode, errorCode);
+  assert.match(body.requestId, /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
 }
 
 async function readRequestBody(request) {
