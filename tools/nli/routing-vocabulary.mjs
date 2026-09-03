@@ -3,11 +3,11 @@ export const explicitNavigationPatterns = [
   /(?:보여|이동(?:해)?|열어|가\s*줘|찾아\s*줘|바로\s*가)(?:줘|요|주세요|라)?/u,
   /\b(?:open|show|navigate|go\s*to|take\s+me)\b/iu
 ];
-export const explicitNavigationWords = ["이동", "페이지", "영역", "섹션으로", "위치", "보고"];
+export const explicitNavigationWords = ["이동", "페이지", "영역", "섹션으로", "위치", "보고", "데려가", "이동시켜"];
 export const defineWords = ["뭐야", "뜻", "설명", "의미", "알려줘", "무슨"];
 export const summarizeWords = ["요약", "정리", "뭘 했", "무슨 프로젝트", "간단히"];
 export const portfolioSummaryWords = ["포트폴리오 전체", "포트폴리오 요약", "포트폴리오를 요약", "포트폴리오 한눈에"];
-export const projectSummaryWords = ["요약", "정리", "뭐야", "무슨", "어떤", "설명", "소개"];
+export const projectSummaryWords = ["요약", "정리", "뭐야", "무슨", "어떤", "설명", "소개", "답변", "간추려"];
 export const currentProjectWords = ["지금 보고 있는", "현재 보고 있는", "보고 있는 프로젝트", "이 프로젝트", "현재 프로젝트"];
 export const projectListWords = ["프로젝트 목록", "프로젝트 리스트", "어떤 프로젝트", "무슨 프로젝트", "했던 프로젝트", "프로젝트를 했", "목록"];
 export const assistantIdentityWords = ["너는 누구", "넌 누구", "정체", "포트폴리오 도우미", "nli 소개", "nli는 누구"];

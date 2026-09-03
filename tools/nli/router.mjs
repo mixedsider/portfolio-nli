@@ -39,10 +39,6 @@ import {
 export { isPromptInjectionAttempt };
 export function resolveLocally(message, context) {
   const routeMatch = findBestRoute(message, context.routes.targets);
-  const sectionRouteMatch = findBestRoute(
-    message,
-    context.routes.targets.filter((target) => target.type === "section")
-  );
   const termMatch = findBestTerm(message, context.glossary.terms);
   const normalizedMessage = normalize(message);
   const skillMatch = findSkillExperienceMatch(normalizedMessage, context);
@@ -67,14 +63,8 @@ export function resolveLocally(message, context) {
     if (currentProject) return summarizeProjectResponse(`project-${currentProject.id}`, context, 0.92);
   }
   if (hasAny(normalizedMessage, projectListWords)) return listProjectsResponse(context);
-  if (skillMatch && hasAny(normalizedMessage, skillExperienceWords) && !hasAny(normalizedMessage, navigateWords)) {
-    return listSkillExperienceResponse(context, skillMatch, 0.9);
-  }
   if (termMatch && hasAny(normalizedMessage, defineWords)) return defineTermResponse(termMatch.term, termMatch.score);
-  if (routeMatch && hasAny(normalizedMessage, summarizeWords)) {
-    if (sectionRouteMatch && sectionRouteMatch.score >= 0.72) {
-      return summarizeSectionResponse(sectionRouteMatch.target.id, context, sectionRouteMatch.score);
-    }
+  if (routeMatch && (hasAny(normalizedMessage, summarizeWords) || hasAny(normalizedMessage, projectSummaryWords))) {
     if (routeMatch.target.type === "page") {
       return rejectResponse("요약할 포트폴리오 프로젝트나 사례를 구체적으로 알려주세요.", 0);
     }
@@ -82,10 +72,13 @@ export function resolveLocally(message, context) {
       ? summarizeProjectResponse(routeMatch.target.id, context, routeMatch.score)
       : summarizeSectionResponse(routeMatch.target.id, context, routeMatch.score);
   }
-  if (hasAny(normalizedMessage, portfolioSummaryWords)) return summarizePortfolioResponse(context);
-  if (routeMatch && isProjectTarget(routeMatch.target) && hasAny(normalizedMessage, projectSummaryWords)) {
-    return summarizeProjectResponse(routeMatch.target.id, context, routeMatch.score);
+  if (routeMatch && isProjectTarget(routeMatch.target) && hasExplicitNavigation(normalizedMessage)) {
+    return navigateResponse(routeMatch.target.id, routeMatch.score);
   }
+  if (skillMatch && hasAny(normalizedMessage, skillExperienceWords) && !hasAny(normalizedMessage, navigateWords)) {
+    return listSkillExperienceResponse(context, skillMatch, 0.9);
+  }
+  if (hasAny(normalizedMessage, portfolioSummaryWords)) return summarizePortfolioResponse(context);
   if (routeMatch && (routeMatch.score >= 0.86 || hasAny(normalizedMessage, navigateWords))) {
     if (routeMatch.target.type === "page" && !hasAny(normalizedMessage, navigateWords)) {
       return rejectResponse("이동할 포트폴리오 위치를 구체적으로 알려주세요.", 0);
@@ -101,20 +94,46 @@ export function resolveLocally(message, context) {
 function findBestRoute(message, targets) {
   const normalizedMessage = normalize(message);
   return targets
-    .map((target) => ({ target, score: routeScore(normalizedMessage, target) }))
-    .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score)[0] || null;
+    .map((target, order) => createRouteCandidate(normalizedMessage, target, order))
+    .filter((candidate) => candidate.matchRank > 0)
+    .sort(compareRouteCandidates)[0] || null;
 }
 
-function routeScore(normalizedMessage, target) {
-  const labelScore = keywordScore(normalizedMessage, target.label);
-  const aliasScores = (target.aliases || []).map((alias) => keywordScore(normalizedMessage, alias));
-  const projectScore = keywordScore(normalizedMessage, target.project) * 0.35;
-  const strongScores = [labelScore, ...aliasScores].filter((score) => score > 0);
-  const base = Math.max(labelScore, projectScore, ...aliasScores, 0);
+function createRouteCandidate(normalizedMessage, target, order) {
+  const directKeywords = [target.label, ...(target.aliases || [])];
+  const isProjectRootWording = normalizedMessage.includes(normalize("프로젝트"));
+  const directLabelAliasScore = Math.max(
+    ...directKeywords
+      .filter((keyword) => !(isProjectRootWording && target.type === "section" && normalize(target.project).includes(normalize(keyword))))
+      .map((keyword) => keywordScore(normalizedMessage, keyword)),
+    0
+  );
+  const projectAssociationScore = keywordScore(normalizedMessage, target.project) * 0.35;
+  const strongScores = directKeywords
+    .map((keyword) => keywordScore(normalizedMessage, keyword))
+    .filter((score) => score > 0);
+  const base = Math.max(directLabelAliasScore, projectAssociationScore, 0);
   const specificityBonus = strongScores.length > 1 ? 0.12 : 0;
-  const projectBonus = projectScore > 0 && strongScores.length ? 0.08 : 0;
-  return Math.min(0.98, base + specificityBonus + projectBonus);
+  const projectBonus = projectAssociationScore > 0 && strongScores.length ? 0.08 : 0;
+  const matchRank = target.type === "section"
+    ? directLabelAliasScore > 0 ? 4 : projectAssociationScore > 0 ? 2 : 0
+    : target.type === "project"
+      ? directLabelAliasScore > 0 ? 3 : 0
+      : directLabelAliasScore > 0 ? 1 : 0;
+
+  return {
+    target,
+    directLabelAliasScore,
+    projectAssociationScore,
+    type: target.type,
+    order,
+    matchRank,
+    score: Math.min(0.98, base + specificityBonus + projectBonus)
+  };
+}
+
+function compareRouteCandidates(left, right) {
+  return right.matchRank - left.matchRank || right.score - left.score || left.order - right.order;
 }
 
 function findBestTerm(message, terms) {
