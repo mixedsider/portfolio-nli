@@ -198,7 +198,7 @@ test("default rate limit accommodates the deployed functional and adversarial su
     ...functionalFixture.cases.filter((testCase) => testCase.kind === "success"),
     ...adversarialFixture.cases
   ];
-  assert.equal(testCases.length, 40);
+  assert.equal(testCases.length, 34);
 
   const server = await createNliServer({
     context,
@@ -217,6 +217,22 @@ test("default rate limit accommodates the deployed functional and adversarial su
   }
 
   await closeServer(server);
+});
+
+test("documented production regression runs successful live fixtures within the default rate limit", async () => {
+  const [deploymentGuide, liveFixture] = await Promise.all([
+    readFile(new URL("../docs/deployment.md", import.meta.url), "utf8"),
+    readJson("nli/live-test-cases.json")
+  ]);
+  const successfulFixtures = liveFixture.cases.filter((testCase) => testCase.kind === "success");
+  const defaultRateLimit = createGatewayConfig({}).rateLimitMax;
+
+  assert.match(
+    deploymentGuide,
+    /tools\/nli-test\.mjs --live --base-url https:\/\/portfolio-nli-gateway\.mixedsider\.cloud\/api\/nli --cases nli\/live-test-cases\.json --kind success --min-pass-rate 1/
+  );
+  assert.equal(successfulFixtures.length, 26);
+  assert.ok(successfulFixtures.length <= defaultRateLimit, "production regression must remain within the default rate-limit budget");
 });
 
 test("response contracts reject fields that do not belong to the selected intent", () => {

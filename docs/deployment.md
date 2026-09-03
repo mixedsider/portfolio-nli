@@ -32,10 +32,10 @@ node --test tools/nli-widget.browser-test.mjs
 NLI_TEST_BASE_URL="http://127.0.0.1:8787" node tools/nli-test.mjs --live --cases nli/live-test-cases.json --kind success --min-pass-rate 1
 ```
 
-After every production deployment, run the named-project regression check with an allowed origin. It must finish with a 100% pass rate.
+After every production deployment, run the 26 successful named-project regressions. It must finish with a 100% pass rate and stays within the default 30-request rate-limit budget. `tools/nli-test.mjs` makes this direct check without an `Origin` header; keep `NLI_ALLOWED_ORIGINS` configured for the actual portfolio browser origin rather than using `*` in production.
 
 ```powershell
-& 'C:\Users\CodexAgent\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe' tools/nli-test.mjs --live --base-url https://portfolio-nli-gateway.mixedsider.cloud/api/nli --cases nli/live-test-cases.json --min-pass-rate 1
+& 'C:\Users\CodexAgent\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe' tools/nli-test.mjs --live --base-url https://portfolio-nli-gateway.mixedsider.cloud/api/nli --cases nli/live-test-cases.json --kind success --min-pass-rate 1
 ```
 
 정적 서버도 한 번 확인합니다.
