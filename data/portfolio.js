@@ -410,8 +410,8 @@ window.PORTFOLIO_DATA = {
               caption: "DB 비관적 락과 Redis Fair Lock 부하 테스트 비교",
               headers: ["구분", "payments-v1 (DB 비관적 락)", "payments-v2 (분산 락)", "증감량", "증감율"],
               rows: [
-                ["평균 응답 시간", "208ms", "226ms", "+18ms", "약 7.96% 증가"],
-                ["초당 처리량 (TPS)", "229.36 req/sec", "211.38 req/sec", "-17.98 req/sec", "약 8.5% 감소"]
+                ["평균 응답 시간", "208ms", "226ms", "+18ms", "약 8.65% 증가"],
+                ["초당 처리량 (TPS)", "229.36 req/sec", "211.38 req/sec", "-17.98 req/sec", "약 7.84% 감소"]
               ]
             }
           ],

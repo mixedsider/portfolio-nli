@@ -23,3 +23,12 @@ test("접힌 포트폴리오 도우미가 프로필 헤드라인을 가리지 �
   assert.match(source, /\.nli-command\.is-collapsed\s+\.nli-launcher\s+span\s*\{\s*display:\s*none;/);
   assert.match(source, /\.nli-command\.is-collapsed\s*\{\s*top:\s*auto;\s*right:\s*0;/);
 });
+
+test("Bookking 성능 표가 DB 비관적 락을 기준으로 Redis Fair Lock의 트레이드오프를 표시한다", async () => {
+  const source = await readFile(portfolioDataPath, "utf8");
+
+  assert.match(source, /\["평균 응답 시간", "208ms", "226ms", "\+18ms", "약 8\.65% 증가"\]/);
+  assert.match(source, /\["초당 처리량 \(TPS\)", "229\.36 req\/sec", "211\.38 req\/sec", "-17\.98 req\/sec", "약 7\.84% 감소"\]/);
+  assert.doesNotMatch(source, /약 7\.96% 증가/);
+  assert.doesNotMatch(source, /약 8\.5% 감소/);
+});
