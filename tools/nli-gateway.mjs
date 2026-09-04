@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -20,6 +21,8 @@ import { buildEvidenceIndex, retrieveEvidenceCandidates } from "./nli/evidence.m
 import { createModelClient } from "./nli/model-client.mjs";
 import {
   isPromptInjectionAttempt,
+  isCurrentProjectScopeConstrained,
+  isTargetInCurrentProjectScope,
   resolveLocally
 } from "./nli/router.mjs";
 import { rejectResponse } from "./nli/responses.mjs";
@@ -54,6 +57,7 @@ export async function resolveNliRequest(message, context = null, options = {}) {
   const local = resolveLocally(safeMessage, nliContext);
   const fallback = local.confidence > 0 ? local : rejectResponse();
   if (isPromptInjectionAttempt(safeMessage)) return fallback;
+  if (fallback.intent === "summarize_project") return fallback;
   if (options.useModel === false) return fallback;
 
   const evidenceIndex = buildEvidenceIndex(baseContext);
@@ -71,14 +75,30 @@ export async function resolveNliRequest(message, context = null, options = {}) {
     targets: baseContext.routes.targets,
     terms: baseContext.glossary.terms
   };
-  const modelResponse = await modelClient(safeMessage, nliContext, proposalContext).catch(() => null);
-
-  const canonical = canonicalizeModelResponse(modelResponse, nliContext, { candidateSources });
-  if (fallback.intent === "navigate" && canonical?.intent === "navigate" && canonical.targetId !== fallback.targetId) {
+  let modelResponse;
+  try {
+    modelResponse = await modelClient(safeMessage, nliContext, proposalContext);
+  } catch {
+    if (local.confidence > 0) return local;
+    if (options.reportUpstreamFailure) throw new UpstreamUnavailableError();
     return fallback;
   }
 
-  return canonical || fallback;
+  const canonical = canonicalizeModelResponse(modelResponse, nliContext, { candidateSources });
+  const scopedCanonical = canonical?.intent === "navigate" &&
+    isCurrentProjectScopeConstrained(safeMessage, nliContext) &&
+    !isTargetInCurrentProjectScope(canonical.targetId, nliContext)
+    ? null
+    : canonical;
+  if (fallback.intent === "navigate") {
+    if (scopedCanonical?.intent === "navigate" && scopedCanonical.targetId === fallback.targetId) return scopedCanonical;
+    return fallback;
+  }
+  if (!scopedCanonical && local.confidence <= 0 && options.reportUpstreamFailure) {
+    throw new UpstreamUnavailableError();
+  }
+
+  return scopedCanonical || fallback;
 }
 
 export async function createNliServer(options = {}) {
@@ -90,7 +110,7 @@ export async function createNliServer(options = {}) {
   const server = createServer(async (request, response) => {
     setCorsHeaders(request, response, config);
     if (!isOriginAllowed(request, config)) {
-      sendJson(response, 403, rejectResponse("허용되지 않은 출처의 요청입니다."));
+      sendJson(response, 403, gatewayErrorResponse("ORIGIN_NOT_ALLOWED", "허용되지 않은 출처의 요청입니다."));
       return;
     }
 
@@ -118,7 +138,7 @@ export async function createNliServer(options = {}) {
     }
 
     if (!rateLimiter.consume(request)) {
-      sendJson(response, 429, rejectResponse("요청이 너무 많습니다. 잠시 후 다시 시도해주세요."), { "Retry-After": "60" });
+      sendJson(response, 429, gatewayErrorResponse("RATE_LIMITED", "요청이 너무 많습니다. 잠시 후 다시 시도해주세요."), { "Retry-After": "60" });
       return;
     }
 
@@ -129,19 +149,48 @@ export async function createNliServer(options = {}) {
       const result = await resolveNliRequest(nliRequest.message, context, {
         currentTargetId: nliRequest.currentTargetId,
         history: nliRequest.history,
-        modelClient
+        modelClient,
+        reportUpstreamFailure: true
       });
-      sendJson(response, 200, result);
+      sendJson(
+        response,
+        200,
+        result.intent === "reject_out_of_scope"
+          ? gatewayErrorResponse("OUT_OF_SCOPE", result.message, result.confidence)
+          : result
+      );
     } catch (error) {
+      if (error instanceof UpstreamUnavailableError) {
+        sendJson(response, 503, gatewayErrorResponse("UPSTREAM_UNAVAILABLE", "도우미 응답을 일시적으로 가져오지 못했습니다. 잠시 후 다시 시도해주세요."));
+        return;
+      }
+
       const statusCode = error instanceof HttpRequestError ? error.statusCode : 400;
       const message = error instanceof HttpRequestError ? error.publicMessage : "요청을 처리할 수 없습니다.";
-      sendJson(response, statusCode, rejectResponse(message));
+      sendJson(response, statusCode, gatewayErrorResponse(requestErrorCode(statusCode), message));
     }
   });
 
   server.requestTimeout = config.requestTimeoutMs;
   server.headersTimeout = Math.min(config.requestTimeoutMs, 60_000);
   return server;
+}
+
+class UpstreamUnavailableError extends Error {}
+
+function gatewayErrorResponse(errorCode, message, confidence = 1) {
+  return { ...rejectResponse(message, confidence), errorCode, requestId: randomUUID() };
+}
+
+function requestErrorCode(statusCode) {
+  switch (statusCode) {
+    case 413:
+      return "REQUEST_TOO_LARGE";
+    case 415:
+      return "UNSUPPORTED_MEDIA_TYPE";
+    default:
+      return "INVALID_REQUEST";
+  }
 }
 
 function resolveGatewayRevision(rootDir) {

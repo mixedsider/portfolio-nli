@@ -72,14 +72,84 @@ test("single-target show requests use one model proposal before gateway-owned na
   assert.equal(modelCalls.length, 2);
 });
 
-test("category examples with show wording use grounded synthesis", async () => {
+test("known project aliases resolve to their deterministic project response", async () => {
+  for (const [message, intent, targetId] of [
+    ["Cate Quest 프로젝트를 요약해줘", "summarize_project", "project-catequest"],
+    ["카테 퀘스트 프로젝트를 요약해줘", "summarize_project", "project-catequest"],
+    ["카테 퀘 스트 프로젝트로 이동해줘", "navigate", "project-catequest"],
+    ["북 킹 프로젝트를 요약해줘", "summarize_project", "project-bookking"],
+    ["오늘의OTT 프로젝트를 요약해줘", "summarize_project", "project-ott"],
+    ["오늘의 오티티 프로젝트로 이동해줘", "navigate", "project-ott"],
+    ["오티티 프로젝트로 이동해줘", "navigate", "project-ott"],
+    ["메이커션 프로젝트 설명해줘", "summarize_project", "project-makertion"]
+  ]) {
+    const result = await resolveNliRequest(message, context, { useModel: false });
+
+    assert.equal(result.intent, intent, message);
+    assert.equal(result.targetId, targetId, message);
+  }
+});
+
+test("local project summaries do not consult a model", async () => {
+  const result = await resolveNliRequest("Cate Quest 프로젝트를 요약해줘", context, {
+    modelClient: async () => { throw new Error("local project summaries must not call the model"); }
+  });
+
+  assert.equal(result.intent, "summarize_project");
+  assert.equal(result.targetId, "project-catequest");
+});
+
+test("a conflicting model proposal cannot override a known local navigation target", async () => {
+  const result = await resolveNliRequest("CateQuest 프로젝트로 이동해줘", context, {
+    modelClient: async () => ({ intent: "navigate", confidence: 0.99, targetId: "projects" })
+  });
+
+  assert.equal(result.targetId, "project-catequest");
+});
+
+test("only a canonical model navigation to the same target may replace deterministic local navigation", async () => {
+  const message = "CateQuest 프로젝트로 이동해줘";
+  const replacementCandidates = [
+    { intent: "reject_out_of_scope", confidence: 1 },
+    { intent: "define_term", confidence: 0.99, term: "P95" },
+    { intent: "navigate", confidence: 0.99, targetId: "projects" },
+    ({ candidateSources }) => {
+      const source = candidateSources.find((candidate) => candidate.targetId === "project-catequest");
+      return {
+        intent: "answer_portfolio",
+        confidence: 0.99,
+        answer: source.evidence.split(/\n+/).filter(Boolean).slice(0, 4).join(" "),
+        sourceIds: [source.id]
+      };
+    }
+  ];
+
+  for (const candidate of replacementCandidates) {
+    const result = await resolveNliRequest(message, context, {
+      modelClient: async (_message, _context, proposalContext) =>
+        typeof candidate === "function" ? candidate(proposalContext) : candidate
+    });
+
+    assert.equal(result.intent, "navigate");
+    assert.equal(result.targetId, "project-catequest");
+  }
+
+  const sameTarget = await resolveNliRequest(message, context, {
+    modelClient: async () => ({ intent: "navigate", confidence: 0.31, targetId: "project-catequest" })
+  });
+  assert.equal(sameTarget.intent, "navigate");
+  assert.equal(sameTarget.targetId, "project-catequest");
+  assert.equal(sameTarget.confidence, 0.31);
+});
+
+test("category examples with show wording preserve deterministic local navigation", async () => {
   const responses = new Map([
     [
       "성능을 최적화한 사례를 보여줘",
       {
         intent: "answer_portfolio",
         confidence: 0.92,
-        answer: "DB 성능 최적화, Main 홈페이지 캐싱 최적화, 다대다 관계 N+1 쿼리 해결, HTTPS 아키텍처 개선 사례를 통해 병목을 줄였습니다.",
+        answer: "DB 파라미터 튜닝과 부하 테스트로 평균 응답과 P95 지연을 줄인 사례입니다. 메인 페이지 읽기 API에 캐싱을 적용해 P95와 DB 부하를 줄인 사례입니다. DTO Projection과 JPQL 조인으로 DB 접근을 54회에서 1회로 줄인 사례입니다. Cloudflare 경유 구조를 AWS Native 구조로 전환해 응답 지연을 줄인 사례입니다.",
         sourceIds: ["project-makertion-db", "project-makertion-cache", "project-catequest-n1", "project-bookking-https"]
       }
     ],
@@ -105,9 +175,14 @@ test("category examples with show wording use grounded synthesis", async () => {
 
   for (const [message, expected] of responses) {
     const result = await resolveNliRequest(message, context, { modelClient });
+    const local = resolveLocally(message, context);
 
-    assert.equal(result.intent, "answer_portfolio");
-    assert.deepEqual(result.sources.map((source) => source.id), expected.sourceIds);
+    if (local.intent === "navigate") {
+      assert.deepEqual(result, local);
+    } else {
+      assert.equal(result.intent, "answer_portfolio");
+      assert.deepEqual(result.sources.map((source) => source.id), expected.sourceIds);
+    }
   }
 
   assert.deepEqual(modelCalls, [...responses.keys()]);
@@ -163,11 +238,11 @@ test("default rate limit accommodates the deployed functional and adversarial su
     ...functionalFixture.cases.filter((testCase) => testCase.kind === "success"),
     ...adversarialFixture.cases
   ];
-  assert.equal(testCases.length, 26);
+  assert.equal(testCases.length, functionalFixture.cases.filter((testCase) => testCase.kind === "success").length + adversarialFixture.cases.length);
 
   const server = await createNliServer({
     context,
-    config: createTestConfig({ rateLimitMax: 30, allowedOrigins: new Set(["*"]) }),
+    config: createTestConfig({ rateLimitMax: testCases.length + 1, allowedOrigins: new Set(["*"]) }),
     modelClient: async (message, nliContext) => toModelDecision(resolveLocally(message, nliContext))
   });
   const baseUrl = await listen(server);
@@ -182,6 +257,22 @@ test("default rate limit accommodates the deployed functional and adversarial su
   }
 
   await closeServer(server);
+});
+
+test("documented production regression runs successful live fixtures within the default rate limit", async () => {
+  const [deploymentGuide, liveFixture] = await Promise.all([
+    readFile(new URL("../docs/deployment.md", import.meta.url), "utf8"),
+    readJson("nli/live-test-cases.json")
+  ]);
+  const successfulFixtures = liveFixture.cases.filter((testCase) => testCase.kind === "success");
+  const defaultRateLimit = createGatewayConfig({}).rateLimitMax;
+
+  assert.match(
+    deploymentGuide,
+    /tools\/nli-test\.mjs --live --base-url https:\/\/portfolio-nli-gateway\.mixedsider\.cloud\/api\/nli --cases nli\/live-test-cases\.json --kind success --min-pass-rate 1/
+  );
+  assert.equal(successfulFixtures.length, 26);
+  assert.ok(successfulFixtures.length <= defaultRateLimit, "production regression must remain within the default rate-limit budget");
 });
 
 test("response contracts reject fields that do not belong to the selected intent", () => {

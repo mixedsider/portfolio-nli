@@ -36,11 +36,12 @@ export function retrieveEvidenceCandidates(index, request = {}) {
   const requiresOptimizationEvidence = isPerformanceOptimizationQuery(allTerms);
   const currentTargetId = stringValue(request?.currentTargetId);
   const currentCard = cards.find((card) => card.targetId === currentTargetId) || null;
-
-  return scored
+  const candidates = scored
     .map((candidate) => scoreCandidate(candidate, { currentCard, hasExplicitMetricRequest, matchedAnchors, requiresOptimizationEvidence }))
     .filter(Boolean)
-    .sort(compareCandidates)
+    .sort(compareCandidates);
+
+  return prioritizeCurrentScope(candidates, currentCard)
     .slice(0, MAX_EVIDENCE_CANDIDATES)
     .map(({ card }) => publicCard(card));
 }
@@ -51,10 +52,12 @@ function scoreCandidate(candidate, { currentCard, hasExplicitMetricRequest, matc
   if (requiresOptimizationEvidence && !hasOptimizationEvidence(card)) return null;
 
   const structuralScore = hasExplicitMetricRequest ? metricCount(card) * DIRECT_METRIC_BONUS : 0;
-  if (semanticScore <= 0 && structuralScore <= 0) return null;
+  const isCurrentScope = currentCard && ["project", "section"].includes(currentCard.type) &&
+    scopeKey(card) === scopeKey(currentCard);
+  if (semanticScore <= 0 && structuralScore <= 0 && !isCurrentScope) return null;
 
   let score = semanticScore + structuralScore;
-  if (semanticScore > 0 && currentCard) {
+  if (currentCard) {
     if (card.targetId === currentCard.targetId) score += 2;
     else if (scopeKey(card) === scopeKey(currentCard)) score += 0.35;
   }
@@ -114,6 +117,8 @@ function searchTerms(value) {
 
   for (const token of tokenizeEvidence(value)) {
     terms.add(token);
+    const latinPrefix = token.match(/^([a-z0-9+#.]+)[\uAC00-\uD7A3]+$/iu)?.[1];
+    if (latinPrefix) terms.add(latinPrefix.toLowerCase());
     if (!/^[\uAC00-\uD7A3]+$/u.test(token)) continue;
 
     const characters = Array.from(token);
@@ -123,6 +128,22 @@ function searchTerms(value) {
   }
 
   return [...terms];
+}
+
+function prioritizeCurrentScope(candidates, currentCard) {
+  if (!currentCard) return candidates;
+
+  const exact = [];
+  const scoped = [];
+  const remaining = [];
+
+  for (const candidate of candidates) {
+    if (candidate.card.targetId === currentCard.targetId) exact.push(candidate);
+    else if (scopeKey(candidate.card) === scopeKey(currentCard)) scoped.push(candidate);
+    else remaining.push(candidate);
+  }
+
+  return [...exact, ...scoped, ...remaining];
 }
 
 function isTechnicalAnchor(term) {

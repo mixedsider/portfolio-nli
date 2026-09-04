@@ -4,6 +4,7 @@ import test from "node:test";
 
 import { createGatewayConfig } from "./nli/config.mjs";
 import { createNliServer, loadNliContext, resolveNliRequest } from "./nli-gateway.mjs";
+import { resolveLocally } from "./nli/router.mjs";
 import { listenForFetch } from "./test-server.mjs";
 
 const context = await loadNliContext();
@@ -132,7 +133,7 @@ test("explicit CloudWatch monitoring navigation falls back safely after one unav
   assert.equal(result.targetId, "project-makertion-observability");
 });
 
-test("target-like requests use validated model navigation while broader requests use grounded answers", async () => {
+test("target-like requests use validated model navigation while known local navigation stays authoritative", async () => {
   const modelCalls = [];
   const modelClient = async (message, _nliContext, groundedRequest) => {
     modelCalls.push({ message, candidateCount: groundedRequest.candidateSources.length });
@@ -163,7 +164,7 @@ test("target-like requests use validated model navigation while broader requests
   assert.ok(modelCalls[2].candidateCount > 0 && modelCalls[2].candidateCount <= 8);
 
   const broad = await resolveNliRequest("DB 최적화는 어디에 있나요?", context, { modelClient });
-  assert.equal(broad.intent, "answer_portfolio");
+  assert.deepEqual(broad, resolveLocally("DB 최적화는 어디에 있나요?", context));
   assert.equal(modelCalls.length, 4);
   assert.ok(modelCalls[3].candidateCount > 0 && modelCalls[3].candidateCount <= 8);
 });

@@ -26,10 +26,16 @@ node --test tools/nli-widget.browser-test.mjs
 
 기본 환경에서 `tools/nli-widget.browser-test.mjs`는 Chrome-capable Playwright module이 없으면 명시적으로 skip됩니다. 실제 브라우저 회귀를 실행할 때는 `NLI_WIDGET_BROWSER_MODULE=/absolute/path/to/playwright-module.mjs node tools/nli-widget.browser-test.mjs`를 사용합니다.
 
-배포된 Gateway를 직접 호출하는 기능 검증은 다음 명령으로 실행합니다. `nli/live-test-cases.json`의 성공 18개만 호출하며, 이어지는 adversarial 8개와 합쳐 기본 30회/분 rate limit 안에서 실행되도록 구성했습니다.
+배포된 Gateway를 직접 호출하는 기능 검증은 다음 명령으로 실행합니다. `nli/live-test-cases.json`의 성공 26개만 호출합니다.
 
 ```bash
 NLI_TEST_BASE_URL="http://127.0.0.1:8787" node tools/nli-test.mjs --live --cases nli/live-test-cases.json --kind success --min-pass-rate 1
+```
+
+After every production deployment, run the 26 successful named-project regressions. It must finish with a 100% pass rate and stays within the default 30-request rate-limit budget. `tools/nli-test.mjs` makes this direct check without an `Origin` header; keep `NLI_ALLOWED_ORIGINS` configured for the actual portfolio browser origin rather than using `*` in production.
+
+```powershell
+& 'C:\Users\CodexAgent\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe' tools/nli-test.mjs --live --base-url https://portfolio-nli-gateway.mixedsider.cloud/api/nli --cases nli/live-test-cases.json --kind success --min-pass-rate 1
 ```
 
 정적 서버도 한 번 확인합니다.

@@ -1,15 +1,20 @@
 import { createServer } from "node:http";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { after, test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { createGatewayConfig } from "./nli/config.mjs";
 import { isOriginAllowed } from "./nli/http.mjs";
 import { createModelClient } from "./nli/model-client.mjs";
-import { createNliServer, loadNliContext, resolveNliRequest } from "./nli-gateway.mjs";
+import { resolveLocally } from "./nli/router.mjs";
+import { createNliServer, loadNliContext, resolveNliRequest, validateNliResponse } from "./nli-gateway.mjs";
 import { listenForFetch } from "./test-server.mjs";
 
 const context = await loadNliContext();
 const openServers = [];
+const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 
 after(async () => {
   await Promise.all(openServers.map(closeServer));
@@ -168,6 +173,7 @@ test("HTTP boundary rejects malformed, oversized, rate-limited, and disallowed r
     body: "{"
   });
   assert.equal(malformed.status, 400);
+  await assertGatewayError(malformed, "INVALID_REQUEST");
 
   const wrongContentType = await fetch(`${baseUrl}/api/nli`, {
     method: "POST",
@@ -175,6 +181,7 @@ test("HTTP boundary rejects malformed, oversized, rate-limited, and disallowed r
     body: "P95가 뭐야?"
   });
   assert.equal(wrongContentType.status, 415);
+  await assertGatewayError(wrongContentType, "UNSUPPORTED_MEDIA_TYPE");
 
   const tooLong = await fetch(`${baseUrl}/api/nli`, {
     method: "POST",
@@ -182,6 +189,7 @@ test("HTTP boundary rejects malformed, oversized, rate-limited, and disallowed r
     body: JSON.stringify({ message: "가".repeat(21) })
   });
   assert.equal(tooLong.status, 413);
+  await assertGatewayError(tooLong, "REQUEST_TOO_LARGE");
 
   const tooLarge = await fetch(`${baseUrl}/api/nli`, {
     method: "POST",
@@ -189,6 +197,7 @@ test("HTTP boundary rejects malformed, oversized, rate-limited, and disallowed r
     body: JSON.stringify({ message: "x".repeat(200) })
   });
   assert.equal(tooLarge.status, 413);
+  await assertGatewayError(tooLarge, "REQUEST_TOO_LARGE");
 
   const deniedOrigin = await fetch(`${baseUrl}/api/nli`, {
     method: "POST",
@@ -196,9 +205,193 @@ test("HTTP boundary rejects malformed, oversized, rate-limited, and disallowed r
     body: JSON.stringify({ message: "P95가 뭐야?" })
   });
   assert.equal(deniedOrigin.status, 403);
+  await assertGatewayError(deniedOrigin, "ORIGIN_NOT_ALLOWED");
 
   const options = await fetch(`${baseUrl}/api/nli`, { method: "OPTIONS", headers: { Origin: "https://portfolio.example" } });
   assert.equal(options.status, 204);
+
+  await closeServer(server);
+});
+
+test("a model proposal cannot override a current-project pronoun with another project navigation", async () => {
+  const result = await resolveNliRequest("여기서 동시성 문제는 어떻게 해결했어?", context, {
+    currentTargetId: "project-makertion",
+    modelClient: async () => ({ intent: "navigate", confidence: 0.99, targetId: "project-bookking-lock" })
+  });
+
+  assert.notEqual(result.targetId, "project-bookking-lock");
+  assert.ok(!result.targetId || result.targetId.startsWith("project-makertion"));
+});
+
+test("HTTP boundary identifies rate limits and unavailable upstream models", async () => {
+  const rateLimitedServer = await createNliServer({
+    context,
+    config: createTestConfig({ rateLimitMax: 1 }),
+    modelClient: async () => ({ intent: "reject_out_of_scope", confidence: 1 })
+  });
+  const rateLimitedBaseUrl = await listen(rateLimitedServer);
+  const requestOptions = {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message: "P95가 뭐야?" })
+  };
+
+  await fetch(`${rateLimitedBaseUrl}/api/nli`, requestOptions);
+  const rateLimited = await fetch(`${rateLimitedBaseUrl}/api/nli`, requestOptions);
+  assert.equal(rateLimited.status, 429);
+  await assertGatewayError(rateLimited, "RATE_LIMITED");
+  await closeServer(rateLimitedServer);
+
+  const unavailableServer = await createNliServer({
+    context,
+    config: createTestConfig(),
+    modelClient: async () => {
+      throw new Error("upstream unavailable");
+    }
+  });
+  const unavailableBaseUrl = await listen(unavailableServer);
+  const fallback = await fetch(`${unavailableBaseUrl}/api/nli`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message: "P95가 뭐야?" })
+  });
+  assert.equal(fallback.status, 200);
+  assert.equal((await fallback.json()).intent, "define_term");
+
+  const unavailable = await fetch(`${unavailableBaseUrl}/api/nli`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message: "외부 날씨를 알려줘" })
+  });
+  assert.equal(unavailable.status, 503);
+  await assertGatewayError(unavailable, "UPSTREAM_UNAVAILABLE");
+  await closeServer(unavailableServer);
+});
+
+test("HTTP boundary reports every unusable model result as unavailable when local routing is only generic rejection", async () => {
+  const modelOutcomes = new Map([
+    ["throw", new Error("upstream unavailable")],
+    ["null", null],
+    ["schema-invalid", { intent: "navigate", confidence: "high", targetId: "projects" }],
+    ["unknown-target", { intent: "navigate", confidence: 0.9, targetId: "project-unknown" }],
+    ["invalid-sources", {
+      intent: "answer_portfolio",
+      confidence: 0.9,
+      answer: "This answer cites a source outside the bounded evidence pool.",
+      sourceIds: ["project-unknown"]
+    }]
+  ]);
+  const server = await createNliServer({
+    context,
+    config: createTestConfig(),
+    modelClient: async (message) => {
+      const outcome = modelOutcomes.get(message);
+      if (outcome instanceof Error) throw outcome;
+      return outcome;
+    }
+  });
+  const baseUrl = await listen(server);
+
+  for (const message of modelOutcomes.keys()) {
+    const response = await fetch(`${baseUrl}/api/nli`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message })
+    });
+
+    assert.equal(response.status, 503, message);
+    await assertGatewayError(response, "UPSTREAM_UNAVAILABLE");
+  }
+
+  await closeServer(server);
+});
+
+test("HTTP boundary gives genuine out-of-scope rejection stable Gateway metadata", async () => {
+  const server = await createNliServer({
+    context,
+    config: createTestConfig(),
+    modelClient: async () => ({ intent: "reject_out_of_scope", confidence: 1 })
+  });
+  const baseUrl = await listen(server);
+  const response = await fetch(`${baseUrl}/api/nli`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message: "bitcoin price tomorrow" })
+  });
+
+  assert.equal(response.status, 200);
+  await assertGatewayError(response, "OUT_OF_SCOPE");
+  await closeServer(server);
+});
+
+test("canonical rejections preserve gateway metadata while model proposals reject it", () => {
+  const response = {
+    intent: "reject_out_of_scope",
+    confidence: 1,
+    message: "잠시 후 다시 시도해주세요.",
+    errorCode: "UPSTREAM_UNAVAILABLE",
+    requestId: "e2b30205-7b48-48b8-9f76-5da9c5146206"
+  };
+
+  assert.deepEqual(validateNliResponse(response, context), { ok: true, errors: [] });
+  assert.equal(validateNliResponse(response, context, { modelCandidate: true }).ok, false);
+
+  const { requestId: _requestId, ...missingRequestId } = response;
+  const { errorCode: _errorCode, ...missingErrorCode } = response;
+
+  for (const invalidResponse of [
+    { ...response, errorCode: "NOT_A_GATEWAY_CODE" },
+    { ...response, requestId: "not-a-request-id" },
+    missingRequestId,
+    missingErrorCode
+  ]) {
+    assert.equal(validateNliResponse(invalidResponse, context).ok, false);
+  }
+});
+
+test("HTTP Gateway executes every declared intent example with a contract-valid response", async () => {
+  const intents = JSON.parse(await readFile(resolve(root, "nli/intents.json"), "utf8")).intents;
+  const expectedByMessage = new Map(intents.flatMap((definition) =>
+    definition.examples.map((message) => [message, definition])
+  ));
+  const server = await createNliServer({
+    context,
+    config: createTestConfig({ rateLimitMax: 100 }),
+    modelClient: async (message, nliContext, proposalContext) => {
+      const definition = expectedByMessage.get(message);
+      if (definition?.name === "answer_portfolio") {
+        const source = proposalContext.candidateSources[0];
+        return {
+          intent: "answer_portfolio",
+          confidence: 0.9,
+          answer: source.label,
+          sourceIds: [source.id]
+        };
+      }
+      return toModelDecision(resolveLocally(message, nliContext));
+    }
+  });
+  const baseUrl = await listen(server);
+
+  for (const [message, definition] of expectedByMessage) {
+    const response = await fetch(`${baseUrl}/api/nli`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message })
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 200, message);
+    assert.equal(body.intent, definition.name, message);
+    if (definition.requiredSlots.includes("targetId")) {
+      assert.ok(context.targetById.has(body.targetId), message);
+      if (definition.allowedTargetTypes) {
+        assert.ok(definition.allowedTargetTypes.includes(context.targetById.get(body.targetId).type), message);
+      }
+    }
+    if (definition.requiredSlots.includes("term")) assert.equal(typeof body.term, "string", message);
+    if (definition.requiredSlots.includes("answer")) assert.equal(typeof body.answer, "string", message);
+  }
 
   await closeServer(server);
 });
@@ -240,8 +433,22 @@ function closeServer(server) {
   return new Promise((resolvePromise) => server.close(() => resolvePromise()));
 }
 
+async function assertGatewayError(response, errorCode) {
+  const body = await response.json();
+  assert.equal(body.intent, "reject_out_of_scope");
+  assert.equal(body.errorCode, errorCode);
+  assert.match(body.requestId, /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+}
+
 async function readRequestBody(request) {
   const chunks = [];
   for await (const chunk of request) chunks.push(chunk);
   return Buffer.concat(chunks).toString("utf8");
+}
+
+function toModelDecision(response) {
+  const decision = { intent: response.intent, confidence: response.confidence };
+  if (response.targetId) decision.targetId = response.targetId;
+  if (response.term) decision.term = response.term;
+  return decision;
 }

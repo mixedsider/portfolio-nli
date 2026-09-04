@@ -1,4 +1,4 @@
-import { normalize } from "./text.mjs";
+import { compact, normalize } from "./text.mjs";
 
 export function buildEvidenceIndex(context) {
   const targets = uniqueTargets(context?.routes?.targets);
@@ -55,7 +55,17 @@ export function buildEvidenceIndex(context) {
 }
 
 export function tokenizeEvidence(value) {
-  return (normalize(value).match(/[\p{L}\p{N}+#.]+/gu) || []).filter((token) => Array.from(token).length >= 2);
+  const tokens = (normalize(value).match(/[\p{L}\p{N}+#.]+/gu) || []).filter(
+    (token) => Array.from(token).length >= 2
+  );
+  const terms = new Set(tokens);
+
+  for (let index = 0; index < tokens.length - 1; index += 1) {
+    const joined = compact(`${tokens[index]} ${tokens[index + 1]}`);
+    if (Array.from(joined).length >= 2) terms.add(joined);
+  }
+
+  return [...terms];
 }
 
 function createEvidenceCard({ target, order, evidence, metricCount, scopeKey }) {

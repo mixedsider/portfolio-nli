@@ -4,6 +4,7 @@ import test from "node:test";
 import { createGatewayConfig } from "./nli/config.mjs";
 import { HttpRequestError, readNliRequest } from "./nli/http.mjs";
 import { createNliServer, loadNliContext, resolveNliRequest } from "./nli-gateway.mjs";
+import { resolveLocally } from "./nli/router.mjs";
 import { listenForFetch } from "./test-server.mjs";
 import {
   createNliMessage,
@@ -92,7 +93,7 @@ test("history and current target resolve a follow-up without retaining it for la
     return {
       intent: "answer_portfolio",
       confidence: 0.85,
-      answer: "P95 지연 개선 사례를 근거로 답합니다.",
+      answer: "DB 파라미터 튜닝과 부하 테스트로 평균 응답과 P95 지연을 줄인 사례입니다.",
       sourceIds: [groundedRequest.candidateSources[0].id]
     };
   };
@@ -103,11 +104,12 @@ test("history and current target resolve a follow-up without retaining it for la
     currentTargetId
   });
   const withoutHistory = await resolveNliRequest(followUpQuestion, context, { modelClient, currentTargetId });
+  const local = resolveLocally(followUpQuestion, { ...context, currentTargetId });
 
-  assert.equal(contextual.intent, "answer_portfolio");
+  assert.deepEqual(contextual, local);
   assert.deepEqual(calls[0].history, history());
   assert.equal(calls[0].currentTargetId, currentTargetId);
-  assert.equal(withoutHistory.intent, "answer_portfolio");
+  assert.deepEqual(withoutHistory, local);
   assert.deepEqual(calls[1].history, []);
   assert.equal(calls[1].currentTargetId, currentTargetId);
   assert.equal(calls.length, 2);

@@ -1,4 +1,4 @@
-import { normalize } from "./text.mjs";
+import { compact, normalize } from "./text.mjs";
 
 const injectionPatterns = [
   /(?:ignore|disregard|bypass).{0,40}(?:previous|prior|all|system|instruction|prompt)/i,
@@ -10,5 +10,6 @@ const injectionPatterns = [
 
 export function isPromptInjectionAttempt(value) {
   const normalizedMessage = normalize(value);
-  return injectionPatterns.some((pattern) => pattern.test(normalizedMessage));
+  const compactMessage = compact(normalizedMessage);
+  return injectionPatterns.some((pattern) => pattern.test(normalizedMessage) || pattern.test(compactMessage));
 }

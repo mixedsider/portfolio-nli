@@ -40,21 +40,21 @@
       "id": "project-catequest",
       "type": "project",
       "label": "CateQuest",
-      "aliases": ["카테퀘스트", "질문 생성 앱", "카테고리 질문"],
+      "aliases": ["카테퀘스트", "케이트퀘스트", "케이트 퀘스트", "Cate Quest", "카테 퀘스트", "카테 퀘 스트", "질문 생성 앱", "카테고리 질문"],
       "description": "사용자 맞춤 카테고리별 질문 생성 프로젝트 카드로 이동합니다."
     },
     {
       "id": "project-bookking",
       "type": "project",
       "label": "Bookking",
-      "aliases": ["북킹", "도서 검색", "결제 프로젝트"],
+      "aliases": ["북킹", "북 킹", "부킹", "도서 검색", "결제 프로젝트"],
       "description": "검색과 결제 흐름을 가진 Bookking 프로젝트 카드로 이동합니다."
     },
     {
       "id": "project-ott",
       "type": "project",
       "label": "오늘의 OTT",
-      "aliases": ["OTT 프로젝트", "오늘의 오티티", "콘텐츠 통합"],
+      "aliases": ["OTT 프로젝트", "오늘의OTT", "오늘의 오티티", "오티티", "콘텐츠 통합"],
       "description": "OTT 콘텐츠 정보를 통합하고 중복 데이터를 정규화한 프로젝트 카드로 이동합니다."
     },
     {

@@ -115,6 +115,27 @@ test("answer_portfolio rejects concise mixed technical anchors that selected evi
   assert.match(validation.errors.join("\n"), /answer must be supported by selected sources/);
 });
 
+test("answer_portfolio rejects mixed technical anchors across Korean and punctuation variants", () => {
+  const candidateSources = [{ id: "project-makertion-db", evidence: "P95 shared_buffers memory" }];
+
+  for (const answer of [
+    "P95/shared_buffers/Kubernetes",
+    "P95 shared_buffers 쿠버네티스",
+    "P95(shared_buffers)/Kubernetes"
+  ]) {
+    const candidate = {
+      intent: "answer_portfolio",
+      confidence: 0.91,
+      answer,
+      sourceIds: ["project-makertion-db"]
+    };
+    const validation = validatePortfolioAnswerCandidate(candidate, context, candidateSources);
+
+    assert.equal(validation.ok, false, answer);
+    assert.match(validation.errors.join("\n"), /answer must be supported by selected sources/);
+  }
+});
+
 test("answer_portfolio accepts concise technical anchors when selected evidence supports them", () => {
   const candidateSources = [{ id: "project-makertion-db", evidence: "P95 shared_buffers memory" }];
   const candidate = {

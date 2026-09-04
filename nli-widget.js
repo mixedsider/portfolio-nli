@@ -202,10 +202,11 @@ export function createNliWidget({
     });
     if (!response.ok) {
       const result = await response.json().catch(() => null);
-      const userMessage =
-        response.status >= 400 && response.status < 500 && typeof result?.message === "string" ? result.message.trim() : "";
+      const userMessage = typeof result?.message === "string" ? result.message.trim() : "";
       const error = new Error("NLI request failed");
-      error.userMessage = userMessage;
+      error.userMessage = userMessage || (response.status >= 500
+        ? "도우미 응답을 일시적으로 가져오지 못했습니다. 잠시 후 다시 시도해주세요."
+        : "요청을 처리하지 못했습니다. 입력을 확인한 뒤 다시 시도해주세요.");
       throw error;
     }
     return response.json();
@@ -254,7 +255,7 @@ export function createNliWidget({
       if (error?.userMessage) {
         updateMessage(pendingId, error.userMessage);
       } else {
-        updateMessage(pendingId, "도우미 Gateway에 연결할 수 없습니다. Gateway가 켜져 있는지 확인해주세요.");
+        updateMessage(pendingId, "도우미에 연결하지 못했습니다. 잠시 후 다시 시도해주세요.");
       }
     } finally {
       clearDelayTimers();

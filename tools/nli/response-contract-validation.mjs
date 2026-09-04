@@ -24,7 +24,18 @@ const intentNames = new Set([
 ]);
 const modelProposalIntentNames = new Set(["navigate", "define_term", "answer_portfolio", "reject_out_of_scope"]);
 
-const responseKeys = new Set(["intent", "confidence", "targetId", "term", "message", "answer", "relatedTargets", "sources"]);
+const responseKeys = new Set(["intent", "confidence", "targetId", "term", "message", "answer", "relatedTargets", "sources", "errorCode", "requestId"]);
+const gatewayErrorKeys = ["errorCode", "requestId"];
+const gatewayErrorCodes = new Set([
+  "INVALID_REQUEST",
+  "UNSUPPORTED_MEDIA_TYPE",
+  "REQUEST_TOO_LARGE",
+  "RATE_LIMITED",
+  "ORIGIN_NOT_ALLOWED",
+  "UPSTREAM_UNAVAILABLE",
+  "OUT_OF_SCOPE"
+]);
+const requestIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const modelProposalKeysByIntent = new Map([
   ["navigate", new Set(["intent", "confidence", "targetId"])],
   ["define_term", new Set(["intent", "confidence", "term"])],
@@ -102,9 +113,11 @@ export function isPlainObject(value) {
 }
 
 function validateCanonicalShape(response, errors) {
-  const allowedKeys = canonicalKeysByIntent[response.intent];
-  if (!allowedKeys) return;
-  for (const key of allowedKeys) {
+  const requiredKeys = canonicalKeysByIntent[response.intent];
+  if (!requiredKeys) return;
+  const allowedKeys =
+    response.intent === "reject_out_of_scope" ? [...requiredKeys, ...gatewayErrorKeys] : requiredKeys;
+  for (const key of requiredKeys) {
     if (!Object.hasOwn(response, key)) errors.push(`${key} is required for ${response.intent}`);
   }
   for (const key of Object.keys(response)) {
@@ -119,6 +132,23 @@ function validateCanonicalShape(response, errors) {
     validateRequiredString(response.answer, "answer", MAX_PORTFOLIO_ANSWER_LENGTH, errors);
   } else if (requiresAnswer(response.intent)) {
     validateRequiredString(response.answer, "answer", MAX_ANSWER_LENGTH, errors);
+  }
+
+  validateGatewayErrorMetadata(response, errors);
+}
+
+function validateGatewayErrorMetadata(response, errors) {
+  const hasErrorCode = Object.hasOwn(response, "errorCode");
+  const hasRequestId = Object.hasOwn(response, "requestId");
+  if (!hasErrorCode && !hasRequestId) return;
+  if (!hasErrorCode || !hasRequestId) {
+    errors.push("errorCode and requestId must be provided together");
+  }
+  if (typeof response.errorCode !== "string" || !gatewayErrorCodes.has(response.errorCode)) {
+    errors.push("errorCode is invalid");
+  }
+  if (typeof response.requestId !== "string" || !requestIdPattern.test(response.requestId)) {
+    errors.push("requestId must be a UUID");
   }
 }
 
