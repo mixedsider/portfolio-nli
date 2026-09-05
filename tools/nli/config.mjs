@@ -33,7 +33,7 @@ export function createGatewayConfig(env = process.env) {
     releaseRevision: env.GIT_COMMIT_SHA || null,
     model: {
       baseUrl: env.LM_STUDIO_BASE_URL || "http://192.168.0.57:1234/v1",
-      name: env.LM_STUDIO_MODEL || "qwen/qwen3.5-9b",
+      name: env.LM_STUDIO_MODEL || "Qwen3.8-27B-UD-Q4_K_M",
       timeoutMs: readPositiveIntegerEnv(env, "LM_STUDIO_TIMEOUT_MS", 8_000),
       maxTokens: readPositiveIntegerEnv(env, "LM_STUDIO_MAX_TOKENS", 768),
       reasoningEffort: "none",
