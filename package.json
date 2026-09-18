@@ -1,0 +1,20 @@
+{
+  "name": "portfolio-nli",
+  "private": true,
+  "packageManager": "pnpm@11.10.0",
+  "engines": { "node": ">=22.22.1" },
+  "scripts": {
+    "test": "node tools/test-harness.mjs run --all",
+    "test:ci": "node tools/test-harness.mjs run --all",
+    "test:unit": "node tools/test-harness.mjs run --level unit",
+    "test:integration": "node tools/test-harness.mjs run --level integration",
+    "test:e2e": "node tools/test-harness.mjs run --level e2e",
+    "test:blackbox": "node tools/test-harness.mjs run --technique blackbox",
+    "test:whitebox": "node tools/test-harness.mjs run --technique whitebox",
+    "test:node": "node tools/test-harness.mjs run --runner node",
+    "test:browser": "node tools/test-harness.mjs run --runner playwright",
+    "test:check": "node tools/test-harness.mjs check",
+    "test:list": "node tools/test-harness.mjs list"
+  },
+  "devDependencies": { "@playwright/test": "1.63.0", "saxes": "6.0.0", "yaml": "2.9.1" }
+}
