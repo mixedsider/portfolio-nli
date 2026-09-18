@@ -15,6 +15,11 @@ const optimizationEvidencePattern =
   /(?:개선|단축|줄(?:였|인|였습니다|임)|최적화|튜닝|전환해|reduc|optimi|tuning)/i;
 
 export function retrieveEvidenceCandidates(index, request = {}) {
+  return rankEvidenceCandidates(index, request).slice(0, MAX_EVIDENCE_CANDIDATES);
+}
+
+// Selection resolves scope and reserves groups before applying the public cap.
+export function rankEvidenceCandidates(index, request = {}) {
   const cards = asArray(index).filter(isEvidenceCard);
   const message = boundedText(request?.message, MAX_MESSAGE_CHARS);
   const history = boundedHistory(request?.history);
@@ -27,7 +32,9 @@ export function retrieveEvidenceCandidates(index, request = {}) {
   const scored = cards.map((card, order) => {
     const messageScore = scoreTerms(card, messageTerms);
     const historyScore = scoreHistory(card, historyTerms);
-    return { card, order, semanticScore: messageScore + historyScore };
+    // Section titles identify actual cases; page outlines may repeat their words.
+    const titleScore = card.type === "section" ? scoreTerms({ evidence: card.label }, messageTerms) : 0;
+    return { card, order, titleScore, semanticScore: messageScore + historyScore };
   });
   const hasExplicitMetricRequest = isExplicitMetricRequest(messageTerms);
   const matchedAnchors = [...allTerms].filter(
@@ -42,7 +49,6 @@ export function retrieveEvidenceCandidates(index, request = {}) {
     .sort(compareCandidates);
 
   return prioritizeCurrentScope(candidates, currentCard)
-    .slice(0, MAX_EVIDENCE_CANDIDATES)
     .map(({ card }) => publicCard(card));
 }
 
@@ -62,7 +68,7 @@ function scoreCandidate(candidate, { currentCard, hasExplicitMetricRequest, matc
     else if (scopeKey(card) === scopeKey(currentCard)) score += 0.35;
   }
 
-  return { card, order: candidate.order, score };
+  return { card, order: candidate.order, titleScore: candidate.titleScore, score };
 }
 
 function boundedHistory(value) {
@@ -168,6 +174,7 @@ function hasOptimizationEvidence(card) {
 }
 
 function compareCandidates(left, right) {
+  if (Boolean(right.titleScore) !== Boolean(left.titleScore)) return right.titleScore ? 1 : -1;
   if (right.score !== left.score) return right.score - left.score;
   if (left.order !== right.order) return left.order - right.order;
   return left.card.targetId < right.card.targetId ? -1 : left.card.targetId > right.card.targetId ? 1 : 0;
