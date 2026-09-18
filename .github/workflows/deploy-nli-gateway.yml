@@ -69,10 +69,11 @@ jobs:
         run: |
           for file in app.js nli-history.js nli-widget.js data/portfolio.js tools/*.mjs; do node --check "$file"; done
           for file in tools/nli/*.mjs; do node --check "$file"; done
-          node -e "for (const f of ['nli/routes.json','nli/glossary.json','nli/intents.json','nli/response.schema.json','nli/model-decision.schema.json','nli/test-cases.json','nli/live-test-cases.json','nli/adversarial-test-cases.json','nli/grounded-category-test-cases.json']) JSON.parse(require('fs').readFileSync(f,'utf8')); console.log('json ok')"
-          node tools/nli-test.mjs
+          node -e "for (const f of ['nli/routes.json','nli/glossary.json','nli/intents.json','nli/response.schema.json','nli/model-decision.schema.json','nli/test-cases.json','nli/live-test-cases.json','nli/adversarial-test-cases.json','nli/grounded-category-test-cases.json','nli/cascade-test-cases.json','nli/model-probe-cases.json']) JSON.parse(require('fs').readFileSync(f,'utf8')); console.log('json ok')"
+          node tools/nli-test.mjs --local --cases nli/test-cases.json --min-pass-rate 1
           node tools/nli-test.mjs --local --cases nli/live-test-cases.json --min-pass-rate 1
           node tools/nli-test.mjs --fake --cases nli/grounded-category-test-cases.json --min-pass-rate 1
+          node tools/nli-test.mjs --fake --cases nli/cascade-test-cases.json --min-pass-rate 1
           node tools/nli-test.mjs --local --cases nli/adversarial-test-cases.json --min-pass-rate 1
           node --test tools/*.test.mjs
           node --test tools/nli/*.test.mjs
@@ -140,7 +141,7 @@ jobs:
             -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile=~/.ssh/nli_gateway_known_hosts \
             "${NLI_GATEWAY_USER}@${NLI_GATEWAY_HOST}" \
-            "APP_DIR='${NLI_GATEWAY_APP_DIR}' PROCESS_NAME='${NLI_GATEWAY_PROCESS}' NLI_GATEWAY_PORT='${NLI_GATEWAY_PORT}' DEPLOY_SHA='${{ github.sha }}' GIT_COMMIT_SHA='${{ github.sha }}' bash -s" <<'REMOTE'
+            "APP_DIR='${NLI_GATEWAY_APP_DIR}' PROCESS_NAME='${NLI_GATEWAY_PROCESS}' NLI_GATEWAY_PORT='${NLI_GATEWAY_PORT}' DEPLOY_SHA='${{ github.sha }}' GIT_COMMIT_SHA='${{ github.sha }}' PREFLIGHT_ID='${{ github.run_id }}-${{ github.run_attempt }}' bash -s" <<'REMOTE'
           set -euo pipefail
           command -v ss >/dev/null 2>&1 || {
             echo "ss is required to verify the NLI Gateway listener"
@@ -155,7 +156,7 @@ jobs:
           }
 
           describe_nli_listeners() {
-            local listener_pid listener_cmdline listener_cwd
+            local listener_pid
             local -a listener_pids=()
             mapfile -t listener_pids < <(nli_listener_pids)
             if [ "${#listener_pids[@]}" -eq 0 ]; then
@@ -165,14 +166,7 @@ jobs:
 
             for listener_pid in "${listener_pids[@]}"; do
               echo "Listener PID: ${listener_pid}"
-              if [ -r "/proc/${listener_pid}/cmdline" ]; then
-                listener_cmdline="$(tr '\0' ' ' </proc/${listener_pid}/cmdline)"
-                echo "Listener cmdline: ${listener_cmdline}"
-              fi
-              if [ -r "/proc/${listener_pid}/cwd" ]; then
-                listener_cwd="$(readlink -f "/proc/${listener_pid}/cwd")"
-                echo "Listener cwd: ${listener_cwd}"
-              fi
+              echo "Listener identity could not be verified; process details withheld."
             done
           }
 
@@ -186,6 +180,10 @@ jobs:
 
             listener_cwd="$(readlink -f "/proc/${listener_pid}/cwd")"
             [ "${listener_cwd}" = "${APP_DIR}" ] || return 1
+            if command -v pm2 >/dev/null 2>&1 && [ -f "${APP_DIR}/.nli/preflight-${PREFLIGHT_ID:-}/snapshot.json" ]; then
+              GATEWAY_PID="${listener_pid}" node "${APP_DIR}/.nli/preflight-${PREFLIGHT_ID}/lifecycle.mjs" identity "${GIT_COMMIT_SHA}"
+              return $?
+            fi
             mapfile -d '' -t listener_argv < "/proc/${listener_pid}/cmdline"
             [ "${#listener_argv[@]}" -ge 2 ] || return 1
             case "${listener_argv[0]}" in
@@ -208,11 +206,9 @@ jobs:
                 return 1
               fi
 
-              if ! is_expected_nli_gateway_listener "${listener_pid}"; then
-                echo "Refusing to stop a non-Gateway listener on port ${NLI_GATEWAY_PORT}"
-                echo "Expected script: ${expected_script}"
-                echo "Expected cwd: ${expected_cwd}"
-                describe_nli_listeners
+                if ! is_expected_nli_gateway_listener "${listener_pid}"; then
+                  echo "Refusing to stop a non-Gateway listener on port ${NLI_GATEWAY_PORT}"
+                  describe_nli_listeners
                 return 1
               fi
 
@@ -249,52 +245,147 @@ jobs:
               sleep 1
             done
             echo "Gateway listener did not settle to the expected script and cwd on port ${NLI_GATEWAY_PORT}"
-            echo "Expected script: ${expected_script}"
-            echo "Expected cwd: ${expected_cwd}"
             echo "Listener PID: ${listener_pid:-unset}"
-            if [ -n "${listener_pid:-}" ] && [ -r "/proc/${listener_pid}/cmdline" ]; then
-              echo "Listener cmdline: $(tr '\0' ' ' </proc/${listener_pid}/cmdline)"
-            fi
-            if [ -n "${listener_pid:-}" ] && [ -r "/proc/${listener_pid}/cwd" ]; then
-              echo "Listener cwd: $(readlink -f "/proc/${listener_pid}/cwd")"
-            fi
             return 1
           }
 
           APP_DIR="${APP_DIR/#\~/$HOME}"
           cd "${APP_DIR}"
+          # Checkpoint BEFORE checkout/restart; no environment data goes to stdout.
+          umask 077
+          mkdir -p .nli
+          export PREFLIGHT_DIR="${APP_DIR}/.nli/preflight-${PREFLIGHT_ID}"
+          mkdir -m 700 "${PREFLIGHT_DIR}"
+          export PM2_BIN="$(command -v pm2 || true)"
+          cat > "${PREFLIGHT_DIR}/lifecycle.mjs" <<'LIFECYCLE'
+          import { readFileSync, writeFileSync, copyFileSync, existsSync, renameSync, rmSync, realpathSync } from "node:fs";
+          import { spawnSync } from "node:child_process";
+          import { pathToFileURL, fileURLToPath } from "node:url";
+          import { dirname, resolve } from "node:path";
+          const dir = dirname(fileURLToPath(import.meta.url));
+          const app = resolve(dir, "../..");
+          const action = process.argv[2];
+          const revision = process.argv[3];
+          const snapshotPath = dir + "/snapshot.json";
+          function fail() { throw new Error("lifecycle_failed"); }
+          function run(command, args, env) {
+            const child = spawnSync(command, args, { env, encoding: "utf8", timeout: 900000, maxBuffer: 16777216 });
+            // PM2/child output can contain environment values; never relay it.
+            if (child.error || child.signal || child.status !== 0) fail();
+            return child.stdout;
+          }
+          function pm2(bin, args, env) { return run(process.execPath, [bin, ...args], env); }
+          function processEnv(pid) {
+            if (!/^\d+$/.test(String(pid)) || Number(pid) <= 0) fail();
+            return Object.fromEntries(readFileSync(`/proc/${pid}/environ`, "utf8").split("\0").filter(Boolean).map((entry) => {
+              const at = entry.indexOf("="); return [entry.slice(0, at), entry.slice(at + 1)];
+            }));
+          }
+          function entryFor(bin, name, env) {
+            const entries = JSON.parse(pm2(bin, ["jlist"], env)).filter((entry) => entry.name === name);
+            if (entries.length > 1) fail();
+            const entry = entries[0];
+            if (entry && (entry.pm2_env.pm_exec_path !== app + "/tools/nli-gateway.mjs" ||
+                realpathSync(entry.pm2_env.pm_cwd) !== realpathSync(app) || entry.pm2_env.exec_mode !== "fork_mode")) fail();
+            return entry;
+          }
+          async function configFor(env) {
+            const { loadDotEnv, createGatewayConfig } = await import(pathToFileURL(app + "/tools/nli/config.mjs"));
+            await loadDotEnv(app, env);
+            return createGatewayConfig(env);
+          }
+          try {
+            if (action === "snapshot") {
+              const bin = process.env.PM2_BIN ? realpathSync(process.env.PM2_BIN) : null;
+              const name = process.env.PROCESS_NAME;
+              const prior = bin ? entryFor(bin, name, process.env) : null;
+              const pid = process.env.GATEWAY_PID;
+              let env;
+              if (prior) {
+                if (String(prior.pid) !== pid || prior.pm2_env.status !== "online") fail();
+                const actual = processEnv(pid);
+                // Preserve user-supplied registered variables, not PM2's mutable
+                // bookkeeping (pid/uptime/restart counters) masquerading as env.
+                env = { ...prior.pm2_env.env };
+                for (const key of Object.keys(env)) {
+                  if (typeof env[key] !== "string" || actual[key] !== env[key]) fail();
+                }
+                if (!env.PM2_HOME || env.PM2_HOME !== actual.PM2_HOME) fail();
+              } else if (bin) {
+                if (pid) fail(); // no registration + occupied port is not bootstrap
+                env = { ...process.env, PM2_HOME: process.env.PM2_HOME || resolve(process.env.HOME, ".pm2") };
+                for (const key of ["PREFLIGHT_DIR", "PREFLIGHT_ID", "PM2_BIN", "GATEWAY_PID", "DEPLOY_SHA"]) delete env[key];
+              } else env = processEnv(pid); // existing user-systemd service
+              const config = await configFor(env);
+              if (!config.allowedOrigins.size || config.allowedOrigins.has("*")) fail();
+              const receiptSetting = config.cascade?.qwenVerificationFile ??
+                (env.NLI_QWEN_VERIFICATION_FILE || ".nli/qwen-no-thinking.json");
+              if (typeof receiptSetting !== "string" || !receiptSetting.trim()) fail();
+              const receipt = resolve(app, receiptSetting);
+              const hadReceipt = existsSync(receipt);
+              if (hadReceipt) copyFileSync(receipt, dir + "/previous-receipt.json");
+              writeFileSync(snapshotPath, JSON.stringify({ env, bin, name, existed: Boolean(prior), receipt, hadReceipt }),
+                { flag: "wx", mode: 0o600 });
+            } else {
+              const state = JSON.parse(readFileSync(snapshotPath, "utf8"));
+              const env = { ...state.env, GIT_COMMIT_SHA: revision };
+              if (action === "restart") {
+                if (!/^[a-f0-9]{40}$/.test(revision)) fail();
+                if (state.bin) {
+                  const entry = entryFor(state.bin, state.name, env);
+                  if (state.existed && !entry) fail(); // never silently replace a lost registration
+                  pm2(state.bin, entry ? ["restart", state.name, "--update-env"] :
+                    ["start", app + "/tools/nli-gateway.mjs", "--name", state.name, "--cwd", app], env);
+                  pm2(state.bin, ["save"], env);
+                } else run("systemctl", ["--user", "restart", state.name + ".service"], state.env);
+              } else if (action === "identity" || action === "preflight") {
+                const actual = processEnv(process.env.GATEWAY_PID);
+                if (state.bin) {
+                  const entry = entryFor(state.bin, state.name, env);
+                  if (!entry || String(entry.pid) !== process.env.GATEWAY_PID) fail();
+                  for (const [key, value] of Object.entries(env)) {
+                    if (actual[key] !== value || entry.pm2_env.env[key] !== value) fail();
+                  }
+                } else {
+                  for (const [key, value] of Object.entries(state.env)) {
+                    if (/^(NLI_|LFM_|LM_STUDIO_)/.test(key) && actual[key] && actual[key] !== value) fail();
+                  }
+                }
+                if (action === "preflight") {
+                  const config = await configFor(actual);
+                  if (!config.cascade.qwenEnabled || config.cascade.qwenVerificationFile !== state.receipt) fail();
+                  for (const [endpoint, extra] of [["qwen", ["--receipt", state.receipt]], ["lfm", []]]) {
+                    run(process.execPath, ["tools/nli/eval-bound-probe.mjs", "--endpoint", endpoint, "--mode", "verify",
+                      "--output", dir + "/" + endpoint + "-verify.json", ...extra], actual);
+                  }
+                  run(process.execPath, ["tools/nli-cascade-eval.mjs", "--output", dir + "/live-eval.json",
+                    "--lfm-verification", dir + "/lfm-verify.json", "--qwen-verification", dir + "/qwen-verify.json"], actual);
+                  if (JSON.parse(readFileSync(dir + "/live-eval.json", "utf8")).ready !== true) fail();
+                }
+              } else if (action === "restore") {
+                if (state.hadReceipt) {
+                  const temporary = state.receipt + ".rollback-" + process.env.PREFLIGHT_ID;
+                  copyFileSync(dir + "/previous-receipt.json", temporary);
+                  renameSync(temporary, state.receipt);
+                } else rmSync(state.receipt, { force: true });
+              } else fail();
+            }
+          } catch {
+            console.error("Gateway lifecycle/preflight failed; private host checkpoint retained until cleanup.");
+            process.exitCode = 1;
+          }
+          LIFECYCLE
+          GATEWAY_PID="$(nli_listener_pids)" node "${PREFLIGHT_DIR}/lifecycle.mjs" snapshot
           git fetch --no-tags origin "main:refs/remotes/origin/main"
           git cat-file -e "${DEPLOY_SHA}^{commit}"
           git merge-base --is-ancestor "${DEPLOY_SHA}" origin/main
           git checkout --detach "${DEPLOY_SHA}"
-          node --input-type=module -e '
-            import { createGatewayConfig, loadDotEnv } from "./tools/nli/config.mjs";
-            await loadDotEnv(process.cwd());
-            const { allowedOrigins } = createGatewayConfig();
-            if (allowedOrigins.size === 0 || allowedOrigins.has("*")) {
-              console.error("NLI_ALLOWED_ORIGINS must contain exact production origins.");
-              process.exit(1);
-            }
-          '
-
-          if command -v pm2 >/dev/null 2>&1; then
-            if pm2 describe "${PROCESS_NAME}" >/dev/null 2>&1; then
-              pm2 delete "${PROCESS_NAME}"
-            fi
-            stop_stale_nli_listeners
-            pm2 start "${APP_DIR}/tools/nli-gateway.mjs" --name "${PROCESS_NAME}" --cwd "${APP_DIR}" --update-env
-            pm2 save
-            wait_for_nli_listener_identity
-          elif command -v systemctl >/dev/null 2>&1 && systemctl --user list-unit-files | grep -q "^${PROCESS_NAME}.service"; then
-            systemctl --user restart "${PROCESS_NAME}.service"
-            wait_for_nli_listener_identity
-          else
-            echo "Neither pm2 process nor user systemd service was found for ${PROCESS_NAME}"
-            exit 1
-          fi
+          node "${PREFLIGHT_DIR}/lifecycle.mjs" restart "${DEPLOY_SHA}"
+          wait_for_nli_listener_identity
+          GATEWAY_PID="$(nli_listener_pids)" node "${PREFLIGHT_DIR}/lifecycle.mjs" preflight "${DEPLOY_SHA}"
           REMOTE
 
-      - name: Health check
+      - name: Process health and revision check (not model readiness)
         shell: bash
         env:
           DEPLOY_SHA: ${{ github.sha }}
@@ -330,13 +421,15 @@ jobs:
         shell: bash
         run: |
           NLI_TEST_BASE_URL="http://${NLI_GATEWAY_HOST}:${NLI_GATEWAY_PORT}" \
-            node tools/nli-test.mjs --live --cases nli/live-test-cases.json --kind success --min-pass-rate 1
+            node tools/nli-test.mjs --live --cases nli/live-test-cases.json --kind success --min-pass-rate 1 --timeout-ms 25000
 
       - name: Run live NLI adversarial tests
         shell: bash
         run: |
+          # Separate suites must not share the default 30-request rate-limit window.
+          sleep 60
           NLI_TEST_BASE_URL="http://${NLI_GATEWAY_HOST}:${NLI_GATEWAY_PORT}" \
-            node tools/nli-test.mjs --live --cases nli/adversarial-test-cases.json --min-pass-rate 1
+            node tools/nli-test.mjs --live --cases nli/adversarial-test-cases.json --min-pass-rate 1 --timeout-ms 25000
 
       - name: Roll back failed deployment
         if: ${{ failure() && steps.previous.outputs.sha != '' }}
@@ -354,7 +447,7 @@ jobs:
             -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile=~/.ssh/nli_gateway_known_hosts \
             "${NLI_GATEWAY_USER}@${NLI_GATEWAY_HOST}" \
-            "APP_DIR='${NLI_GATEWAY_APP_DIR}' PROCESS_NAME='${NLI_GATEWAY_PROCESS}' NLI_GATEWAY_PORT='${NLI_GATEWAY_PORT}' PREVIOUS_SHA='${PREVIOUS_SHA}' GIT_COMMIT_SHA='${PREVIOUS_SHA}' bash -s" <<'REMOTE'
+            "APP_DIR='${NLI_GATEWAY_APP_DIR}' PROCESS_NAME='${NLI_GATEWAY_PROCESS}' NLI_GATEWAY_PORT='${NLI_GATEWAY_PORT}' PREVIOUS_SHA='${PREVIOUS_SHA}' GIT_COMMIT_SHA='${PREVIOUS_SHA}' PREFLIGHT_ID='${{ github.run_id }}-${{ github.run_attempt }}' bash -s" <<'REMOTE'
           set -euo pipefail
           command -v ss >/dev/null 2>&1 || {
             echo "ss is required to verify the NLI Gateway listener"
@@ -369,7 +462,7 @@ jobs:
           }
 
           describe_nli_listeners() {
-            local listener_pid listener_cmdline listener_cwd
+            local listener_pid
             local -a listener_pids=()
             mapfile -t listener_pids < <(nli_listener_pids)
             if [ "${#listener_pids[@]}" -eq 0 ]; then
@@ -379,14 +472,7 @@ jobs:
 
             for listener_pid in "${listener_pids[@]}"; do
               echo "Listener PID: ${listener_pid}"
-              if [ -r "/proc/${listener_pid}/cmdline" ]; then
-                listener_cmdline="$(tr '\0' ' ' </proc/${listener_pid}/cmdline)"
-                echo "Listener cmdline: ${listener_cmdline}"
-              fi
-              if [ -r "/proc/${listener_pid}/cwd" ]; then
-                listener_cwd="$(readlink -f "/proc/${listener_pid}/cwd")"
-                echo "Listener cwd: ${listener_cwd}"
-              fi
+              echo "Listener identity could not be verified; process details withheld."
             done
           }
 
@@ -400,6 +486,10 @@ jobs:
 
             listener_cwd="$(readlink -f "/proc/${listener_pid}/cwd")"
             [ "${listener_cwd}" = "${APP_DIR}" ] || return 1
+            if command -v pm2 >/dev/null 2>&1 && [ -f "${APP_DIR}/.nli/preflight-${PREFLIGHT_ID:-}/snapshot.json" ]; then
+              GATEWAY_PID="${listener_pid}" node "${APP_DIR}/.nli/preflight-${PREFLIGHT_ID}/lifecycle.mjs" identity "${GIT_COMMIT_SHA}"
+              return $?
+            fi
             mapfile -d '' -t listener_argv < "/proc/${listener_pid}/cmdline"
             [ "${#listener_argv[@]}" -ge 2 ] || return 1
             case "${listener_argv[0]}" in
@@ -422,11 +512,9 @@ jobs:
                 return 1
               fi
 
-              if ! is_expected_nli_gateway_listener "${listener_pid}"; then
-                echo "Refusing to stop a non-Gateway listener on port ${NLI_GATEWAY_PORT}"
-                echo "Expected script: ${expected_script}"
-                echo "Expected cwd: ${expected_cwd}"
-                describe_nli_listeners
+                if ! is_expected_nli_gateway_listener "${listener_pid}"; then
+                  echo "Refusing to stop a non-Gateway listener on port ${NLI_GATEWAY_PORT}"
+                  describe_nli_listeners
                 return 1
               fi
 
@@ -463,35 +551,40 @@ jobs:
               sleep 1
             done
             echo "Gateway listener did not settle to the expected script and cwd on port ${NLI_GATEWAY_PORT}"
-            echo "Expected script: ${expected_script}"
-            echo "Expected cwd: ${expected_cwd}"
             echo "Listener PID: ${listener_pid:-unset}"
-            if [ -n "${listener_pid:-}" ] && [ -r "/proc/${listener_pid}/cmdline" ]; then
-              echo "Listener cmdline: $(tr '\0' ' ' </proc/${listener_pid}/cmdline)"
-            fi
-            if [ -n "${listener_pid:-}" ] && [ -r "/proc/${listener_pid}/cwd" ]; then
-              echo "Listener cwd: $(readlink -f "/proc/${listener_pid}/cwd")"
-            fi
             return 1
           }
           APP_DIR="${APP_DIR/#\~/$HOME}"
           cd "${APP_DIR}"
+          PREFLIGHT_DIR="${APP_DIR}/.nli/preflight-${PREFLIGHT_ID}"
+          # No checkpoint means deploy failed before checkout or lifecycle mutation.
+          [ -f "${PREFLIGHT_DIR}/snapshot.json" ] || exit 0
+          node "${PREFLIGHT_DIR}/lifecycle.mjs" restore
           git checkout --detach "${PREVIOUS_SHA}"
-          if command -v pm2 >/dev/null 2>&1; then
-            if pm2 describe "${PROCESS_NAME}" >/dev/null 2>&1; then
-              pm2 delete "${PROCESS_NAME}"
-            fi
-            stop_stale_nli_listeners
-            pm2 start "${APP_DIR}/tools/nli-gateway.mjs" --name "${PROCESS_NAME}" --cwd "${APP_DIR}" --update-env
-            pm2 save
-            wait_for_nli_listener_identity
-          elif command -v systemctl >/dev/null 2>&1 && systemctl --user list-unit-files | grep -q "^${PROCESS_NAME}.service"; then
-            systemctl --user restart "${PROCESS_NAME}.service"
-            wait_for_nli_listener_identity
-          else
-            echo "Neither pm2 process nor user systemd service was found for ${PROCESS_NAME}"
-            exit 1
-          fi
+          node "${PREFLIGHT_DIR}/lifecycle.mjs" restart "${PREVIOUS_SHA}"
+          wait_for_nli_listener_identity
+          REMOTE
+
+      - name: Remove private host lifecycle snapshot
+        if: ${{ always() && steps.previous.outputs.sha != '' }}
+        shell: bash
+        env:
+          NLI_GATEWAY_USER: ${{ secrets.NLI_GATEWAY_USER }}
+        run: |
+          ssh -i ~/.ssh/nli_gateway_key \
+            -p "${NLI_GATEWAY_SSH_PORT}" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=10 \
+            -o ServerAliveInterval=15 \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=~/.ssh/nli_gateway_known_hosts \
+            "${NLI_GATEWAY_USER}@${NLI_GATEWAY_HOST}" \
+            "APP_DIR='${NLI_GATEWAY_APP_DIR}' PREFLIGHT_ID='${{ github.run_id }}-${{ github.run_attempt }}' bash -s" <<'REMOTE'
+          set -euo pipefail
+          APP_DIR="${APP_DIR/#\~/$HOME}"
+          rm -f "${APP_DIR}/.nli/preflight-${PREFLIGHT_ID}/snapshot.json" \
+            "${APP_DIR}/.nli/preflight-${PREFLIGHT_ID}/previous-receipt.json"
           REMOTE
 
       - name: Remove deployment SSH material

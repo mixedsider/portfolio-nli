@@ -7,13 +7,17 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { reserveFetchSafePort } from "./test-server.mjs";
+import { extractWorkflowLifecycle } from "./nli/deploy-workflow-extract.mjs";
+import { registerWorkflowLifecycleTests } from "./nli/deploy-workflow-tests.mjs";
+import { registerFirstUpgradeTests } from "./nli/deploy-workflow-upgrade-tests.mjs";
+import { registerWorkflowDiagnosticTests } from "./nli/deploy-workflow-diagnostic-tests.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const workflowPath = resolve(root, ".github/workflows/deploy-nli-gateway.yml");
 const workflow = process.env.NLI_DEPLOY_WORKFLOW_TEXT || (await readFile(workflowPath, "utf8"));
 const deployScript = extractDeploymentRemoteScript(workflow);
 
-test("deployment trusts the verified Gateway listener when PM2 reports a separate launcher PID", () => {
+test("deployment checkpoints the verified process before a non-destructive environment-preserving restart", () => {
   assert.match(deployScript, /stop_stale_nli_listeners\(\)/);
   assert.match(deployScript, /wait_for_nli_listener_identity\(\)/);
   assert.match(deployScript, /is_expected_nli_gateway_listener\(\)/);
@@ -22,22 +26,23 @@ test("deployment trusts the verified Gateway listener when PM2 reports a separat
   assert.doesNotMatch(deployScript, /gateway_pm2_pid\(\)/);
   assert.doesNotMatch(deployScript, /match\(\$0,/);
 
-  const pm2Block = deployScript.slice(
-    deployScript.indexOf("if command -v pm2"),
-    deployScript.indexOf("elif command -v systemctl")
-  );
-  const deleteIndex = pm2Block.indexOf("pm2 delete");
-  const cleanupIndex = pm2Block.indexOf("stop_stale_nli_listeners");
-  const startIndex = pm2Block.indexOf("pm2 start");
-  const listenerCheckIndex = pm2Block.indexOf("wait_for_nli_listener_identity");
-
-  assert.ok(deleteIndex >= 0, "PM2 process must be removed before reconciliation");
-  assert.ok(cleanupIndex > deleteIndex, "orphaned listener cleanup must follow PM2 deletion");
-  assert.ok(startIndex > cleanupIndex, "PM2 must start only after the old listener releases the port");
-  assert.ok(listenerCheckIndex > startIndex, "the actual Gateway listener must be verified after PM2 starts");
+  const snapshotIndex = deployScript.indexOf('lifecycle.mjs" snapshot');
+  const checkoutIndex = deployScript.indexOf('git checkout --detach "${DEPLOY_SHA}"');
+  const restartIndex = deployScript.indexOf('lifecycle.mjs" restart "${DEPLOY_SHA}"');
+  const listenerCheckIndex = deployScript.indexOf("\nwait_for_nli_listener_identity\n");
+  assert.ok(snapshotIndex >= 0 && checkoutIndex > snapshotIndex);
+  assert.ok(restartIndex > checkoutIndex && listenerCheckIndex > restartIndex);
+  assert.ok(deployScript.indexOf('lifecycle.mjs" preflight "${DEPLOY_SHA}"') > listenerCheckIndex);
+  assert.doesNotMatch(deployScript, /pm2 delete/);
+  const lifecycle = extractWorkflowLifecycle(workflow);
+  assert.match(lifecycle, /\["restart", state\.name, "--update-env"\]/);
+  assert.match(lifecycle, /const env = \{ \.\.\.state\.env, GIT_COMMIT_SHA: revision \}/);
+  assert.match(lifecycle, /tools\/nli\/eval-bound-probe\.mjs/);
+  assert.doesNotMatch(lifecycle, /tools\/nli-model-probe\.mjs/);
+  assert.match(lifecycle, /run\("systemctl", \["--user", "restart", state\.name \+ "\.service"\], state\.env\)/);
 });
 
-test("rollback reconciles a stale Gateway listener before restoring the previous revision", () => {
+test("rollback restores the pre-restart receipt and captured environment with the previous revision", () => {
   const rollbackStart = workflow.indexOf("      - name: Roll back failed deployment");
   const rollbackScriptStart = workflow.indexOf("          set -euo pipefail", rollbackStart);
   const rollbackScriptEnd = workflow.indexOf("\n          REMOTE", rollbackScriptStart);
@@ -47,12 +52,6 @@ test("rollback reconciles a stale Gateway listener before restoring the previous
   assert.ok(rollbackScriptEnd >= 0, "rollback remote script must terminate");
 
   const rollbackScript = workflow.slice(rollbackScriptStart, rollbackScriptEnd).replace(/^          /gm, "");
-  const pm2Start = rollbackScript.indexOf("if command -v pm2");
-  const fallbackStart = rollbackScript.indexOf("\nelse\n", pm2Start);
-  assert.ok(pm2Start >= 0, "rollback PM2 branch must exist");
-  assert.ok(fallbackStart > pm2Start, "rollback systemd fallback must follow the PM2 branch");
-  const pm2Block = rollbackScript.slice(pm2Start, fallbackStart);
-
   assert.match(rollbackScript, /stop_stale_nli_listeners\(\)/);
   assert.match(rollbackScript, /wait_for_nli_listener_identity\(\)/);
   assert.match(rollbackScript, /is_expected_nli_gateway_listener\(\)/);
@@ -60,11 +59,19 @@ test("rollback reconciles a stale Gateway listener before restoring the previous
   assert.doesNotMatch(rollbackScript, /wait_for_pm2_nli_listener_identity\(\)/);
   assert.doesNotMatch(rollbackScript, /gateway_pm2_pid\(\)/);
   assert.doesNotMatch(rollbackScript, /match\(\$0,/);
-  assert.ok(pm2Block.indexOf("pm2 delete") >= 0, "PM2 process must be removed before rollback reconciliation");
-  assert.ok(pm2Block.indexOf("stop_stale_nli_listeners") > pm2Block.indexOf("pm2 delete"));
-  assert.ok(pm2Block.indexOf("pm2 start") > pm2Block.indexOf("stop_stale_nli_listeners"));
-  assert.ok(pm2Block.indexOf("wait_for_nli_listener_identity") > pm2Block.indexOf("pm2 start"));
+  assert.match(rollbackScript, /snapshot\.json" \] \|\| exit 0/);
+  assert.doesNotMatch(rollbackScript, /pm2 delete/);
+  const restoreIndex = rollbackScript.indexOf('lifecycle.mjs" restore');
+  const checkoutIndex = rollbackScript.indexOf('git checkout --detach "${PREVIOUS_SHA}"');
+  const restartIndex = rollbackScript.indexOf('lifecycle.mjs" restart "${PREVIOUS_SHA}"');
+  assert.ok(restoreIndex >= 0 && checkoutIndex > restoreIndex && restartIndex > checkoutIndex);
+  assert.ok(rollbackScript.indexOf("\nwait_for_nli_listener_identity", restartIndex) > restartIndex);
+  assert.match(workflow, /name: Remove private host lifecycle snapshot\n\s+if: \$\{\{ always\(\) && steps\.previous\.outputs\.sha != '' \}\}/);
 });
+
+registerWorkflowLifecycleTests(workflow, root);
+registerFirstUpgradeTests(workflow, root);
+registerWorkflowDiagnosticTests(workflow);
 
 test("deployment preflight covers grounded fixtures and maintained tests without a browser dependency", () => {
   const preflight = extractPreflightScript(workflow);
