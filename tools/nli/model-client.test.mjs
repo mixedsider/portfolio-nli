@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url";
 
 import { createGatewayConfig } from "./config.mjs";
 import { loadNliContext } from "./context.mjs";
-import { createModelClient } from "./model-client.mjs";
+import { createDetailedModelClient, createModelClient, getModelDecisionSchema } from "./model-client.mjs";
+import { createModelAdmission } from "./model-admission.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const context = await loadNliContext(root);
@@ -47,7 +48,7 @@ test("model client disables reasoning, ignores reasoning_content, and accepts on
       receivedPayloads.map((payload) => payload.chat_template_kwargs),
       [{ enable_thinking: false }, { enable_thinking: false }, { enable_thinking: false }]
     );
-    assert.match(receivedPayloads[0].messages[0].content, /at most two Korean sentences and three `sourceIds`/);
+    assert.equal(receivedPayloads[0].messages[0].content, context.prompt);
   } finally {
     await close(upstream);
   }
@@ -73,3 +74,61 @@ async function readRequestBody(request) {
   for await (const chunk of request) chunks.push(chunk);
   return Buffer.concat(chunks).toString("utf8");
 }
+
+test("detailed adapters require real strict envelopes and recover after every failure", async () => {
+  const admission = createModelAdmission();
+  const settings = createGatewayConfig({}).model;
+  let reply;
+  let calls = 0;
+  const client = createDetailedModelClient(settings, { endpoint: "qwen", admission, fetchImpl: async () => {
+    calls += 1;
+    if (reply === "throw") throw new Error("private upstream internals");
+    return new Response(JSON.stringify(reply));
+  } });
+  const valid = { model: "test", choices: [{ finish_reason: "stop", message: {
+    role: "assistant", content: '{"intent":"reject_out_of_scope","confidence":1}'
+  } }] };
+  for (const [value, kind] of [
+    [{ intent: "reject_out_of_scope", confidence: 1 }, "invalid_envelope"],
+    [{ tag: "success", candidate: {} }, "invalid_envelope"],
+    [{ choices: [{ message: { content: "{}" } }] }, "invalid_envelope"],
+    [{ choices: [{ finish_reason: "length", message: { role: "assistant", content: "{}" } }] }, "truncated"],
+    [{ ...valid, usage: { reasoning_tokens: 1 } }, "reasoning_violation"],
+    ["throw", "http_error"]
+  ]) {
+    reply = value;
+    const failed = await client("test", context);
+    assert.equal(failed.kind, kind);
+    assert.equal(failed.metadata.dispatchCount, 1);
+    assert.equal(Object.hasOwn(failed, "candidate"), false);
+    assert.equal(JSON.stringify(failed).includes("private upstream"), false);
+    assert.equal(admission.active, 0);
+    reply = valid;
+    assert.equal((await client("recovered", context)).tag, "success");
+  }
+  assert.equal(calls, 12);
+  assert.equal(getModelDecisionSchema(), getModelDecisionSchema());
+  assert.ok(Object.isFrozen(getModelDecisionSchema().properties));
+});
+
+test("parent cancellation settles even a fetch that ignores its signal; late body is cancelled", async () => {
+  let resolveFetch;
+  let cancelled = false;
+  let fetchSignal;
+  const admission = createModelAdmission();
+  const client = createDetailedModelClient(createGatewayConfig({}).lfm, { endpoint: "lfm", admission,
+    fetchImpl: (_url, options) => {
+      fetchSignal = options.signal;
+      return new Promise((resolve) => { resolveFetch = resolve; });
+    }
+  });
+  const parent = new AbortController();
+  const operation = client("cancel while waiting for headers", context, {}, { signal: parent.signal });
+  parent.abort();
+  assert.equal((await operation).kind, "aborted");
+  assert.equal(fetchSignal.aborted, true);
+  assert.equal(admission.active, 0);
+  resolveFetch(new Response(new ReadableStream({ cancel() { cancelled = true; } })));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(cancelled, true);
+});
