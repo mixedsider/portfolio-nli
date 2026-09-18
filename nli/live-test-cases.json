@@ -4,6 +4,7 @@
     {
       "kind": "success",
       "message": "오티티 프로젝트로 이동해줘",
+      "models": { "lfm": { "response": { "intent": "navigate", "targetId": "project-ott", "confidence": 0.01 } }, "qwen": { "failure": "invalid_json" } },
       "expect": {
         "intent": "navigate",
         "targetId": "project-ott"
@@ -12,14 +13,18 @@
     {
       "kind": "success",
       "message": "메이커션 프로젝트 설명해줘",
+      "models": { "lfm": { "response": { "intent": "answer_portfolio", "confidence": 0.01, "answer": "사장님 피규어 만들어주세요!는 이미지만으로 3D 모델링을 만들고 출력까지 연결하는 서비스입니다.", "sourceIds": ["project-makertion"] } }, "qwen": { "failure": "invalid_json" } },
+      "expectByMode": { "local": { "intent": "summarize_project", "targetId": "project-makertion" } },
       "expect": {
-        "intent": "summarize_project",
-        "targetId": "project-makertion"
+        "intent": "answer_portfolio",
+        "sourceGroups": [["project-makertion", "project-makertion-ci", "project-makertion-cd", "project-makertion-db", "project-makertion-cost", "project-makertion-cache", "project-makertion-observability"]],
+        "allowedSourceIds": ["project-makertion", "project-makertion-ci", "project-makertion-cd", "project-makertion-db", "project-makertion-cost", "project-makertion-cache", "project-makertion-observability"]
       }
     },
     {
       "kind": "success",
       "message": "DB 최적화 보여줘",
+      "models": { "lfm": { "response": { "intent": "navigate", "targetId": "project-makertion-db", "confidence": 0.01 } }, "qwen": { "failure": "invalid_json" } },
       "expect": {
         "intent": "navigate",
         "targetId": "project-makertion-db"
@@ -28,66 +33,91 @@
     {
       "kind": "success",
       "message": "자기소개해줘",
+      "models": { "lfm": { "response": { "intent": "answer_portfolio", "confidence": 0.01, "answer": "이은성은 Backend & Infra Developer입니다. 대용량 데이터 흐름과 운영 안정성을 설계하는 Java·Spring 백엔드 개발자입니다.", "sourceIds": ["about"] } }, "qwen": { "failure": "invalid_json" } },
+      "expectByMode": { "local": { "intent": "introduce_profile", "answerIncludes": "Backend & Infra Developer" } },
       "expect": {
-        "intent": "introduce_profile",
+        "intent": "answer_portfolio",
+        "sourceGroups": [["about"]],
         "answerIncludes": "Backend & Infra Developer"
       }
     },
     {
       "kind": "success",
       "message": "포트폴리오 전체를 요약해줘.",
+      "models": { "lfm": { "response": { "intent": "answer_portfolio", "confidence": 0.01, "answer": "이은성은 Backend & Infra Developer입니다. 백엔드·인프라·성능 최적화·CI/CD 자동화를 연결해 병목과 장애 원인을 추적하고, 측정과 검증을 통해 운영 가능한 구조를 만듭니다.", "sourceIds": ["about"] } }, "qwen": { "failure": "invalid_json" } },
+      "expectByMode": { "local": { "intent": "summarize_portfolio", "answerIncludes": "Backend & Infra Developer" } },
       "expect": {
-        "intent": "summarize_portfolio",
+        "intent": "answer_portfolio",
+        "sourceGroups": [["about", "top"]],
         "answerIncludes": "Backend & Infra Developer"
       }
     },
     {
       "kind": "success",
       "message": "포트폴리오 목차를 알려줘.",
+      "models": { "lfm": { "response": { "intent": "answer_portfolio", "confidence": 0.01, "answer": "홈/프로필, 성과 지표, 프로젝트, About으로 구성되어 있습니다.", "sourceIds": ["top"] } }, "qwen": { "failure": "invalid_json" } },
+      "expectByMode": { "local": { "intent": "list_toc", "answerIncludes": "성과 지표" } },
       "expect": {
-        "intent": "list_toc",
+        "intent": "answer_portfolio",
+        "sourceGroups": [["top"]],
         "answerIncludes": "성과 지표"
       }
     },
     {
       "kind": "success",
       "message": "연락처를 알고 싶어.",
+      "models": { "lfm": { "response": { "intent": "answer_portfolio", "confidence": 0.01, "answer": "이은성 Email: mixeddev0812@gmail.com", "sourceIds": ["about"] } }, "qwen": { "failure": "invalid_json" } },
+      "expectByMode": { "local": { "intent": "list_contacts", "answerIncludes": "mixeddev0812@gmail.com" } },
       "expect": {
-        "intent": "list_contacts",
+        "intent": "answer_portfolio",
+        "sourceGroups": [["about"]],
+        "allowedSourceIds": ["about"],
         "answerIncludes": "mixeddev0812@gmail.com"
       }
     },
     {
       "kind": "success",
       "message": "이은성 이메일 알려줘",
+      "models": { "lfm": { "response": { "intent": "answer_portfolio", "confidence": 0.01, "answer": "이은성 Email: mixeddev0812@gmail.com", "sourceIds": ["about"] } }, "qwen": { "failure": "invalid_json" } },
+      "expectByMode": { "local": { "intent": "list_contacts", "answerIncludes": "mixeddev0812@gmail.com" } },
       "expect": {
-        "intent": "list_contacts",
+        "intent": "answer_portfolio",
+        "sourceGroups": [["about"]],
+        "allowedSourceIds": ["about"],
         "answerIncludes": "mixeddev0812@gmail.com"
       }
     },
     {
       "kind": "success",
       "message": "주요 성과를 알려줘.",
+      "models": { "lfm": { "response": { "intent": "answer_portfolio", "confidence": 0.01, "answer": "DB 평균 응답은 120.45ms에서 41.68ms로 65% 개선했습니다. HTTPS 지연은 200ms에서 30ms로 85% 개선했습니다.", "sourceIds": ["metrics"] } }, "qwen": { "failure": "invalid_json" } },
+      "expectByMode": { "local": { "intent": "list_achievements", "answerIncludes": "DB 평균 응답" } },
       "expect": {
-        "intent": "list_achievements",
+        "intent": "answer_portfolio",
+        "sourceGroups": [["metrics", "project-makertion-db"]],
         "answerIncludes": "DB 평균 응답"
       }
     },
     {
       "kind": "success",
       "message": "AWS 경험 있어?",
+      "models": { "lfm": { "response": { "intent": "answer_portfolio", "confidence": 0.01, "answer": "AWS CloudWatch와 Application Signals로 API 단위 관측 체계를 구축했습니다.", "sourceIds": ["project-makertion-observability"] } }, "qwen": { "failure": "invalid_json" } },
+      "expectByMode": { "local": { "intent": "list_skill_experience", "term": "AWS", "answerIncludes": "CloudWatch" } },
       "expect": {
-        "intent": "list_skill_experience",
-        "term": "AWS",
+        "intent": "answer_portfolio",
+        "sourceGroups": [["project-makertion-observability", "project-makertion-cost"]],
         "answerIncludes": "CloudWatch"
       }
     },
     {
       "kind": "success",
       "message": "Redis 경험 있어?",
+      "models": { "lfm": { "response": { "intent": "answer_portfolio", "confidence": 0.01, "answer": "Bookking에서 Redis 기반 분산 락과 Redisson Fair Lock을 활용해 결제 동시성을 제어했습니다.", "sourceIds": ["project-bookking-lock"] } }, "qwen": { "failure": "invalid_json" } },
+      "expectByMode": { "local": { "intent": "list_skill_experience", "term": "Redis/Valkey", "answerIncludes": "Redis", "answerExcludes": "Main 홈페이지 캐싱 최적화" } },
       "expect": {
-        "intent": "list_skill_experience",
-        "term": "Redis/Valkey",
+        "intent": "answer_portfolio",
+        "sourceGroups": [["project-makertion", "project-bookking-lock", "project-bookking"]],
+        "allowedSourceIds": ["project-makertion", "project-bookking-lock", "project-bookking"],
         "answerIncludes": "Redis",
         "answerExcludes": "Main 홈페이지 캐싱 최적화"
       }
@@ -95,9 +125,12 @@
     {
       "kind": "success",
       "message": "데이터 모델링 경험 있어?",
+      "models": { "lfm": { "response": { "intent": "answer_portfolio", "confidence": 0.01, "answer": "오늘의 OTT는 저장 시점 정규화와 식별자 설계로 중복 노출을 줄였습니다.", "sourceIds": ["project-ott-dedupe"] } }, "qwen": { "failure": "invalid_json" } },
+      "expectByMode": { "local": { "intent": "list_skill_experience", "term": "데이터 모델링", "answerIncludes": "오늘의 OTT", "answerExcludes": "AI 질문 생성" } },
       "expect": {
-        "intent": "list_skill_experience",
-        "term": "데이터 모델링",
+        "intent": "answer_portfolio",
+        "sourceGroups": [["project-ott", "project-ott-dedupe", "project-ott-api"]],
+        "allowedSourceIds": ["project-ott", "project-ott-dedupe", "project-ott-api", "project-catequest-n1"],
         "answerIncludes": "오늘의 OTT",
         "answerExcludes": "AI 질문 생성"
       }
@@ -105,39 +138,52 @@
     {
       "kind": "success",
       "message": "CateQuest 요약해줘",
+      "models": { "lfm": { "response": { "intent": "answer_portfolio", "confidence": 0.01, "answer": "CateQuest는 사용자 맞춤 카테고리별 질문 생성 애플리케이션입니다.", "sourceIds": ["project-catequest"] } }, "qwen": { "failure": "invalid_json" } },
+      "expectByMode": { "local": { "intent": "summarize_project", "targetId": "project-catequest", "answerIncludes": "CateQuest" } },
       "expect": {
-        "intent": "summarize_project",
-        "targetId": "project-catequest",
+        "intent": "answer_portfolio",
+        "sourceGroups": [["project-catequest", "project-catequest-ci", "project-catequest-ai", "project-catequest-n1"]],
+        "allowedSourceIds": ["project-catequest", "project-catequest-ci", "project-catequest-ai", "project-catequest-n1"],
         "answerIncludes": "CateQuest"
       }
     },
     {
       "kind": "success",
       "message": "CateQuest 프로젝트 요약해줘",
+      "models": { "lfm": { "response": { "intent": "answer_portfolio", "confidence": 0.01, "answer": "CateQuest는 사용자 맞춤 카테고리별 질문 생성 애플리케이션입니다.", "sourceIds": ["project-catequest"] } }, "qwen": { "failure": "invalid_json" } },
+      "expectByMode": { "local": { "intent": "summarize_project", "targetId": "project-catequest" } },
       "expect": {
-        "intent": "summarize_project",
-        "targetId": "project-catequest"
+        "intent": "answer_portfolio",
+        "sourceGroups": [["project-catequest", "project-catequest-ci", "project-catequest-ai", "project-catequest-n1"]],
+        "allowedSourceIds": ["project-catequest", "project-catequest-ci", "project-catequest-ai", "project-catequest-n1"]
       }
     },
     {
       "kind": "success",
       "message": "Bookking 프로젝트 요약해줘",
+      "models": { "lfm": { "response": { "intent": "answer_portfolio", "confidence": 0.01, "answer": "Bookking은 HTTPS 응답 지연을 200ms에서 30ms로 줄였습니다.", "sourceIds": ["project-bookking-https"] } }, "qwen": { "failure": "invalid_json" } },
+      "expectByMode": { "local": { "intent": "summarize_project", "targetId": "project-bookking" } },
       "expect": {
-        "intent": "summarize_project",
-        "targetId": "project-bookking"
+        "intent": "answer_portfolio",
+        "sourceGroups": [["project-bookking", "project-bookking-lock", "project-bookking-https"]],
+        "allowedSourceIds": ["project-bookking", "project-bookking-lock", "project-bookking-https"]
       }
     },
     {
       "kind": "success",
       "message": "Makertion 프로젝트 설명해줘",
+      "models": { "lfm": { "response": { "intent": "answer_portfolio", "confidence": 0.01, "answer": "사장님 피규어 만들어주세요!는 이미지만으로 3D 모델링을 만들고 출력까지 연결하는 서비스입니다.", "sourceIds": ["project-makertion"] } }, "qwen": { "failure": "invalid_json" } },
+      "expectByMode": { "local": { "intent": "summarize_project", "targetId": "project-makertion" } },
       "expect": {
-        "intent": "summarize_project",
-        "targetId": "project-makertion"
+        "intent": "answer_portfolio",
+        "sourceGroups": [["project-makertion", "project-makertion-ci", "project-makertion-cd", "project-makertion-db", "project-makertion-cost", "project-makertion-cache", "project-makertion-observability"]],
+        "allowedSourceIds": ["project-makertion", "project-makertion-ci", "project-makertion-cd", "project-makertion-db", "project-makertion-cost", "project-makertion-cache", "project-makertion-observability"]
       }
     },
     {
       "kind": "success",
       "message": "CateQuest 프로젝트로 이동해 주세요",
+      "models": { "lfm": { "response": { "intent": "navigate", "targetId": "project-catequest", "confidence": 0.01 } }, "qwen": { "failure": "invalid_json" } },
       "expect": {
         "intent": "navigate",
         "targetId": "project-catequest"
@@ -146,58 +192,77 @@
     {
       "kind": "success",
       "message": "오늘의 OTT 프로젝트 요약해줘",
+      "models": { "lfm": { "response": { "intent": "answer_portfolio", "confidence": 0.01, "answer": "오늘의 OTT는 플랫폼별 OTT 데이터를 JSON 기반 통합 검색 API로 제공했습니다.", "sourceIds": ["project-ott-api"] } }, "qwen": { "failure": "invalid_json" } },
+      "expectByMode": { "local": { "intent": "summarize_project", "targetId": "project-ott" } },
       "expect": {
-        "intent": "summarize_project",
-        "targetId": "project-ott"
+        "intent": "answer_portfolio",
+        "sourceGroups": [["project-ott", "project-ott-api", "project-ott-dedupe"]],
+        "allowedSourceIds": ["project-ott", "project-ott-api", "project-ott-dedupe"]
       }
     },
     {
       "kind": "success",
       "message": "이 프로젝트에서 비용은 어떻게 줄였어?",
+      "models": { "lfm": { "response": { "intent": "answer_portfolio", "confidence": 0.01, "answer": "NAT Gateway를 제거하고 EC2 인스턴스 네트워크를 Public IP 기반으로 변경했습니다. CloudWatch 로그 수집 정책을 수정해 일일 서버 비용을 약 31% 절감했습니다.", "sourceIds": ["project-makertion-cost"] } }, "qwen": { "failure": "invalid_json" } },
       "currentTargetId": "project-makertion",
+      "expectByMode": { "local": { "intent": "navigate", "targetId": "project-makertion-cost" } },
       "expect": {
-        "intent": "navigate",
-        "targetId": "project-makertion-cost"
+        "intent": "answer_portfolio",
+        "sourceGroups": [["project-makertion-cost"]],
+        "allowedSourceIds": ["project-makertion-cost"]
       }
     },
     {
       "kind": "success",
       "message": "이 포트폴리오에서 뭘 할 수 있어?",
+      "models": { "lfm": { "response": { "intent": "answer_portfolio", "confidence": 0.01, "answer": "저는 이 포트폴리오 안에서 전체 요약, 목차, 연락처, 주요 성과, 기술별 경험을 안내하고, 프로젝트나 섹션으로 이동하거나 특정 프로젝트와 내부 사례를 요약할 수 있습니다.", "sourceIds": ["top"] } }, "qwen": { "failure": "invalid_json" } },
+      "expectByMode": { "local": { "intent": "list_capabilities", "answerIncludes": "프로젝트" } },
       "expect": {
-        "intent": "list_capabilities",
+        "intent": "answer_portfolio",
+        "sourceGroups": [["top"]],
         "answerIncludes": "프로젝트"
       }
     },
     {
       "kind": "success",
       "message": "사장님 피규어 만들어주세요 요약해줘",
+      "models": { "lfm": { "response": { "intent": "answer_portfolio", "confidence": 0.01, "answer": "사장님 피규어 만들어주세요!는 이미지만으로 3D 모델링을 만들고 출력까지 연결하는 서비스입니다.", "sourceIds": ["project-makertion"] } }, "qwen": { "failure": "invalid_json" } },
+      "expectByMode": { "local": { "intent": "summarize_project", "targetId": "project-makertion", "answerIncludes": "사장님 피규어 만들어주세요" } },
       "expect": {
-        "intent": "summarize_project",
-        "targetId": "project-makertion",
+        "intent": "answer_portfolio",
+        "sourceGroups": [["project-makertion", "project-makertion-ci", "project-makertion-cd", "project-makertion-db", "project-makertion-cost", "project-makertion-cache", "project-makertion-observability"]],
+        "allowedSourceIds": ["project-makertion", "project-makertion-ci", "project-makertion-cd", "project-makertion-db", "project-makertion-cost", "project-makertion-cache", "project-makertion-observability"],
         "answerIncludes": "사장님 피규어 만들어주세요"
       }
     },
     {
       "kind": "success",
       "message": "지금 보고 있는 프로젝트를 요약해줘.",
+      "models": { "lfm": { "response": { "intent": "answer_portfolio", "confidence": 0.01, "answer": "사장님 피규어 만들어주세요!는 이미지만으로 3D 모델링을 만들고 출력까지 연결하는 서비스입니다.", "sourceIds": ["project-makertion"] } }, "qwen": { "failure": "invalid_json" } },
       "currentTargetId": "project-makertion",
+      "expectByMode": { "local": { "intent": "summarize_project", "targetId": "project-makertion", "answerIncludes": "사장님 피규어 만들어주세요" } },
       "expect": {
-        "intent": "summarize_project",
-        "targetId": "project-makertion",
+        "intent": "answer_portfolio",
+        "sourceGroups": [["project-makertion", "project-makertion-ci", "project-makertion-cd", "project-makertion-db", "project-makertion-cost", "project-makertion-cache", "project-makertion-observability"]],
+        "allowedSourceIds": ["project-makertion", "project-makertion-ci", "project-makertion-cd", "project-makertion-db", "project-makertion-cost", "project-makertion-cache", "project-makertion-observability"],
         "answerIncludes": "사장님 피규어 만들어주세요"
       }
     },
     {
       "kind": "success",
       "message": "어떤 프로젝트를 했는지 목록을 알려줘.",
+      "models": { "lfm": { "response": { "intent": "answer_portfolio", "confidence": 0.01, "answer": "프로젝트는 사장님 피규어 만들어주세요!, CateQuest, Bookking, 오늘의 OTT입니다.", "sourceIds": ["projects"] } }, "qwen": { "failure": "invalid_json" } },
+      "expectByMode": { "local": { "intent": "list_projects", "answerIncludes": "CateQuest" } },
       "expect": {
-        "intent": "list_projects",
+        "intent": "answer_portfolio",
+        "sourceGroups": [["projects", "project-catequest"]],
         "answerIncludes": "CateQuest"
       }
     },
     {
       "kind": "success",
       "message": "CloudWatch 모니터링 보여줘",
+      "models": { "lfm": { "response": { "intent": "navigate", "targetId": "project-makertion-observability", "confidence": 0.01 } }, "qwen": { "failure": "invalid_json" } },
       "expect": {
         "intent": "navigate",
         "targetId": "project-makertion-observability"
@@ -206,6 +271,7 @@
     {
       "kind": "success",
       "message": "P95가 뭐야?",
+      "models": { "lfm": { "response": { "intent": "define_term", "term": "P95", "confidence": 0.01 } }, "qwen": { "failure": "invalid_json" } },
       "expect": {
         "intent": "define_term",
         "term": "P95",
@@ -215,15 +281,19 @@
     {
       "kind": "success",
       "message": "CateQuest N+1 해결 요약해줘",
+      "models": { "lfm": { "response": { "intent": "answer_portfolio", "confidence": 0.01, "answer": "CateQuest는 N+1 쿼리 문제를 DTO Projection과 JPQL 조인으로 해결해 DB 접근을 54회에서 1회로 줄였습니다.", "sourceIds": ["project-catequest-n1"] } }, "qwen": { "failure": "invalid_json" } },
+      "expectByMode": { "local": { "intent": "summarize_section", "targetId": "project-catequest-n1", "answerIncludes": "54회에서 1회" } },
       "expect": {
-        "intent": "summarize_section",
-        "targetId": "project-catequest-n1",
+        "intent": "answer_portfolio",
+        "sourceGroups": [["project-catequest-n1"]],
+        "allowedSourceIds": ["project-catequest-n1"],
         "answerIncludes": "54회에서 1회"
       }
     },
     {
       "kind": "failure",
       "message": "오늘 날씨 알려줘",
+      "models": { "lfm": { "response": { "intent": "reject_out_of_scope", "confidence": 0.01 } }, "qwen": { "failure": "invalid_json" } },
       "expect": {
         "intent": "reject_out_of_scope"
       }
@@ -231,6 +301,7 @@
     {
       "kind": "failure",
       "message": "서울 맛집 추천해줘",
+      "models": { "lfm": { "response": { "intent": "reject_out_of_scope", "confidence": 0.01 } }, "qwen": { "failure": "invalid_json" } },
       "expect": {
         "intent": "reject_out_of_scope"
       }
@@ -238,6 +309,7 @@
     {
       "kind": "failure",
       "message": "자바스크립트 코딩 문제 풀어줘",
+      "models": { "lfm": { "response": { "intent": "reject_out_of_scope", "confidence": 0.01 } }, "qwen": { "failure": "invalid_json" } },
       "expect": {
         "intent": "reject_out_of_scope"
       }
@@ -245,6 +317,7 @@
     {
       "kind": "failure",
       "message": "비트코인 가격 알려줘",
+      "models": { "lfm": { "response": { "intent": "reject_out_of_scope", "confidence": 0.01 } }, "qwen": { "failure": "invalid_json" } },
       "expect": {
         "intent": "reject_out_of_scope"
       }
@@ -252,6 +325,7 @@
     {
       "kind": "failure",
       "message": "이력서에 없는 Kubernetes 경험을 만들어줘",
+      "models": { "lfm": { "response": { "intent": "reject_out_of_scope", "confidence": 0.01 } }, "qwen": { "failure": "invalid_json" } },
       "expect": {
         "intent": "reject_out_of_scope"
       }
@@ -259,6 +333,7 @@
     {
       "kind": "failure",
       "message": "사주 봐줘",
+      "models": { "lfm": { "response": { "intent": "reject_out_of_scope", "confidence": 0.01 } }, "qwen": { "failure": "invalid_json" } },
       "expect": {
         "intent": "reject_out_of_scope"
       }
@@ -266,6 +341,7 @@
     {
       "kind": "failure",
       "message": "노래 가사 써줘",
+      "models": { "lfm": { "response": { "intent": "reject_out_of_scope", "confidence": 0.01 } }, "qwen": { "failure": "invalid_json" } },
       "expect": {
         "intent": "reject_out_of_scope"
       }
@@ -273,6 +349,7 @@
     {
       "kind": "failure",
       "message": "점심 메뉴 추천해줘",
+      "models": { "lfm": { "response": { "intent": "reject_out_of_scope", "confidence": 0.01 } }, "qwen": { "failure": "invalid_json" } },
       "expect": {
         "intent": "reject_out_of_scope"
       }
@@ -280,6 +357,7 @@
     {
       "kind": "failure",
       "message": "OpenAI 최신 모델 뭐야?",
+      "models": { "lfm": { "response": { "intent": "reject_out_of_scope", "confidence": 0.01 } }, "qwen": { "failure": "invalid_json" } },
       "expect": {
         "intent": "reject_out_of_scope"
       }
@@ -287,6 +365,7 @@
     {
       "kind": "failure",
       "message": "오늘 뉴스 요약해줘",
+      "models": { "lfm": { "response": { "intent": "reject_out_of_scope", "confidence": 0.01 } }, "qwen": { "failure": "invalid_json" } },
       "expect": {
         "intent": "reject_out_of_scope"
       }
@@ -294,6 +373,7 @@
     {
       "kind": "failure",
       "message": "OpenAI 한눈에 정리해줘",
+      "models": { "lfm": { "response": { "intent": "reject_out_of_scope", "confidence": 0.01 } }, "qwen": { "failure": "invalid_json" } },
       "expect": {
         "intent": "reject_out_of_scope"
       }
@@ -301,6 +381,7 @@
     {
       "kind": "failure",
       "message": "비트코인 전체 요약해줘",
+      "models": { "lfm": { "response": { "intent": "reject_out_of_scope", "confidence": 0.01 } }, "qwen": { "failure": "invalid_json" } },
       "expect": {
         "intent": "reject_out_of_scope"
       }
@@ -308,6 +389,7 @@
     {
       "kind": "failure",
       "message": "면접 예상 질문 만들어줘",
+      "models": { "lfm": { "response": { "intent": "reject_out_of_scope", "confidence": 0.01 } }, "qwen": { "failure": "invalid_json" } },
       "expect": {
         "intent": "reject_out_of_scope"
       }
@@ -315,6 +397,7 @@
     {
       "kind": "failure",
       "message": "게임 한 판 하자",
+      "models": { "lfm": { "response": { "intent": "reject_out_of_scope", "confidence": 0.01 } }, "qwen": { "failure": "invalid_json" } },
       "expect": {
         "intent": "reject_out_of_scope"
       }

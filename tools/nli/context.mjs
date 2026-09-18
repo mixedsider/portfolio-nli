@@ -3,12 +3,8 @@ import { resolve } from "node:path";
 import vm from "node:vm";
 
 import { normalize } from "./text.mjs";
+import { boundedCandidateSources, boundedConversation, boundedString } from "./grounded-bounds.mjs";
 
-const MAX_GROUNDED_CANDIDATES = 8;
-const MAX_GROUNDED_HISTORY_ITEMS = 6;
-const MAX_GROUNDED_HISTORY_ENTRY_BYTES = 480;
-const MAX_GROUNDED_HISTORY_BYTES = 2_400;
-const MAX_GROUNDED_CARD_EVIDENCE_BYTES = 3_000;
 const MAX_GROUNDED_TARGETS = 64;
 const MAX_GROUNDED_TERMS = 64;
 const MAX_GROUNDED_ALIASES = 12;
@@ -107,26 +103,6 @@ function assertPortfolioShape(portfolio) {
   }
 }
 
-function boundedCandidateSources(value) {
-  if (!Array.isArray(value)) return [];
-
-  const candidates = [];
-  for (const candidate of value) {
-    if (!candidate || typeof candidate !== "object") continue;
-    const targetId = boundedString(candidate.targetId || candidate.id, 128);
-    if (!targetId || candidates.some((item) => item.id === targetId)) continue;
-    candidates.push({
-      id: targetId,
-      targetId,
-      label: boundedString(candidate.label, 256),
-      type: boundedString(candidate.type, 64),
-      evidence: boundedUtf8String(candidate.evidence, MAX_GROUNDED_CARD_EVIDENCE_BYTES)
-    });
-    if (candidates.length === MAX_GROUNDED_CANDIDATES) break;
-  }
-  return candidates;
-}
-
 function boundedTargets(value) {
   if (!Array.isArray(value)) return [];
 
@@ -170,38 +146,4 @@ function boundedAliases(value) {
     if (aliases.length === MAX_GROUNDED_ALIASES) break;
   }
   return aliases;
-}
-
-function boundedConversation(value) {
-  if (!Array.isArray(value)) return [];
-
-  const selected = value.slice(-MAX_GROUNDED_HISTORY_ITEMS);
-  const conversation = [];
-  let remainingBytes = MAX_GROUNDED_HISTORY_BYTES;
-  for (const entry of selected) {
-    if (!entry || typeof entry !== "object" || !["user", "assistant"].includes(entry.role)) continue;
-    const text = boundedUtf8String(entry.text, Math.min(MAX_GROUNDED_HISTORY_ENTRY_BYTES, remainingBytes));
-    if (!text) continue;
-    conversation.push({ role: entry.role, text });
-    remainingBytes -= Buffer.byteLength(text, "utf8");
-    if (remainingBytes <= 0) break;
-  }
-  return conversation;
-}
-
-function boundedString(value, maxLength) {
-  return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
-}
-
-function boundedUtf8String(value, maxBytes) {
-  if (typeof value !== "string" || maxBytes <= 0) return "";
-  let result = "";
-  let usedBytes = 0;
-  for (const character of value.trim()) {
-    const characterBytes = Buffer.byteLength(character, "utf8");
-    if (usedBytes + characterBytes > maxBytes) break;
-    result += character;
-    usedBytes += characterBytes;
-  }
-  return result;
 }

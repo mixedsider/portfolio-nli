@@ -2,70 +2,158 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
-      - master
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
-  verify:
-    name: Verify portfolio
-    runs-on: [self-hosted, Linux, X64]
-
+  check:
+    name: Static checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
-
-      - name: Show Node.js version
-        run: node --version
-
-      - name: Check JavaScript syntax
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install --frozen-lockfile
+      - name: Validate catalog, JavaScript and JSON fixtures
         run: |
-          node --check app.js
-          node --check data/portfolio.js
-          node --check tools/static-server.mjs
-          node --check tools/static-server.test.mjs
-          node --check tools/test-server.mjs
-          node --check tools/test-server.test.mjs
-          node --check tools/nli-gateway.mjs
-          node --check tools/nli-test.mjs
-          for file in tools/nli/*.mjs; do node --check "$file"; done
-          node --check tools/nli-gateway.test.mjs
+          mkdir -p test-results/check
+          pnpm test:check 2>&1 | tee test-results/check/check.log
+      - name: Upload static check log
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-check-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            test-results/check/
+            playwright-report/
+            coverage/
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 14
 
-      - name: Validate JSON data
-        run: |
-          node -e "for (const f of ['nli/routes.json','nli/glossary.json','nli/intents.json','nli/response.schema.json','nli/model-decision.schema.json','nli/test-cases.json','nli/live-test-cases.json','nli/adversarial-test-cases.json']) JSON.parse(require('fs').readFileSync(f,'utf8')); console.log('json ok')"
+  node-unit:
+    name: Node unit
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install --frozen-lockfile
+      - name: Run Node unit tests
+        run: node tools/test-harness.mjs run --level unit --runner node --out-dir test-results/node-unit
+      - name: Upload Node unit reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-node-unit-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            test-results/node-unit/
+            playwright-report/
+            coverage/
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 14
 
-      - name: Run NLI routing and boundary tests
-        run: |
-          node tools/nli-test.mjs
-          node tools/nli-test.mjs --local --cases nli/live-test-cases.json --min-pass-rate 1
-          node tools/nli-test.mjs --local --cases nli/live-test-cases.json --kind success --min-pass-rate 1
-          node tools/nli-test.mjs --local --cases nli/adversarial-test-cases.json --min-pass-rate 1
-          node --test tools/nli-gateway.test.mjs tools/test-server.test.mjs
-          node --test tools/static-server.test.mjs
+  node-integration:
+    name: Node integration
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install --frozen-lockfile
+      - name: Run Node integration tests
+        run: node tools/test-harness.mjs run --level integration --runner node --out-dir test-results/node-integration
+      - name: Upload Node integration reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-node-integration-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            test-results/node-integration/
+            playwright-report/
+            coverage/
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 14
 
-      - name: Smoke test static server
+  browser:
+    name: Browser integration and E2E
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install --frozen-lockfile
+      - name: Install matching Chromium and hosted OS dependencies
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Run browser integration and E2E tests
+        run: node tools/test-harness.mjs run --runner playwright --out-dir test-results/browser
+      - name: Upload browser reports and traces
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-browser-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            test-results/browser/
+            playwright-report/
+            coverage/
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 14
+
+  verify:
+    name: Verify portfolio
+    if: ${{ always() }}
+    needs: [check, node-unit, node-integration, browser]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every lane to succeed
+        shell: bash
+        env:
+          CHECK: ${{ needs['check'].result }}
+          NODE_UNIT: ${{ needs['node-unit'].result }}
+          NODE_INTEGRATION: ${{ needs['node-integration'].result }}
+          BROWSER: ${{ needs['browser'].result }}
         run: |
-          node tools/static-server.mjs &
-          SERVER_PID=$!
-          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
-          for attempt in {1..10}; do
-            if curl --connect-timeout 2 --max-time 5 -fsS http://127.0.0.1:4173/ > /tmp/portfolio-index.html; then
-              break
+          for result in "$CHECK" "$NODE_UNIT" "$NODE_INTEGRATION" "$BROWSER"; do
+            if [[ "$result" != success ]]; then
+              printf 'Required CI lane did not succeed: %s\n' "$result" >&2
+              exit 1
             fi
-            sleep 1
           done
-          grep -q "이은성" /tmp/portfolio-index.html

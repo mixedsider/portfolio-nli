@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import test from "node:test";
 
 import { createGatewayConfig } from "./nli/config.mjs";
+import { createModelClient } from "./nli/model-client.mjs";
 import { createNliServer, loadNliContext, resolveNliRequest } from "./nli-gateway.mjs";
 import { resolveLocally } from "./nli/router.mjs";
 import { listenForFetch } from "./test-server.mjs";
@@ -12,7 +13,7 @@ const awsQuestion = "AWS 경험을 설명해줘";
 const cloudWatchExperienceQuestion = "CloudWatch를 사용한 모니터링과 관측성 경험을 설명해줘.";
 const currentTargetId = "project-makertion-db";
 
-test("gateway sends bounded proposal context to a loopback LM", async () => {
+test("legacy injection sends bounded proposal context to a loopback LM", async () => {
   const history = [
     { role: "user", text: "성능을 최적화한 사례를 보여줘" },
     { role: "assistant", text: "성능 개선 사례를 정리했습니다." }
@@ -41,6 +42,7 @@ test("gateway sends bounded proposal context to a loopback LM", async () => {
   const upstreamUrl = await listenForFetch(upstream);
   const gateway = await createNliServer({
     context,
+    modelClient: createModelClient(createTestConfig({ model: { baseUrl: upstreamUrl } })),
     config: createTestConfig({ model: { baseUrl: upstreamUrl } })
   });
   const gatewayUrl = await listenForFetch(gateway);

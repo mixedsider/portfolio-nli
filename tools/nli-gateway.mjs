@@ -11,29 +11,22 @@ import {
   createRateLimiter,
   HttpRequestError,
   isOriginAllowed,
-  readNliHistory,
   readNliRequest,
   readRequestJson,
   sendJson,
   setCorsHeaders
 } from "./nli/http.mjs";
-import { buildEvidenceIndex, retrieveEvidenceCandidates } from "./nli/evidence.mjs";
-import { createModelClient } from "./nli/model-client.mjs";
-import {
-  isPromptInjectionAttempt,
-  isCurrentProjectScopeConstrained,
-  isTargetInCurrentProjectScope,
-  resolveLocally
-} from "./nli/router.mjs";
+import { createRequestResolver } from "./nli/request-resolution.mjs";
+import { canWriteResponse, observeClientDisconnect, UpstreamUnavailableError } from "./nli/request-deadline.mjs";
 import { rejectResponse } from "./nli/responses.mjs";
-import { canonicalizeModelResponse, validateNliResponse } from "./nli/validation.mjs";
+import { validateNliResponse } from "./nli/validation.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 await loadDotEnv(root);
 
 const defaultConfig = createGatewayConfig();
 const defaultContextPromise = loadContext(root);
-const defaultModelClient = createModelClient(defaultConfig);
+const defaultResolver = createRequestResolver(defaultConfig, { context: defaultContextPromise });
 const gatewayRevision = defaultConfig.releaseRevision || resolveGatewayRevision(root);
 
 export { validateNliResponse };
@@ -42,69 +35,15 @@ export async function loadNliContext() {
   return loadContext(root);
 }
 
-export async function resolveNliRequest(message, context = null, options = {}) {
-  const safeMessage = String(message || "").trim();
-  const baseContext = context || (await defaultContextPromise);
-  const history = readHistoryOrNull(options.history);
-  const nliContext = {
-    ...baseContext,
-    currentTargetId: resolveCurrentTargetId(baseContext, options.currentTargetId),
-    history: history || []
-  };
-  if (!safeMessage) return rejectResponse();
-  if (!history) return rejectResponse();
-
-  const local = resolveLocally(safeMessage, nliContext);
-  const fallback = local.confidence > 0 ? local : rejectResponse();
-  if (isPromptInjectionAttempt(safeMessage)) return fallback;
-  if (fallback.intent === "summarize_project") return fallback;
-  if (options.useModel === false) return fallback;
-
-  const evidenceIndex = buildEvidenceIndex(baseContext);
-  const candidateSources = retrieveEvidenceCandidates(evidenceIndex, {
-    message: safeMessage,
-    history,
-    currentTargetId: nliContext.currentTargetId
-  });
-
-  const modelClient = options.modelClient || defaultModelClient;
-  const proposalContext = {
-    candidateSources,
-    history,
-    currentTargetId: nliContext.currentTargetId,
-    targets: baseContext.routes.targets,
-    terms: baseContext.glossary.terms
-  };
-  let modelResponse;
-  try {
-    modelResponse = await modelClient(safeMessage, nliContext, proposalContext);
-  } catch {
-    if (local.confidence > 0) return local;
-    if (options.reportUpstreamFailure) throw new UpstreamUnavailableError();
-    return fallback;
-  }
-
-  const canonical = canonicalizeModelResponse(modelResponse, nliContext, { candidateSources });
-  const scopedCanonical = canonical?.intent === "navigate" &&
-    isCurrentProjectScopeConstrained(safeMessage, nliContext) &&
-    !isTargetInCurrentProjectScope(canonical.targetId, nliContext)
-    ? null
-    : canonical;
-  if (fallback.intent === "navigate") {
-    if (scopedCanonical?.intent === "navigate" && scopedCanonical.targetId === fallback.targetId) return scopedCanonical;
-    return fallback;
-  }
-  if (!scopedCanonical && local.confidence <= 0 && options.reportUpstreamFailure) {
-    throw new UpstreamUnavailableError();
-  }
-
-  return scopedCanonical || fallback;
+export function resolveNliRequest(message, context = null, options = {}) {
+  return defaultResolver(message, context || defaultContextPromise, options);
 }
 
 export async function createNliServer(options = {}) {
   const config = options.config || defaultConfig;
   const context = options.context || (await defaultContextPromise);
-  const modelClient = options.modelClient || (config === defaultConfig ? defaultModelClient : createModelClient(config));
+  const resolveRequest = createRequestResolver(config, { context, now: options.now, observer: options.observer,
+    lfmClient: options.lfmClient, qwenClient: options.qwenClient, verifier: options.verifier });
   const rateLimiter = createRateLimiter(config);
 
   const server = createServer(async (request, response) => {
@@ -142,16 +81,20 @@ export async function createNliServer(options = {}) {
       return;
     }
 
+    const disconnect = observeClientDisconnect(request, response, options.signal);
     try {
       assertJsonContentType(request);
       const body = await readRequestJson(request, config.maxRequestBytes);
       const nliRequest = readNliRequest(body, config.maxMessageLength);
-      const result = await resolveNliRequest(nliRequest.message, context, {
+      const result = await resolveRequest(nliRequest.message, context, {
         currentTargetId: nliRequest.currentTargetId,
         history: nliRequest.history,
-        modelClient,
+        modelClient: options.modelClient,
+        useModel: options.useModel,
+        signal: disconnect.signal,
         reportUpstreamFailure: true
       });
+      if (!canWriteResponse(response)) return;
       sendJson(
         response,
         200,
@@ -160,6 +103,7 @@ export async function createNliServer(options = {}) {
           : result
       );
     } catch (error) {
+      if (!canWriteResponse(response)) return;
       if (error instanceof UpstreamUnavailableError) {
         sendJson(response, 503, gatewayErrorResponse("UPSTREAM_UNAVAILABLE", "도우미 응답을 일시적으로 가져오지 못했습니다. 잠시 후 다시 시도해주세요."));
         return;
@@ -168,15 +112,13 @@ export async function createNliServer(options = {}) {
       const statusCode = error instanceof HttpRequestError ? error.statusCode : 400;
       const message = error instanceof HttpRequestError ? error.publicMessage : "요청을 처리할 수 없습니다.";
       sendJson(response, statusCode, gatewayErrorResponse(requestErrorCode(statusCode), message));
-    }
+    } finally { disconnect.dispose(); }
   });
 
   server.requestTimeout = config.requestTimeoutMs;
   server.headersTimeout = Math.min(config.requestTimeoutMs, 60_000);
   return server;
 }
-
-class UpstreamUnavailableError extends Error {}
 
 function gatewayErrorResponse(errorCode, message, confidence = 1) {
   return { ...rejectResponse(message, confidence), errorCode, requestId: randomUUID() };
@@ -199,19 +141,6 @@ function resolveGatewayRevision(rootDir) {
   } catch {
     return null;
   }
-}
-
-function readHistoryOrNull(value) {
-  try {
-    return readNliHistory(value);
-  } catch {
-    return null;
-  }
-}
-
-function resolveCurrentTargetId(context, requestedTargetId) {
-  if (typeof requestedTargetId !== "string" || !context.targetById?.has(requestedTargetId)) return null;
-  return requestedTargetId;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

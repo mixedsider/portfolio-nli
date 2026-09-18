@@ -1,21 +1,17 @@
 import { buildGroundedRequestBlock } from "./context.mjs";
+import { buildLmStudioChatCompletionsUrl } from "./model-transport.mjs";
 
+export { buildLmStudioChatCompletionsUrl, createDetailedModelClient, buildDetailedModelPayload,
+  getModelDecisionSchema } from "./model-transport.mjs";
+
+// Explicit legacy proposal-only seam: intentionally tolerates old fake envelopes.
+// Configured cascade callers must use createDetailedModelClient instead.
 export function createModelClient(config) {
   const limiter = new ConcurrencyLimiter(config.model.maxConcurrentRequests);
 
   return async function askModel(message, context, groundedRequest = {}) {
     return limiter.run(() => requestModel(message, context, config, groundedRequest));
   };
-}
-
-export function buildLmStudioChatCompletionsUrl(baseUrl) {
-  const url = new URL(baseUrl);
-  if (!['http:', 'https:'].includes(url.protocol)) throw new Error("LM Studio URL must use HTTP or HTTPS");
-  if (url.username || url.password || url.search || url.hash) throw new Error("LM Studio URL must not include credentials, query, or fragment");
-
-  const path = url.pathname.replace(/\/$/, "");
-  url.pathname = path.endsWith("/v1") ? `${path}/chat/completions` : `${path}/v1/chat/completions`;
-  return url.toString();
 }
 
 async function requestModel(message, context, config, groundedRequest) {

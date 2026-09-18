@@ -1,4 +1,5 @@
 import { compact, normalize } from "./text.mjs";
+import { assistantIdentityResponse, listCapabilitiesResponse, listTocResponse } from "./responses.mjs";
 
 export function buildEvidenceIndex(context) {
   const targets = uniqueTargets(context?.routes?.targets);
@@ -18,10 +19,21 @@ export function buildEvidenceIndex(context) {
 
   appendProfile(partsByTargetId, portfolio.profile, targetIds);
   appendMetricsPage(partsByTargetId, portfolio.metrics, targetIds);
+  appendEvidence(partsByTargetId, "top", assistantIdentityResponse().answer, listCapabilitiesResponse().answer,
+    listTocResponse({ portfolio: { projects: [] } }).answer,
+    targets.filter((target) => target.type === "page").map((target) => target.label));
+  appendEvidence(partsByTargetId, "projects", projects.map((project) =>
+    joinEvidence(project.title, asArray(project.sections).map((section) => section.title))));
+
+  // Short quantitative anchors precede optional long narratives on each card.
+  for (const [targetId, metrics] of metricsByTargetId) {
+    appendEvidence(partsByTargetId, targetId, metrics.map(metricEvidence));
+  }
 
   for (const project of projects) {
     const projectTargetId = `project-${stringValue(project.id)}`;
     const projectText = projectEvidence(project);
+    const projectAliases = targets.find((target) => target.id === projectTargetId)?.aliases;
 
     if (targetIds.has(projectTargetId)) {
       appendEvidence(partsByTargetId, projectTargetId, projectText);
@@ -32,13 +44,10 @@ export function buildEvidenceIndex(context) {
       const sectionId = stringValue(section.id);
       if (!targetIds.has(sectionId)) continue;
 
-      appendEvidence(partsByTargetId, sectionId, projectText, sectionEvidence(section));
+      appendEvidence(partsByTargetId, sectionId, project.title, projectAliases, section.title, section.result,
+        section.resultDetails, sectionEvidence(section), projectText);
       scopeByTargetId.set(sectionId, projectTargetId || sectionId);
     }
-  }
-
-  for (const [targetId, metrics] of metricsByTargetId) {
-    appendEvidence(partsByTargetId, targetId, metrics.map(metricEvidence));
   }
 
   for (const [targetId, terms] of glossaryByTargetId) {
@@ -133,7 +142,9 @@ function groupGlossary(value, targetIds) {
 
 function appendProfile(partsByTargetId, profile, targetIds) {
   if (!isRecord(profile) || !targetIds.has("about")) return;
-  appendEvidence(partsByTargetId, "about", profile.name, profile.englishName, profile.role, profile.headline, profile.summary);
+  appendEvidence(partsByTargetId, "about", "포트폴리오 프로필 / 연락처", profile.name, profile.englishName,
+    asArray(profile.contacts).filter(isRecord).map((contact) => joinEvidence(contact.label, contact.value)),
+    profile.role, profile.headline, profile.summary);
 }
 
 function appendMetricsPage(partsByTargetId, metrics, targetIds) {
@@ -157,12 +168,9 @@ function projectEvidence(project) {
 
 function sectionEvidence(section) {
   return joinEvidence(
-    section.title,
-    section.result,
     section.problem,
     section.analyze,
     section.action,
-    section.resultDetails,
     asArray(section.tables).flatMap((table) => (isRecord(table) ? [table.caption, table.headers, table.rows] : []))
   );
 }
