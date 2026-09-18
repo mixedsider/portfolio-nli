@@ -197,6 +197,7 @@ UI는 `answer_portfolio.sources`를 근거 버튼으로 렌더링하고 클릭�
 
 - `nli/grounded-category-test-cases.json`은 fake model로 성능, AWS, 관측성, 동시성, Redis/Valkey, CI/CD, 비용, AI/LLM, 데이터 모델링, 전체 소개와 문맥 후속 질문을 검증합니다. source ID, 포함/제외 문구, timeout·잘못된 source ID·잘못된 history fallback도 포함합니다.
 - `node --test tools/*.test.mjs`와 `node --test tools/nli/*.test.mjs`는 Gateway HTTP 경계와 모델 계약, retrieval, history, evidence ranking, 배포 lifecycle, 정적 서버를 함께 실행합니다. 배포 preflight는 이어서 UI browser regression harness를 별도로 실행합니다. Chrome-capable Playwright module이 주입되지 않은 기본 환경에서는 browser regression이 명시적으로 skip되며, 이를 실제 Chrome 검증으로 간주하지 않습니다.
+- 일반 개발 및 hosted CI는 [다층 테스트 하네스](testing.md)의 `pnpm test:check`와 `pnpm test:ci`를 사용합니다. Node unit/integration과 필수 Chromium integration/E2E를 분리하며, blackbox/whitebox는 수준과 독립된 태그입니다. widget의 최종 Gateway 응답 mock 회귀는 integration이고 진짜 E2E는 실제 정적 서버·Gateway와 loopback 가짜 모델을 연결합니다. 브라우저 누락을 CI 성공/skip으로 숨기지 않습니다. 기존 main push self-hosted 배포는 이 CI를 기다리지 않고 자체 preflight/rollback으로 독립 실행합니다. CI 상태는 branch protection 설정이나 운영 모델 readiness가 아닙니다.
 
 - 로컬 라우팅 fixture는 100% 통과해야 합니다.
 - fake LM Studio 기반 `node --test tools/nli-gateway.test.mjs`는 모델 출력 반사, 모델 경로의 범위 혼동, HTTP 제한을 결정적으로 검증합니다.

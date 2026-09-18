@@ -7,6 +7,12 @@
 
 포트폴리오 사이트는 정적 파일만 있으면 동작하지만, 자연어 입력 기능은 NLI Gateway가 함께 실행되어야 사용할 수 있습니다.
 
+**현재는 activation-blocked / ready=false이며 이 작업은 배포 승인이 아닙니다.** 이전 전체 평가(당시 설정)는 **2026-09-09 18:54:03.743Z**에 완료된 projected-payload full matrix입니다. 당시 bound LFM/Qwen verify와 evaluator는 모두 exit 1이며, 당시 실제 결과는 success **5/26**, adversarial **7/10**, **LFM 채택 0건**, Qwen receipt 없음입니다. 그 이전 실제 실행도 5/26·7/10이었으나 서로 다른 입력/시점의 실제 실패 기록이며 재사용하거나 향후 결과로 단정하지 않습니다. 일반 페이지 명사 관련 fake9/10 semantic 문제는 **task4fix3에서 해결**됐고 현재 offline adversarial 기대값은10/10입니다. 당시 실제 세 adversarial 실패는 completion을 받지 못한 upstream 실패이며 그 semantic 결함의 재발 증거가 아닙니다. 이후 새 모델 ID의 [2026-09-13 제한 실측 및 이동 이력](../.omo/evidence/lfm25-middle-model/lfm-loaded-model-adoption-20260913T065843Z.md)은 별도 기록입니다. 최소 JSON의 495ms는 유효 JSON 확인일 뿐 포트폴리오 채택이 아니며, 자기소개 3,921ms 한 건만 공유 acceptance를 통과했습니다. 추가 대표 5개는 timeout, 한 번의 bound verify는 0/12 채택·exit 1로 full ready 미충족입니다.
+
+최신 로컬 증거: `.omo/evidence/lfm25-middle-model/task12-projected-summary.md`, `task12-projected-live-eval.json`, `task12-projected-lfm-verify.json`, `task12-projected-qwen-verify.json`, 현재 `task-12-contract.md`. 새 full report에는 natural-difficult 결과도 포함됩니다. 초기 `task-12-DoneClaim.md`, `task-12-attempt-1-live-eval.json`, 별도 보충 `task-12-attempt-1-difficult-live.json`과 당시 scope diagnostic은 과거 snapshot 기록으로만 유지합니다. `.omo/`는 gitignored이며 공개 문서 링크만으로 증거가 배포되지는 않습니다.
+
+이전 전체 평가(당시 설정)에서 944-byte grounded profile을 포함한 projected 요청도 고정 LFM4초/Qwen8초 안에 completion headers를 받지 못했습니다. metadata 접근 성공은 모델 readiness가 아니며 정확한 remote prefill/generation/queue/alias/proxy/network 원인은 미확정입니다. 당시 genuine LFM 채택은0→0, Qwen18개 clean proof/receipt도 없습니다. 당시 한 번씩의 fallback/timeout 관측이나4초 대8초 실패 시간은 accepted-model latency 분포 또는 속도 향상이 아닙니다. 이 문서 수정 때문에 추가 LAN 실행을 하지 않았으며, 승인된 새로운 serving 근거와 모든 strict gate 통과가 필요합니다.
+
 ## 배포 전 확인
 
 배포 전에 로컬에서 다음 명령을 실행합니다.
@@ -14,10 +20,11 @@
 ```bash
 for file in app.js nli-history.js nli-widget.js data/portfolio.js tools/*.mjs; do node --check "$file"; done
 for file in tools/nli/*.mjs; do node --check "$file"; done
-node -e "for (const f of ['nli/routes.json','nli/glossary.json','nli/intents.json','nli/response.schema.json','nli/model-decision.schema.json','nli/test-cases.json','nli/live-test-cases.json','nli/adversarial-test-cases.json','nli/grounded-category-test-cases.json']) JSON.parse(require('fs').readFileSync(f, 'utf8')); console.log('json ok')"
-node tools/nli-test.mjs
+node -e "for (const f of ['nli/routes.json','nli/glossary.json','nli/intents.json','nli/response.schema.json','nli/model-decision.schema.json','nli/test-cases.json','nli/live-test-cases.json','nli/adversarial-test-cases.json','nli/grounded-category-test-cases.json','nli/cascade-test-cases.json','nli/model-probe-cases.json']) JSON.parse(require('fs').readFileSync(f,'utf8')); console.log('json ok')"
+node tools/nli-test.mjs --local --cases nli/test-cases.json --min-pass-rate 1
 node tools/nli-test.mjs --local --cases nli/live-test-cases.json --min-pass-rate 1
 node tools/nli-test.mjs --fake --cases nli/grounded-category-test-cases.json --min-pass-rate 1
+node tools/nli-test.mjs --fake --cases nli/cascade-test-cases.json --min-pass-rate 1
 node tools/nli-test.mjs --local --cases nli/adversarial-test-cases.json --min-pass-rate 1
 node --test tools/*.test.mjs
 node --test tools/nli/*.test.mjs
@@ -29,13 +36,15 @@ node --test tools/nli-widget.browser-test.mjs
 배포된 Gateway를 직접 호출하는 기능 검증은 다음 명령으로 실행합니다. `nli/live-test-cases.json`의 성공 26개만 호출합니다.
 
 ```bash
-NLI_TEST_BASE_URL="http://127.0.0.1:8787" node tools/nli-test.mjs --live --cases nli/live-test-cases.json --kind success --min-pass-rate 1
+NLI_TEST_BASE_URL="http://127.0.0.1:8787" node tools/nli-test.mjs --live --cases nli/live-test-cases.json --kind success --min-pass-rate 1 --timeout-ms 25000
+sleep 60 # 기본 rate-limit window 분리; 운영 limit을 높이지 않음
+NLI_TEST_BASE_URL="http://127.0.0.1:8787" node tools/nli-test.mjs --live --cases nli/adversarial-test-cases.json --min-pass-rate 1 --timeout-ms 25000
 ```
 
 After every production deployment, run the 26 successful named-project regressions. It must finish with a 100% pass rate and stays within the default 30-request rate-limit budget. `tools/nli-test.mjs` makes this direct check without an `Origin` header; keep `NLI_ALLOWED_ORIGINS` configured for the actual portfolio browser origin rather than using `*` in production.
 
 ```powershell
-& 'C:\Users\CodexAgent\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe' tools/nli-test.mjs --live --base-url https://portfolio-nli-gateway.mixedsider.cloud/api/nli --cases nli/live-test-cases.json --kind success --min-pass-rate 1
+node tools/nli-test.mjs --live --base-url https://portfolio-nli-gateway.mixedsider.cloud/api/nli --cases nli/live-test-cases.json --kind success --min-pass-rate 1 --timeout-ms 25000
 ```
 
 정적 서버도 한 번 확인합니다.
@@ -82,8 +91,8 @@ NLI Gateway는 Node.js 서버입니다. LM Studio가 떠 있는 같은 네트워
 NLI_HOST=0.0.0.0
 NLI_PORT=8787
 LM_STUDIO_BASE_URL=http://192.168.0.57:1234/v1
-LM_STUDIO_MODEL=qwen/qwen3.5-9b
-LM_STUDIO_TIMEOUT_MS=8000
+LM_STUDIO_MODEL=Qwen3.8-27B-UD-Q4_K_M
+LM_STUDIO_TIMEOUT_MS=16000
 NLI_MAX_REQUEST_BYTES=16384
 NLI_MAX_MESSAGE_LENGTH=500
 NLI_RATE_LIMIT_WINDOW_MS=60000
@@ -92,12 +101,31 @@ NLI_RATE_LIMIT_MAX_BUCKETS=10000
 NLI_REQUEST_TIMEOUT_MS=15000
 NLI_TRUST_PROXY=false
 NLI_ALLOWED_ORIGINS=https://your-portfolio.example
-LM_STUDIO_MAX_TOKENS=256
+LM_STUDIO_MAX_TOKENS=768
 LM_STUDIO_MAX_RESPONSE_BYTES=65536
 LM_STUDIO_MAX_CONCURRENT_REQUESTS=4
+LM_STUDIO_OUTPUT_MODE=json_schema
+LFM_BASE_URL=http://192.168.0.106:1234/v1
+# GTX1060-optimized loaded Q4_0 model, not the unloaded @q4_0 alias.
+LFM_MODEL=lfm2.5-2.6b
+LFM_TIMEOUT_MS=4000
+LFM_MAX_TOKENS=512
+LFM_MAX_RESPONSE_BYTES=65536
+LFM_MAX_CONCURRENT_REQUESTS=4
+LFM_OUTPUT_MODE=json_schema
+NLI_CASCADE_TIMEOUT_MS=21000
+NLI_CASCADE_MAX_CONCURRENT_REQUESTS=4
+NLI_QWEN_ENABLED=true
+NLI_QWEN_VERIFICATION_FILE=.nli/qwen-no-thinking.json
 ```
 
-Gateway는 Chat Completions 요청마다 `reasoning_effort: "none"`을 고정으로 전송합니다. 이 값은 환경 변수로 노출하지 않습니다. LM Studio 버전 또는 모델을 교체하기 전에는 같은 strict JSON prompt로 해당 대상의 직접 probe를 다시 실행해 visible JSON 응답을 확인해야 합니다.
+`LM_STUDIO_*`/`config.model`은 Qwen 승격 설정이며 LFM과 독립입니다. 두 mode는 최종 유지값 `json_schema`입니다. 현재 실패를 숨기기 위한 plain 전환/재시도 또는 cap 증가는 하지 않습니다. Qwen은 `reasoning_effort: "none"`과 `chat_template_kwargs: { enable_thinking: false }`를 고정 전송하며 환경 변수로 thinking toggle을 제공하지 않습니다. 요청 옵션 또는 reasoning counter 부재만으로 검증 성공을 판단하지 않습니다.
+
+기본 정상 요청은 LFM입니다. 정확한 전체 명령 `도움말`, `사용법`, `연락처`, `연락처 보여줘`와 유일한 등록 label/alias 뒤 선택적 공백 + 정확히 `로 이동`/`으로 이동`/`보여줘`만 local fast path입니다. NFKC, trim, Latin case-fold, 공백 축약만 하며 구두점/보이지 않는 문자를 지우지 않습니다. 모호한 `소개로 이동`, 용어 정의, 요약, 의역, 복합 요청은 LFM에 갑니다. 보안 거절과 explicit offline `useModel:false`는 별도입니다.
+
+LFM이 이미 충족한 답변은 낮은 confidence라도 그대로 종료합니다. 비교/종합/근거 있는 모호성이 미해결이고 coverage·검증 receipt·잔여 시간·입장 조건이 충족될 때만 Qwen 한 번을 호출합니다. ordinary timeout/JSON 실패만으로 승격하지 않습니다. 모델 요약은 `answer_portfolio`의 source 버튼으로 이동하며 자동 스크롤하지 않습니다. legacy offline summary만 기존 동작을 유지합니다.
+
+LFM 4,000ms/512 tokens와 Qwen 16,000ms/768 tokens는 성능 약속이 아닌 제한입니다. resolver 진입부터 전체 21,000ms clock에는 context, retrieval, admission과 Qwen metadata가 포함되며, metadata 최대 1,000ms도 Qwen 16,000ms stage 안에서 소모됩니다. 응답 여유는 1,000ms이고 각 stage는 `min(stage cap, remaining - 1000ms)`이며 Qwen에는 최소 2,000ms가 필요합니다. 평가 HTTP caller 기본값은 25,000ms입니다. `NLI_REQUEST_TIMEOUT_MS=15000`은 inbound HTTP body/header 수신 제한일 뿐 응답 deadline이 아닙니다. 요청당 최대 두 순차 추론, endpoint별/공유 최대 네 active operation, queue/repair/retry 없음입니다. client abort가 원격 GPU 중단을 증명하지는 않습니다. 두 모델과 fallback은 scope·intent·coverage 조건을 지키지만 보수적 grounding이 임의의 semantic entailment를 보장하지는 않습니다.
 
 서버에서는 `.env.example`을 `.env`로 복사한 뒤 값을 수정해서 사용할 수 있습니다. `tools/nli-gateway.mjs`는 시작할 때 프로젝트 루트의 `.env` 파일을 자동으로 읽습니다.
 
@@ -117,7 +145,28 @@ node tools/nli-gateway.mjs
 http://서버주소:8787/api/nli/health
 ```
 
-정상이라면 `ok: true`와 라우트/용어 개수만 응답에 포함됩니다. 내부 LM Studio 주소와 모델명은 health 응답으로 노출하지 않습니다.
+health는 process/context와 release revision 검사입니다. HTTP 200/`ok:true`, `/props`, 모델 목록 또는 endpoint health 성공은 **모델 readiness가 아닙니다**. 내부 모델 주소/이름을 health로 노출하지 않습니다. receipt가 없어도 LFM/local degraded 서비스와 health 200은 가능하지만 full deployment 검증은 실패해야 합니다.
+
+### 모델 활성화 preflight: Gateway host에서만
+
+아래 명령은 **실제 두 모델 inference를 발생**시키므로 별도 운영 승인 후 network-capable Gateway host에서만 실행합니다. 이 task13에서는 실행하지 않습니다. Gateway와 같은 checkout/cwd, Node, 실제 PM2/systemd process 환경을 사용하세요. 비어 있지 않은 process env가 `.env`보다 우선합니다. 단순 SSH login shell에서 `.env`만 읽는 것은 동일 설정 검증이 아닙니다. 새 `eval-bound-probe.mjs` adapter는 LFM/Qwen 각각의 전체 현재 config settings와 실제 runtime payload를 사용합니다. 일반 `nli-model-probe.mjs` report나 과거 report는 새 evaluator qualification을 대신할 수 없습니다.
+
+```bash
+# 기존 repository root에서 실행. 새 디렉터리 및 파일 이름을 사용하고 기존 .env를 덮어쓰지 않음.
+umask 077
+mkdir -p .nli
+RUN_DIR="$(mktemp -d "$PWD/.nli/manual-preflight-XXXXXXXX")"
+node tools/nli/eval-bound-probe.mjs --endpoint qwen --mode verify --output "$RUN_DIR/qwen-verify.json" --receipt .nli/qwen-no-thinking.json &&
+node tools/nli/eval-bound-probe.mjs --endpoint lfm --mode verify --output "$RUN_DIR/lfm-verify.json" &&
+node tools/nli-cascade-eval.mjs --output "$RUN_DIR/live-eval.json" --lfm-verification "$RUN_DIR/lfm-verify.json" --qwen-verification "$RUN_DIR/qwen-verify.json"
+```
+
+- `--receipt`는 **실제 `NLI_QWEN_VERIFICATION_FILE` 경로**와 일치시켜야 합니다. 기본 상대 경로는 workspace 기준이며 launch cwd 기준이 아닙니다. 출력/receipt parent는 먼저 존재해야 합니다. report는 서로 다른 새 파일로 exclusive 0600 생성되며 기존 파일/symlink를 덮어쓰지 않습니다. CLI에 `--help`는 없으며 지원 flags는 parser와 위 명령을 기준으로 합니다.
+- **bound-probe Qwen `--mode verify --receipt`는 기존 probe의 atomic 발급 API를 호출**합니다. 6종 × 3회 = 18개의 clean stop-terminated visible JSON, 실제 닫힌 빈 think template, model/build/template identity를 확인하고 0600 임시 파일 + fsync + atomic rename합니다. proof 실패는 새 receipt를 발급하지 않습니다. adapter의 사후 binding 검사까지 실패하면 receipt가 있더라도 rollout을 차단하고 checkpoint로 복원합니다. baseline과 cascade eval은 발급 도구가 아닙니다.
+- receipt 최대 age는 24시간입니다. 재시작, model/build/template, prompt/schema bytes, 고정 request settings 또는 output mode 변경 후 새 검증을 수행합니다. 실제 승격 직전 `/props`/`/apply-template` fingerprint 재검증은 최대 1,000ms이며 Qwen 16초 단일 stage 예산 안에 포함됩니다. 이번 timeout amendment도 settings 변경이므로 fresh receipt가 필요합니다. 전체 application 상한/기본값은 21,000ms (LFM 4초 + Qwen 16초 + 응답 여유 1초)이며 더 작은 명시적 timeout은 유지합니다. `NLI_REQUEST_TIMEOUT_MS=15000`은 inbound HTTP body/header 수신 제한이며 response deadline이 아닙니다. 승격 최소 잔여 2,000ms, 공유 동시 작업 4, 최대 순차 추론 2회는 그대로입니다. missing/stale/mismatched receipt, unknown proof, metadata 실패, reasoning 위반은 Qwen을 차단합니다. missing reasoning usage는 unknown이며 0으로 바꾸지 않습니다. 이것은 비정상 서버에 대한 암호학적 attestation이 아닙니다.
+- 현재 timestamp, requested/returned model, prompt/schema, settings와 mode에 묶인 **이번 실행의** verify report를 사용합니다. adapter는 **실제 검증 전에** `evaluationBinding`을 캡처하고 producer/runtime payload 일치와 원래 semantic/transport 검증 및 사후 입력 불변성을 확인합니다. binding에는 전체 settings, normalized endpoint, 선택 mode, prompt/schema/fixture bytes, 실제 prepared payload와 semantic expectations가 포함됩니다. 기존 report에 현재 hash/binding을 덧붙여 자격을 소급 부여하지 않습니다. producer projection이 다르면 `producer_runtime_payload_mismatch`로 차단하며 해당 owner 수정 후 새로운 검증이 필요합니다. 인터페이스: `.omo/evidence/lfm25-middle-model/task12-fix1-proof-interface.md`.
+- evaluator의 두 report flags는 진단에는 선택 사항이나 **ready=true에는 필수**입니다. Qwen report는 timestamp, binding, proof, 결과 순서/반환 model/accounting이 실제 configured receipt 및 runtime gate와도 일치해야 합니다. 모든 named gate와 exit 0/ready=true를 확인해야 full readiness입니다. report 없이 eval을 실행하면 bounded diagnostic일 뿐입니다.
+- evaluator는 fresh loopback/ephemeral Gateway를 suite마다 생성하여 rate-limit 상태를 분리합니다. 실제 26 success/10 adversarial CLI는 threshold 1, HTTP caller timeout 25000입니다. suite watchdog은 case 수 × 25000ms + 30000ms입니다. 실제 LFM ordinary 채택, 3회 warm 반복, same-case Qwen baseline, concurrency 1/4, natural difficult, synthetic-first-stage + genuine Qwen 승격 및 cleanup까지 검증합니다. fallback HTTP 200이나 fake 테스트는 live LFM acceptance가 아닙니다.
 
 ## 3. GitHub Actions로 NLI Gateway 자동 배포
 
@@ -129,13 +178,18 @@ http://서버주소:8787/api/nli/health
 GitHub Actions self-hosted runner
 -> SSH 접속
 -> 192.168.0.90 NLI Gateway 서버
+-> 기존 PM2 등록 환경/실제 PID와 기존 receipt 경로를 재시작 전에 private checkpoint
 -> push 이벤트의 정확한 commit checkout
--> Gateway restart
+-> 보존된 환경으로 PM2 restart (revision stamp만 변경) / 기존 user-systemd restart
+-> Gateway host의 실제 process 환경으로 Qwen/LFM bound-probe + isolated cascade eval
 -> 5초 간격으로 최대 3회 health check
--> 기능 live test와 adversarial live test
+-> 기능 live test와 rate-limit window를 분리한 adversarial live test (각 threshold 1 / 25000ms)
+-> 모든 gate 성공일 때만 rollout 성공
 ```
 
 workflow 파일:
+
+**테스트 CI와 배포의 구분:** [테스트 하네스](testing.md)의 `.github/workflows/ci.yml`은 모든 branch push/PR/수동 실행에서 hosted `ubuntu-latest`, Node24, read-only 권한으로 가짜 모델 기반 회귀를 실행합니다. 아래 배포 workflow는 main push에서 self-hosted runner로 **독립 실행**되며 CI 완료를 기다리는 연결이 없습니다. 두 workflow의 명령은 동일하지 않습니다. `Verify portfolio` 성공은 배포 순서 보장, branch protection 설정 또는 실제 모델 readiness가 아니며 아래 자체 preflight·운영 검증·rollback은 그대로 필수입니다. 로컬 commit만으로 Actions가 실행되지 않고 GitHub push 등이 필요합니다. 테스트 CI에는 아래 운영 secrets를 전달하지 않습니다.
 
 ```text
 .github/workflows/deploy-nli-gateway.yml
@@ -188,7 +242,27 @@ pm2 start tools/nli-gateway.mjs --name portfolio-nli-gateway --update-env
 pm2 save
 ```
 
-배포 workflow는 `main` 브랜치에 Gateway 관련 파일이 push될 때만 자동 실행됩니다. `workflow_dispatch`는 self-hosted runner에서 임의 branch 코드를 실행할 수 있으므로 사용하지 않습니다. `main`은 branch protection과 승인된 변경만 병합하도록 설정합니다. 배포 전 self-hosted runner에서 소스 문법, fixture, fake LM Studio/HTTP 통합 테스트를 다시 실행합니다. 서버는 이동하는 `main`이 아니라 push 이벤트의 정확한 commit으로 checkout하며, health·live test 실패 시 직전 commit으로 rollback합니다. 기능 live test는 성공 fixture를 100% 요구하고, prompt injection·외부 주제 혼동을 담은 adversarial test도 100%를 요구합니다.
+배포 workflow는 기존 `main` push/path trigger만 유지합니다. `workflow_dispatch`나 새 secret, model server 설치/설정 변경은 추가하지 않습니다. `main`은 branch protection과 승인된 변경만 병합하도록 설정합니다. **이 작업은 workflow 실행/SSH/재시작/배포를 수행하지 않습니다.** 배포 전 offline 양쪽 test glob과 fake cascade를 실행하며 실패를 무시하지 않습니다. 서버는 이동하는 `main`이 아니라 push의 정확한 commit을 checkout합니다.
+
+**PM2 보존 경계:** checkout/restart 전에 기존 `pm2 jlist`를 메모리로만 캡처하고, 단일 online fork 등록의 script/cwd 및 listener PID를 확인합니다. 등록된 사용자 환경 각 값이 기존 `/proc/<pid>/environ`과 일치해야 하며 현재 `.env`의 누락값만 기존 loader 규칙대로 보충합니다. 이렇게 얻은 effective 환경과 **이 시점의 실제 receipt 경로/기존 파일**을 host-local `.nli/preflight-<run_id>-<run_attempt>/snapshot.json` (0600, parent0700)에 checkpoint합니다. PM2_HOME/등록 환경을 검증할 수 없거나 기존 등록이 사라졌다면 fail-closed입니다. 중단된/중복/cluster 등록을 임의로 교체하지 않습니다.
+
+**이전 model-only release에서의 첫 업그레이드:** 이 checkpoint는 checkout 전 old config의 `cascade` 필드를 요구하지 않습니다. 먼저 이전 effective PM2 환경을 확보하고, old config가 제공하는 `cascade.qwenVerificationFile`이 있으면 사용합니다. 없으면 명시적 `NLI_QWEN_VERIFICATION_FILE`, 그것도 없으면 workspace의 `.nli/qwen-no-thinking.json` 경로를 선택합니다. 경로는 workspace 기준 절대 경로로 고정하고 기존 파일 또는 파일 부재를 백업합니다. 이전 release가 receipt를 사용하지 않았거나 기본 경로가 없다는 사실은 **검증 성공이 아닙니다**. checkout 후 candidate config의 cascade, 실제 receipt 경로 일치, Qwen enablement, fresh bound probes와 evaluator gate는 그대로 필수입니다. rollback은 새 config를 필요로 하지 않고 그 이전 환경/경로를 복원합니다.
+
+기존 PM2 등록은 **delete하지 않습니다**. `restart --update-env`의 자식 환경은 SSH login env가 아니라 checkpoint 환경만 사용하며 유일한 의도적 값 변경은 `GIT_COMMIT_SHA=<target revision>`입니다. `.env`에서 보충한 값도 같은 effective 값으로 고정됩니다. PM2 자체 PID/uptime/restart counter 등 내부 bookkeeping은 사용자 등록 변수 보존 대상이 아닙니다. 재시작 후 등록 환경과 실제 PID 환경을 checkpoint의 모든 사용자 변수와 비교하며 revision만 target으로 확인합니다. PM2 wrapper의 argv 대신 등록 script/cwd + PID 대응도 검증하여 실제 PM2 fork lifecycle을 지원합니다.
+
+PM2 등록이 아예 없고 listener도 없을 때만 bootstrap으로 분류합니다. 이 경우 보존할 prior service env는 없으므로 SSH 환경 + 현재 `.env`로 초기 checkpoint를 만들고 `pm2 start`합니다. bootstrap 실패 rollback도 그 **동일한 초기 환경**과 prior code/revision으로 재기동합니다. 기존 user-systemd service는 계속 해당 unit으로 restart하며 unit/manager 환경은 변경하지 않습니다. systemd는 기존 revision 공급 방식이 health의 target revision 검사까지 만족해야 하며, 맞지 않으면 성공으로 간주하지 않습니다.
+
+preflight는 새 PID의 실제 환경과 checkpoint receipt 경로가 같은지 확인한 뒤 bound probes/eval을 실행합니다. 기존 SSH 사용자에게 서비스 환경 읽기 권한이 없으면 실패하며 sudo/새 credential로 우회하지 않습니다. PM2 및 자식 명령 stdout/stderr에는 환경 값이 있을 수 있어 CI로 전달하지 않고 실패 시 고정 오류 문구만 출력합니다. snapshot/receipt 백업은 로그/git/Actions artifact에 넣지 않습니다. `set -e` 안의 preflight 실패는 이후 success-only 단계를 막고 기존 `failure() && previous.sha` rollback으로 연결됩니다. checkout 전 snapshot 실패라면 code/service를 변경하지 않았으므로 rollback도 재시작하지 않습니다.
+
+배포/rollback의 모든 listener 불일치 진단은 PID와 고정 사유만 출력합니다. `/proc/<pid>/cmdline`은 identity 판정에만 사용하며 raw argv, 실제 cwd 또는 command-line credential을 로그로 보내지 않습니다. 실제 프로세스를 조사하지 않는 fake `/proc` sentinel 회귀 테스트로 이 경계를 유지합니다.
+
+자동 rollback은 **재시작 전 checkpoint의 경로**에 receipt를 atomic 복원하거나 원래 없었다면 제거하고, prior code 및 checkpoint 환경으로 PM2 restart하되 `GIT_COMMIT_SHA`만 prior revision으로 바꿉니다. `.env`/service overrides는 workflow가 수정하지 않습니다. 마지막 `always()` host cleanup은 성공/실패 후 `snapshot.json`과 `previous-receipt.json`을 제거하며 로그에는 비밀을 내보내지 않습니다. SSH 불능/강제 job 취소 등으로 cleanup 또는 rollback이 실행 불가하면 별도 운영 복구가 필요하며 자동 보장을 주장하지 않습니다.
+
+### Degraded mode와 full rollback
+
+`NLI_QWEN_ENABLED=false`는 Qwen 승격만 끄는 **degraded LFM/local 모드**이지 전체 rollback 또는 verified deployment가 아닙니다. `.env`만 바꿔도 기존 process 환경이 true이면 적용되지 않습니다. 승인된 운영 작업에서 PM2 환경/기존 user systemd unit 환경까지 맞추고 기존 restart 절차로 반영해야 합니다. 여기서는 실행하지 않습니다.
+
+full rollback은 prior release **그리고 prior `.env` + process/service 환경 + receipt 가정**을 함께 복원해야 합니다. workflow는 위 checkpoint로 자신이 바꾼 code/PM2 revision/receipt를 복원하며, `.env`와 user-systemd 설정은 변경하지 않습니다. 별도 운영자가 동시에 설정을 바꿨다면 그 변경은 이 checkpoint 보장의 범위 밖이므로 이전 환경/PM2/systemd override까지 복구해야 합니다. code checkout만으로 process 환경은 되돌아가지 않습니다. 복원 receipt가 오래됐거나 재시작/현재 identity와 맞지 않으면 full readiness를 주장하지 말고 새 bound-probe 및 eval을 수행합니다. host-local report 보존 기간 종료 후 해당 preflight 디렉터리만 제거하며 활성 receipt는 임의 삭제하지 않습니다.
 
 ## 4. 프론트와 Gateway 연결
 
