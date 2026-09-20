@@ -34,7 +34,8 @@ export async function runProbe(options, dependencies = {}) {
   for (const outputMode of ["json_schema", "plain"]) {
     for (const item of cases) {
       const payload = buildProbePayload(item, context, schema, settings, outputMode);
-      const response = await request(buildLmStudioChatCompletionsUrl(settings.baseUrl), { ...settings, payload });
+      const timeoutMs = Math.min(settings.timeoutMs, PROBE_ENDPOINTS[endpoint].timeoutMs);
+      const response = await request(buildLmStudioChatCompletionsUrl(settings.baseUrl), { ...settings, timeoutMs, payload });
       const { data, ...transport } = response;
       results.push({ caseId: item.id, outputMode, ...transport,
         ...(response.ok ? inspectProbeCompletion(data, item, context, endpoint) : {}),
