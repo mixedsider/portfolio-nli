@@ -64,6 +64,7 @@
     { "path": "tools/nli/test-boundaries.test.mjs", "level": "integration", "techniques": ["blackbox", "whitebox"], "runner": "node" },
     { "path": "tools/nli/test-loopback.test.mjs", "level": "integration", "techniques": ["blackbox"], "runner": "node" },
     { "path": "tools/nli/test-migration.test.mjs", "level": "unit", "techniques": ["whitebox"], "runner": "node" },
+    { "path": "tools/nli/weather-contract.test.mjs", "level": "unit", "techniques": ["whitebox"], "runner": "node" },
     { "path": "tests/harness/catalog.test.mjs", "level": "unit", "techniques": ["whitebox"], "runner": "node" },
     { "path": "tests/harness/runner.test.mjs", "level": "integration", "techniques": ["blackbox", "whitebox"], "runner": "node" },
     { "path": "tests/harness/network.test.mjs", "level": "integration", "techniques": ["blackbox"], "runner": "node" },
