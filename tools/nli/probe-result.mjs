@@ -32,6 +32,7 @@ export function matchesProbeExpectation(candidate, item) {
   if (expected.targetId && candidate.targetId !== expected.targetId) return false;
   if (expected.term && candidate.term !== expected.term) return false;
   return (expected.groups || []).every((group) => candidate.sourceIds?.includes(group.sourceId) &&
-    typeof candidate.answer === "string" && candidate.answer.toLowerCase().includes(group.label.toLowerCase()) &&
+    typeof candidate.answer === "string" && (group.label === undefined ||
+      (typeof group.label === "string" && group.label.length > 0 && candidate.answer.toLowerCase().includes(group.label.toLowerCase()))) &&
     (!group.topic || candidate.answer.includes(group.topic)));
 }
