@@ -237,7 +237,9 @@ test("old sanitizer receipts and present-invalid result rows fail before metadat
   delete legacy.reasoningPolicy;
   const weaker = structuredClone(receipt);
   delete weaker.verificationPolicy;
-  for (const bad of [legacy, weaker, { ...receipt, verificationPolicy: "old" }, { ...receipt, results: receipt.results.map((row) => ({ ...row, reasoningAccounting: "invalid" })) }]) {
+  for (const bad of [legacy, weaker, { ...receipt, verificationPolicy: "old" },
+    { ...receipt, verificationPolicy: "shared-acceptance-v1" },
+    { ...receipt, results: receipt.results.map((row) => ({ ...row, reasoningAccounting: "invalid" })) }]) {
     await writeFile(f.receipt, JSON.stringify(bad));
     assert.equal((await f.gate().verify()).ok, false);
   }

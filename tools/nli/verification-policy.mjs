@@ -1,1 +1,1 @@
-export const VERIFICATION_POLICY = "shared-acceptance-v1";
+export const VERIFICATION_POLICY = "shared-acceptance-v2";
