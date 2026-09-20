@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { loadNliContext } from "./nli/context.mjs";
 import { createModelClient } from "./nli/model-client.mjs";
 import { prepareProbeCases, buildProbePayload, PROBE_ENDPOINTS } from "./nli/probe-request.mjs";
-import { inspectProbeCompletion } from "./nli/probe-result.mjs";
+import { inspectProbeCompletion, matchesProbeExpectation } from "./nli/probe-result.mjs";
 import { requestProbeJson } from "./nli/probe-http.mjs";
 import { runProbe, selectProbeMode } from "./nli/probe-runner.mjs";
 import { parseProbeArgs, main } from "./nli-model-probe.mjs";
@@ -139,6 +139,27 @@ test("strict proposal and fixture intent/scope are independently enforced", () =
   assert.equal(inspectProbeCompletion(envelope(partial), cases[4], context, "lfm").ok, false);
 });
 
+test("section fixture requires its source and topic without repeating the project label", () => {
+  const section = cases.find((item) => item.id === "section-explanation");
+  const project = cases.find((item) => item.id === "project-summary");
+  assert.ok(section);
+  assert.ok(project);
+  const candidate = { intent: "answer_portfolio", confidence: 0.01,
+    answer: "N+1 문제를 DTO Projection과 JPQL 조인으로 해결했습니다.",
+    sourceIds: ["project-catequest-n1"] };
+  assert.equal(matchesProbeExpectation(candidate, section), true);
+  assert.equal(inspectProbeCompletion(envelope(candidate), section, context, "lfm").ok, true);
+  assert.equal(matchesProbeExpectation({ ...candidate, answer: "쿼리 문제를 해결했습니다." }, section), false);
+  assert.equal(matchesProbeExpectation({ ...candidate, sourceIds: ["project-catequest"] }, section), false);
+  assert.equal(matchesProbeExpectation({ ...candidate, sourceIds: ["project-catequest"],
+    answer: context.projectByTargetId.get("project-catequest").description }, project), false);
+  for (const label of [null, false, 0, ""]) {
+    const malformed = { ...section, expected: { ...section.expected,
+      groups: [{ ...section.expected.groups[0], label }] } };
+    assert.equal(matchesProbeExpectation(candidate, malformed), false);
+  }
+});
+
 test("bounded HTTP covers status, redirect, malformed body, limit, disconnect and both timeout phases", async (t) => {
   let requestReady;
   let responseAllowed;
@@ -198,7 +219,9 @@ test("runner fake baseline covers both modes without granting Qwen verification"
     if (rejectSchema && payload.response_format) { res.writeHead(400); res.end("schema unsupported"); return; }
     const item = cases.find((entry) => entry.message === payload.messages[2].content);
     const answer = item.id === "project-summary" ? `CateQuest ${context.projectByTargetId.get("project-catequest").description}` :
-      item.expected.groups?.map((group) => `${group.label} ${group.topic || (group.sourceId === "project-catequest-n1" ? "N+1" : "")} ${context.sectionById.get(group.sourceId).result}`).join(" ");
+      item.expected.groups?.map((group) => [group.label,
+        group.topic || (group.sourceId === "project-catequest-n1" ? "N+1" : ""),
+        context.sectionById.get(group.sourceId).result].filter(Boolean).join(" ")).join(" ");
     res.end(JSON.stringify(envelope(item.expected.intent === "navigate" ? proposal :
       item.expected.intent === "define_term" ? { intent: "define_term", confidence: 1, term: "P95" } :
         item.expected.intent === "answer_portfolio" ? { intent: "answer_portfolio", confidence: 0.01, answer, sourceIds: item.sourceIds } :
