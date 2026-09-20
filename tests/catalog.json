@@ -23,6 +23,7 @@
     { "path": "tools/nli/answer-obligations-boundaries.test.mjs", "level": "unit", "techniques": ["whitebox"], "runner": "node" },
     { "path": "tools/nli/answer-obligations-numeric.test.mjs", "level": "unit", "techniques": ["whitebox"], "runner": "node" },
     { "path": "tools/nli/answer-obligations.test.mjs", "level": "unit", "techniques": ["whitebox"], "runner": "node" },
+    { "path": "tools/nli/catequest-quantities.test.mjs", "level": "unit", "techniques": ["whitebox"], "runner": "node" },
     { "path": "tools/nli/config.test.mjs", "level": "integration", "techniques": ["whitebox"], "runner": "node" },
     { "path": "tools/nli/escalation-policy.test.mjs", "level": "unit", "techniques": ["whitebox"], "runner": "node" },
     { "path": "tools/nli/eval-boundaries.test.mjs", "level": "integration", "techniques": ["blackbox"], "runner": "node" },
