@@ -7,7 +7,7 @@ import { ordinaryCases, difficultCase, runWorkload, runQwenBaseline } from "./ev
 import { verificationEvidence } from "./eval-verification.mjs";
 import { readyVerdict, distribution } from "./eval-report.mjs";
 import { revalidateFinalProof } from "./eval-final-verification.mjs";
-import { APPLICATION_TIMEOUT_MS, EVALUATION_HTTP_TIMEOUT_MS, QWEN_TIMEOUT_MS } from "./timeout-policy.mjs";
+import { APPLICATION_TIMEOUT_MS, EVALUATION_HTTP_TIMEOUT_MS, LFM_TIMEOUT_MS, QWEN_TIMEOUT_MS } from "./timeout-policy.mjs";
 
 export async function evaluateCascade(options, dependencies = {}) {
   await loadDotEnv(fileURLToPath(new URL("../../", import.meta.url)));
@@ -51,7 +51,7 @@ export async function evaluateCascade(options, dependencies = {}) {
   const finalVerification = await revalidateFinalProof(verification, options, { loadConfig, loadContext, verify,
     wallNow: dependencies.wallNow ?? Date.now });
   const cleanup = workloadsClean && finalVerification.verification?.cleanup?.ok === true;
-  const gates = { policyCaps: config.lfm.timeoutMs === 4000 && config.lfm.maxTokens === 512 &&
+  const gates = { policyCaps: config.lfm.timeoutMs === LFM_TIMEOUT_MS && config.lfm.maxTokens === 512 &&
       config.model.timeoutMs === QWEN_TIMEOUT_MS && config.model.maxTokens === 768 && config.cascade.timeoutMs === APPLICATION_TIMEOUT_MS &&
       config.cascade.maxConcurrentRequests === 4,
     lfmVerified: verification.lfmVerified && finalVerification.verification?.lfmVerified === true,

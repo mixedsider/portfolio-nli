@@ -421,7 +421,7 @@ jobs:
         shell: bash
         run: |
           NLI_TEST_BASE_URL="http://${NLI_GATEWAY_HOST}:${NLI_GATEWAY_PORT}" \
-            node tools/nli-test.mjs --live --cases nli/live-test-cases.json --kind success --min-pass-rate 1 --timeout-ms 25000
+            node tools/nli-test.mjs --live --cases nli/live-test-cases.json --kind success --min-pass-rate 1 --timeout-ms 30000
 
       - name: Run live NLI adversarial tests
         shell: bash
@@ -429,7 +429,7 @@ jobs:
           # Separate suites must not share the default 30-request rate-limit window.
           sleep 60
           NLI_TEST_BASE_URL="http://${NLI_GATEWAY_HOST}:${NLI_GATEWAY_PORT}" \
-            node tools/nli-test.mjs --live --cases nli/adversarial-test-cases.json --min-pass-rate 1 --timeout-ms 25000
+            node tools/nli-test.mjs --live --cases nli/adversarial-test-cases.json --min-pass-rate 1 --timeout-ms 30000
 
       - name: Roll back failed deployment
         if: ${{ failure() && steps.previous.outputs.sha != '' }}

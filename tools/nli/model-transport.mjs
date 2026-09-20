@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { buildGroundedRequestBlock } from "./context.mjs";
 import { createModelAdmission } from "./model-admission.mjs";
 import { inspectModelCompletion, modelFailure } from "./model-outcome.mjs";
+import { LFM_TIMEOUT_MS, QWEN_TIMEOUT_MS } from "./timeout-policy.mjs";
 
 let schema;
 export function getModelDecisionSchema() {
@@ -56,7 +57,8 @@ export function createDetailedModelClient(settings, {
     const startedAt = now();
     const { signal, budgetMs = snapshot.timeoutMs, deadlineAt = startedAt + budgetMs } = options;
     if (!Number.isFinite(budgetMs) || !Number.isFinite(deadlineAt)) throw new Error("Invalid stage budget");
-    const effectiveBudget = Math.max(0, Math.min(snapshot.timeoutMs, budgetMs, deadlineAt - startedAt));
+    const capMs = endpoint === "lfm" ? LFM_TIMEOUT_MS : QWEN_TIMEOUT_MS;
+    const effectiveBudget = Math.max(0, Math.min(capMs, snapshot.timeoutMs, budgetMs, deadlineAt - startedAt));
     const metadata = { endpoint, requestedModelId: snapshot.name, budgetMs: effectiveBudget,
       deadlineAt: startedAt + effectiveBudget, elapsedMs: 0, dispatchCount: 0, readCount: 0, bytes: 0, status: null };
     const finish = (result) => ({ ...result, metadata: { ...result.metadata, ...metadata, elapsedMs: Math.max(0, now() - startedAt) } });

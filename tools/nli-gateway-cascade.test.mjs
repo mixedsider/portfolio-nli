@@ -190,12 +190,12 @@ test("one deadline starts before awaiting context, composes parent abort and sub
   const waiting = resolver("CateQuest 요약해줘", new Promise(() => {}), { signal: controller.signal });
   controller.abort();
   await assert.rejects(waiting);
-  const lateContext = { then(resolve) { time = 19500; resolve(context); } };
+  const lateContext = { then(resolve) { time = 22000; resolve(context); } };
   await resolver("알 수 없는 질문 xyz", lateContext);
   assert.equal(budget, 500);
   let calls = 0;
   const expired = createRequestResolver(config, { now: () => time, lfmClient: async () => { calls += 1; } });
-  await assert.rejects(expired("CateQuest 요약해줘", { then(resolve) { time += 21001; resolve(context); } }));
+  await assert.rejects(expired("CateQuest 요약해줘", { then(resolve) { time += 23501; resolve(context); } }));
   assert.equal(calls, 0);
 });
 

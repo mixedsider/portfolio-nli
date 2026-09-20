@@ -104,6 +104,27 @@ test("Qwen report must identify exactly the current receipt, complete unique mat
   assert.equal(validQwenReport(report, receipt, inputs, time + 86400001), false);
 });
 
+for (const [lfmMs, applicationMs] of [["4000", "21000"], ["6000", "23000"]])
+test(`issue 6 invalidates ${lfmMs}ms LFM proof at 6500ms, not unchanged Qwen proof or payloads`, async () => {
+  const context = await loadNliContext();
+  // Intentional historical settings; never relabel an old proof with new hashes.
+  const previous = createGatewayConfig({ LFM_TIMEOUT_MS: lfmMs, NLI_CASCADE_TIMEOUT_MS: applicationMs });
+  const current = createGatewayConfig({});
+  const oldLfm = await createEvaluationInputs("lfm", previous.lfm, context);
+  const newLfm = await createEvaluationInputs("lfm", current.lfm, context);
+  const report = lfmReportFixture(oldLfm);
+  assert.equal(validLfmReport(report, oldLfm, Date.now()), true);
+  assert.equal(validLfmReport(report, newLfm, Date.now()), false);
+  assert.notEqual(oldLfm.binding.settingsSha256, newLfm.binding.settingsSha256);
+  assert.equal(oldLfm.binding.matrixSha256, newLfm.binding.matrixSha256);
+  const oldQwen = await createEvaluationInputs("qwen", previous.model, context);
+  const newQwen = await createEvaluationInputs("qwen", current.model, context);
+  assert.deepEqual(oldQwen.binding, newQwen.binding);
+  assert.deepEqual(oldQwen.runtimeBinding, newQwen.runtimeBinding);
+  const proof = qwenReportFixture(oldQwen);
+  assert.equal(validQwenReport(proof.report, proof.receipt, newQwen, Date.now()), true);
+});
+
 test("configured plain mode needs actual schema-unsupported selection, not a relabeled schema success", async () => {
   const inputs = await createEvaluationInputs("lfm", { ...createGatewayConfig({}).lfm, outputMode: "plain" }, await loadNliContext());
   const report = lfmReportFixture(inputs);

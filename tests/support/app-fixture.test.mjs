@@ -51,13 +51,13 @@ test("builds a real 18-completion proof without changing production model budget
     assert.equal(completions.length, 18);
     assert.ok(completions.every((call) => call.endpoint === "qwen"));
     assert.equal(fixture.proof.verified, true);
-    assert.equal(fixture.config.lfm.timeoutMs, 4000);
+    assert.equal(fixture.config.lfm.timeoutMs, 6500);
     assert.equal(fixture.config.model.timeoutMs, 16000);
     for (const settings of [fixture.config.lfm, fixture.config.model]) {
       assert.equal(settings.maxConcurrentRequests, 4);
       assert.equal(settings.maxResponseBytes, 65_536);
     }
-    assert.equal(fixture.config.cascade.timeoutMs, 21_000);
+    assert.equal(fixture.config.cascade.timeoutMs, 23_500);
     assert.equal(fixture.config.rateLimitMax, 30);
   } finally { await fixture.close(); }
 });
