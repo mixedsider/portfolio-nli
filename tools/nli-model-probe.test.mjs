@@ -139,25 +139,23 @@ test("strict proposal and fixture intent/scope are independently enforced", () =
   assert.equal(inspectProbeCompletion(envelope(partial), cases[4], context, "lfm").ok, false);
 });
 
-test("probe groups can require a source and topic without a label", () => {
+test("section fixture requires its source and topic without repeating the project label", () => {
   const section = cases.find((item) => item.id === "section-explanation");
   const project = cases.find((item) => item.id === "project-summary");
   assert.ok(section);
   assert.ok(project);
-  const topicOnly = { ...section, expected: { ...section.expected,
-    groups: [{ sourceId: "project-catequest-n1", topic: "N+1" }] } };
   const candidate = { intent: "answer_portfolio", confidence: 0.01,
     answer: "N+1 문제를 DTO Projection과 JPQL 조인으로 해결했습니다.",
     sourceIds: ["project-catequest-n1"] };
-  assert.equal(matchesProbeExpectation(candidate, topicOnly), true);
-  assert.equal(inspectProbeCompletion(envelope(candidate), topicOnly, context, "lfm").ok, true);
-  assert.equal(matchesProbeExpectation({ ...candidate, answer: "쿼리 문제를 해결했습니다." }, topicOnly), false);
-  assert.equal(matchesProbeExpectation({ ...candidate, sourceIds: ["project-catequest"] }, topicOnly), false);
+  assert.equal(matchesProbeExpectation(candidate, section), true);
+  assert.equal(inspectProbeCompletion(envelope(candidate), section, context, "lfm").ok, true);
+  assert.equal(matchesProbeExpectation({ ...candidate, answer: "쿼리 문제를 해결했습니다." }, section), false);
+  assert.equal(matchesProbeExpectation({ ...candidate, sourceIds: ["project-catequest"] }, section), false);
   assert.equal(matchesProbeExpectation({ ...candidate, sourceIds: ["project-catequest"],
     answer: context.projectByTargetId.get("project-catequest").description }, project), false);
   for (const label of [null, false, 0, ""]) {
-    const malformed = { ...topicOnly, expected: { ...topicOnly.expected,
-      groups: [{ ...topicOnly.expected.groups[0], label }] } };
+    const malformed = { ...section, expected: { ...section.expected,
+      groups: [{ ...section.expected.groups[0], label }] } };
     assert.equal(matchesProbeExpectation(candidate, malformed), false);
   }
 });
@@ -221,7 +219,9 @@ test("runner fake baseline covers both modes without granting Qwen verification"
     if (rejectSchema && payload.response_format) { res.writeHead(400); res.end("schema unsupported"); return; }
     const item = cases.find((entry) => entry.message === payload.messages[2].content);
     const answer = item.id === "project-summary" ? `CateQuest ${context.projectByTargetId.get("project-catequest").description}` :
-      item.expected.groups?.map((group) => `${group.label} ${group.topic || (group.sourceId === "project-catequest-n1" ? "N+1" : "")} ${context.sectionById.get(group.sourceId).result}`).join(" ");
+      item.expected.groups?.map((group) => [group.label,
+        group.topic || (group.sourceId === "project-catequest-n1" ? "N+1" : ""),
+        context.sectionById.get(group.sourceId).result].filter(Boolean).join(" ")).join(" ");
     res.end(JSON.stringify(envelope(item.expected.intent === "navigate" ? proposal :
       item.expected.intent === "define_term" ? { intent: "define_term", confidence: 1, term: "P95" } :
         item.expected.intent === "answer_portfolio" ? { intent: "answer_portfolio", confidence: 0.01, answer, sourceIds: item.sourceIds } :

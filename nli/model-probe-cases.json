@@ -2,7 +2,7 @@
   {"id":"navigation","message":"CateQuest로 이동","sourceIds":["project-catequest"],"expected":{"intent":"navigate","targetId":"project-catequest"}},
   {"id":"glossary","message":"P95가 뭐야?","sourceIds":["project-bookking-https"],"expected":{"intent":"define_term","term":"P95"}},
   {"id":"project-summary","message":"CateQuest 프로젝트를 요약해줘","sourceIds":["project-catequest"],"expected":{"intent":"answer_portfolio","groups":[{"sourceId":"project-catequest","label":"CateQuest"}]}},
-  {"id":"section-explanation","message":"CateQuest N+1 해결 방법을 설명해줘","currentTargetId":"project-catequest-n1","sourceIds":["project-catequest-n1"],"expected":{"intent":"answer_portfolio","groups":[{"sourceId":"project-catequest-n1","label":"CateQuest","topic":"N+1"}]}},
+  {"id":"section-explanation","message":"CateQuest N+1 해결 방법을 설명해줘","currentTargetId":"project-catequest-n1","sourceIds":["project-catequest-n1"],"expected":{"intent":"answer_portfolio","groups":[{"sourceId":"project-catequest-n1","topic":"N+1"}]}},
   {"id":"comparison","message":"CateQuest N+1 해결과 Bookking HTTPS 성능 개선을 비교해줘","sourceIds":["project-catequest-n1","project-bookking-https"],"expected":{"intent":"answer_portfolio","groups":[{"sourceId":"project-catequest-n1","label":"CateQuest"},{"sourceId":"project-bookking-https","label":"Bookking"}]}},
   {"id":"out-of-scope","message":"오늘 서울 날씨를 알려줘","sourceIds":[],"expected":{"intent":"reject_out_of_scope"}}
 ]
