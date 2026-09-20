@@ -13,7 +13,7 @@ export const CASCADE_REASONS = Object.freeze([...new Set([
   "lfm_accepted", "admission_unavailable", "ordinary_request", "qwen_disabled", "qwen_unverified",
   "insufficient_stage_budget", "model_mismatch"
 ])]);
-import { APPLICATION_TIMEOUT_MS, QWEN_TIMEOUT_MS } from "./timeout-policy.mjs";
+import { APPLICATION_TIMEOUT_MS, LFM_TIMEOUT_MS, QWEN_TIMEOUT_MS, RESPONSE_RESERVE_MS } from "./timeout-policy.mjs";
 
 const nonconforming = new Set(["body_limit", "invalid_envelope", "invalid_json", "truncated", "reasoning_violation"]);
 
@@ -41,7 +41,7 @@ export function createModelCascade(config, { context, lfmClient, qwenClient, ver
     assertCascadeRequest(input);
     const { originalMessage, scopedContext, prepared, signal, localFallback } = input;
     const deadlineAt = Math.min(input.deadlineAt, now() + Math.min(APPLICATION_TIMEOUT_MS, settings.cascade.timeoutMs));
-    const workDeadline = deadlineAt - 1000;
+    const workDeadline = deadlineAt - RESPONSE_RESERVE_MS;
     const terminal = () => signal?.aborted ? "aborted" : now() >= workDeadline ? "deadline_exhausted" : null;
     const finish = (stage, reason, response) => {
       const stopped = terminal();
@@ -73,7 +73,7 @@ export function createModelCascade(config, { context, lfmClient, qwenClient, ver
       return outcome;
     };
     if (terminal()) return finish("upstream_error", terminal());
-    const lfmDeadline = Math.min(workDeadline, now() + Math.min(4000, settings.lfm.timeoutMs));
+    const lfmDeadline = Math.min(workDeadline, now() + Math.min(LFM_TIMEOUT_MS, settings.lfm.timeoutMs));
     const lfm = await stage("lfm", lfmClient, lfmDeadline);
     if (terminal()) return finish("upstream_error", terminal());
     const accepted = acceptTransportProposal(lfm, scopedContext, prepared, originalMessage);

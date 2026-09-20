@@ -70,11 +70,11 @@ test("independent LFM, Qwen and cascade defaults match the amended settings", ()
   });
   assert.deepEqual(config.lfm, {
     baseUrl: "http://192.168.0.106:1234/v1", name: "lfm2.5-2.6b",
-    timeoutMs: 4000, maxTokens: 512, maxResponseBytes: 65536,
+    timeoutMs: 6000, maxTokens: 512, maxResponseBytes: 65536,
     maxConcurrentRequests: 4, outputMode: "json_schema"
   });
   assert.deepEqual(config.cascade, {
-    timeoutMs: 21000, maxConcurrentRequests: 4, qwenEnabled: true,
+    timeoutMs: 23000, maxConcurrentRequests: 4, qwenEnabled: true,
     qwenVerificationFile: fileURLToPath(new URL("../../.nli/qwen-no-thinking.json", import.meta.url))
   });
 });
@@ -124,10 +124,10 @@ test("new flags and modes reject malformed values, including explicit empty valu
 
 test("all new numeric limits preserve the existing finite positive integer parser", () => {
   const settings = [
-    ["LFM_TIMEOUT_MS", "lfm", "timeoutMs", 4000], ["LFM_MAX_TOKENS", "lfm", "maxTokens", 512],
+    ["LFM_TIMEOUT_MS", "lfm", "timeoutMs", 6000], ["LFM_MAX_TOKENS", "lfm", "maxTokens", 512],
     ["LFM_MAX_RESPONSE_BYTES", "lfm", "maxResponseBytes", 65536],
     ["LFM_MAX_CONCURRENT_REQUESTS", "lfm", "maxConcurrentRequests", 4],
-    ["NLI_CASCADE_TIMEOUT_MS", "cascade", "timeoutMs", 21000],
+    ["NLI_CASCADE_TIMEOUT_MS", "cascade", "timeoutMs", 23000],
     ["NLI_CASCADE_MAX_CONCURRENT_REQUESTS", "cascade", "maxConcurrentRequests", 4]
   ];
   for (const [name, group, key, fallback] of settings) {

@@ -36,7 +36,8 @@ test("HTTP non-2xx stays an error, not a successful rejection fixture", async ()
 });
 
 test("deadline boundaries and no-thinking gate retain independent actual counters", async () => {
-  for (const [elapsedMs, expectedCalls] of [[18000, 1], [18001, 0]]) {
+  // 23s application - 1s reserve - 2s minimum escalation budget.
+  for (const [elapsedMs, expectedCalls] of [[20000, 1], [20001, 0]]) {
     const item = { ...fixtures.find((entry) => entry.id === "ambiguous-unverified-clarification"), verification: "verified",
       models: { lfm: { failure: "timeout", elapsedMs }, qwen: { failure: "invalid_json" } } };
     const fake = createFakeResolver(item, context);
@@ -105,7 +106,7 @@ test("live counters require a separate trusted observer and ignore forged browse
   assert.deepEqual(failed.errors, ["request failed: HTTP 503"]);
 });
 
-test("live request keeps payload boundary, default 25000ms and explicit timeout", async (t) => {
+test("live request keeps payload boundary, default 30000ms and explicit timeout", async (t) => {
   const originalSetTimeout = globalThis.setTimeout;
   const delays = [];
   t.mock.method(globalThis, "setTimeout", (fn, ms) => { delays.push(ms); return originalSetTimeout(fn, ms); });
@@ -116,5 +117,5 @@ test("live request keeps payload boundary, default 25000ms and explicit timeout"
         return { ok: true, json: async () => ({}) };
       });
   }
-  assert.deepEqual(delays, [25000, 123]);
+  assert.deepEqual(delays, [30000, 123]);
 });

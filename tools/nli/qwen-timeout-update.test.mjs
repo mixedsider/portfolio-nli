@@ -12,14 +12,14 @@ import { context, comparison, proposal, partial, inspected, request, harness } f
 test("amended defaults preserve body timeout, tokens, concurrency and explicit Qwen OFF", () => {
   const config = createGatewayConfig({ NLI_QWEN_ENABLED: "false" });
   assert.deepEqual([config.lfm.timeoutMs, config.model.timeoutMs, config.cascade.timeoutMs, config.requestTimeoutMs],
-    [4000, 16000, 21000, 15000]);
+    [6000, 16000, 23000, 15000]);
   assert.deepEqual([config.lfm.maxTokens, config.model.maxTokens, config.cascade.maxConcurrentRequests], [512, 768, 4]);
   assert.equal(config.cascade.qwenEnabled, false);
   assert.equal(PROBE_ENDPOINTS.qwen.timeoutMs, 16000);
 });
 
-test("application absolute deadline caps at 21s and honors smaller configuration", () => {
-  for (const [configured, expected] of [[undefined, 21000], [99000, 21000], [7000, 7000]]) {
+test("application absolute deadline caps at 23s and honors smaller configuration", () => {
+  for (const [configured, expected] of [[undefined, 23000], [99000, 23000], [7000, 7000]]) {
     let time = 100;
     const deadline = createRequestDeadline({ cascade: { timeoutMs: configured } }, { now: () => time });
     try {
@@ -32,7 +32,7 @@ test("application absolute deadline caps at 21s and honors smaller configuration
   }
 });
 
-test("evaluation suite budgets every HTTP caller at 25s plus process cleanup margin", async () => {
+test("evaluation suite budgets every HTTP caller at 30s plus process cleanup margin", async () => {
   let captured;
   await runFixtureSuite(createGatewayConfig({}), context, Array.from({ length: 26 }, (_, id) => ({ id, message: "도움말" })),
     "nli/live-test-cases.json", "success", {
@@ -40,8 +40,8 @@ test("evaluation suite budgets every HTTP caller at 25s plus process cleanup mar
         faults: [], http: [], close: async () => ({ ok: true }) }),
       runChild: async (args, options) => { captured = { args, options }; return { code: 1, stdout: "", stderr: "" }; }
     });
-  assert.equal(captured.args[captured.args.indexOf("--timeout-ms") + 1], "25000");
-  assert.equal(captured.options.timeout, 680000);
+  assert.equal(captured.args[captured.args.indexOf("--timeout-ms") + 1], "30000");
+  assert.equal(captured.options.timeout, 810000);
 });
 
 test("verification and generation share one 16s deadline, smaller stage budgets remain binding", async () => {
@@ -71,7 +71,7 @@ test("verification and generation share one 16s deadline, smaller stage budgets 
 test("cascade hard total cap reserves 1s even when configured and caller deadlines are larger", async () => {
   const config = createGatewayConfig({ NLI_CASCADE_TIMEOUT_MS: "99000" });
   const h = harness();
-  h.dependencies.lfmClient = async () => { h.setTime(18500); return inspected("lfm", partial()); };
+  h.dependencies.lfmClient = async () => { h.setTime(20500); return inspected("lfm", partial()); };
   const result = await createModelCascade(config, h.dependencies).resolve(request(comparison, { deadlineAt: 99000 }));
   assert.equal(result.reason, "insufficient_stage_budget");
   assert.equal(h.calls.verify.length + h.calls.qwen.length, 0);
@@ -107,7 +107,7 @@ test("loopback HTTP accepts LFM 3500ms plus Qwen generation 15000ms with 900ms m
     assert.equal((await response.json()).intent, "answer_portfolio");
     assert.deepEqual(calls, { lfm: 1, qwen: 1, verify: 1 });
     assert.ok(events.some((event) => event.type === "complete" && event.stage === "qwen" && event.reason === "accepted"));
-    t.diagnostic(JSON.stringify({ httpStatus: response.status, fakeElapsedMs: time, calls, applicationCapMs: 21000 }));
+    t.diagnostic(JSON.stringify({ httpStatus: response.status, fakeElapsedMs: time, calls, applicationCapMs: 23000 }));
   } finally {
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     assert.equal(server.listening, false);

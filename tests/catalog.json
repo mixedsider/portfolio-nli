@@ -40,6 +40,7 @@
     { "path": "tools/nli/grounded-bounds.test.mjs", "level": "unit", "techniques": ["whitebox"], "runner": "node" },
     { "path": "tools/nli/grounded-projection.test.mjs", "level": "unit", "techniques": ["whitebox"], "runner": "node" },
     { "path": "tools/nli/lfm-loaded-model.test.mjs", "level": "integration", "techniques": ["blackbox", "whitebox"], "runner": "node" },
+    { "path": "tools/nli/lfm-timeout-update.test.mjs", "level": "integration", "techniques": ["blackbox", "whitebox"], "runner": "node" },
     { "path": "tools/nli/local-fast-path.test.mjs", "level": "unit", "techniques": ["whitebox"], "runner": "node" },
     { "path": "tools/nli/model-admission.test.mjs", "level": "unit", "techniques": ["whitebox"], "runner": "node" },
     { "path": "tools/nli/model-cascade-deadlines.test.mjs", "level": "unit", "techniques": ["whitebox"], "runner": "node" },
