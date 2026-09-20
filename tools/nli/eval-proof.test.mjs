@@ -104,10 +104,11 @@ test("Qwen report must identify exactly the current receipt, complete unique mat
   assert.equal(validQwenReport(report, receipt, inputs, time + 86400001), false);
 });
 
-test("issue 6 invalidates old LFM settings proof, not unchanged Qwen proof or payloads", async () => {
+for (const [lfmMs, applicationMs] of [["4000", "21000"], ["6000", "23000"]])
+test(`issue 6 invalidates ${lfmMs}ms LFM proof at 6500ms, not unchanged Qwen proof or payloads`, async () => {
   const context = await loadNliContext();
-  // Intentional pre-issue-6 settings; never relabel a historical proof with new hashes.
-  const previous = createGatewayConfig({ LFM_TIMEOUT_MS: "4000", NLI_CASCADE_TIMEOUT_MS: "21000" });
+  // Intentional historical settings; never relabel an old proof with new hashes.
+  const previous = createGatewayConfig({ LFM_TIMEOUT_MS: lfmMs, NLI_CASCADE_TIMEOUT_MS: applicationMs });
   const current = createGatewayConfig({});
   const oldLfm = await createEvaluationInputs("lfm", previous.lfm, context);
   const newLfm = await createEvaluationInputs("lfm", current.lfm, context);
