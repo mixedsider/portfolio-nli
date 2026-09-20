@@ -85,6 +85,130 @@ test("spacing cannot drop an unsupported unit or silently convert unit names", (
   }
 });
 
+test("REGRESSION: issue 12 accepts an evidenced fraction with a Korean particle", () => {
+  // Synthetic minimal fixture, not a retained model answer or portfolio excerpt.
+  assert.equal(quantitiesSupported("비율 1/20로 감소", "비율 1/20 수준"), true);
+});
+
+test("issue 12 fraction controls reject changed or absent numeric evidence", () => {
+  for (const claim of ["1/21로", "2/20로", "+1/20로", "-1/20로", "1/20ms", "1/20/3로"]) {
+    assert.equal(quantitiesSupported(claim, "비율 1/20 수준"), false, claim);
+  }
+  assert.equal(quantitiesSupported("1/20로", "비율 1 또는 20"), false);
+});
+
+test("literal fractions preserve numerator, denominator, signs and leading zeros", () => {
+  for (const value of ["1/20", "0/20", "+1/20", "-1/20", "−1/20", "01/020", "1/00020"]) {
+    assert.equal(quantitiesSupported(value, value), true, value);
+  }
+  for (const [claim, evidence] of [["+ 1 / 20로", "+1/20"], ["− 01 / 020", "−01/020"],
+    ["비율１／２０로", "1/20"], ["1/20에서", "1 / 20"], ["(1/20)", "[1/20]"]]) {
+    assert.equal(quantitiesSupported(claim, evidence), true, `${claim} / ${evidence}`);
+  }
+  for (const [claim, evidence] of [["1/20", "2/40"], ["1/20", "0.05"], ["1/20", "01/020"],
+    ["1/20", "+1/20"], ["-1/20", "−1/20"], ["1", "1/20"], ["20", "1/20"],
+    ["1/20", "1"], ["1/20", "1 20"], ["1/20", "11/20"], ["1/20", "1/200"]]) {
+    assert.equal(quantitiesSupported(claim, evidence), false, `${claim} / ${evidence}`);
+  }
+});
+
+test("malformed fraction atoms cannot disappear or lend supported prefixes", () => {
+  for (const value of ["1/20.5", "1/20/3", "1//20", "1/-20", "1/+20", "1/−20", "1/0", "1/000",
+    "1.5/20", "1,000/20", "1/20,5", "1/20..", "1/20,,", "1 / / 20", "1 / - 20", "++1/20",
+    "1/20٣", "١/20", "1/٢٠", "1⁄20", "1∕20", "½", "1/20/", "1/20%%", "1/20/s/min"]) {
+    assert.equal(quantitiesSupported(value, value), false, `malformed self: ${value}`);
+    assert.equal(quantitiesSupported(value, "1 20 3 5 0 000 1/20 1/20ms"), false, `fragment trap: ${value}`);
+    assert.equal(quantitiesSupported("1/20", value), false, `prefix trap: ${value}`);
+  }
+});
+
+test("fraction units stay distinct and retain asymmetric unitless matching", () => {
+  for (const [claim, evidence, expected] of [["1/20ms", "1/20ms", true], ["1 / 20 MS", "1/20ms", true],
+    ["1/20분으로", "1/20분", true], ["1/20/s", "1/20/s", true], ["1/20ms/s", "1/20ms/s", true],
+    ["1/20", "1/20ms", true], ["1/20ms", "1/20", false], ["1/20초", "1/20분", false],
+    ["1/20ms", "1/20s", false], ["1/20/s", "1/20/min", false], ["1/20%", "1/20", false],
+    ["1/20%", "1/20%", true], ["1/20milliseconds", "1/20ms", false]]) {
+    assert.equal(quantitiesSupported(claim, evidence), expected, `${claim} / ${evidence}`);
+  }
+});
+
+test("fraction boundaries preserve subsequent quantities and sentence delimiters", () => {
+  for (const claim of ["1/20로 31% 1분", "1/20로31% 1분", "1/20로1분", "1/20. 31% 1분", "1/20, 31% 1분"]) {
+    assert.equal(quantitiesSupported(claim, "1/20 수준 31% 1분"), true, claim);
+    assert.equal(quantitiesSupported(claim, "1/20 수준"), false, claim);
+  }
+  assert.equal(quantitiesSupported("1/20로 32% 1분", "1/20 수준 31% 1분"), false);
+  assert.equal(quantitiesSupported("1/20로 31% 2분", "1/20 수준 31% 1분"), false);
+  assert.equal(quantitiesSupported("1/20로31%1분", "1/20 수준 31% 1분"), false, "existing malformed percent atom stays invalid");
+});
+
+const malformedFractionBoundaries = ["1/20⁄", "1/20∕s", "/1/20", "⁄1/20", "∕1/20", "/ 1 / 20",
+  "⁄ / 1/20", "/⁄∕1/20", "+ /1/20", "/ - 1/20", "1/20 ⁄", "1/20 ∕ s", "1/20⁄/s",
+  "1/20 / ⁄", "1/20⁄ ∕s", "1/20∕/⁄", "1/20ms⁄", "1/20ms∕s", "1/20분⁄", "1/20로⁄",
+  "1/20로 ⁄ s", "1/20분 /", "1/20 / / s"];
+
+for (const base of ["1/20", "1/20ms", "1/20/s", "1/20%", "1/20분"]) {
+  for (const tail of ["٣", "로ms", "로%", "로٣", "로⁄", "로∕s", ", ⁄", ". /", ", . ⁄", ". , /3", "로/3"]) {
+    const malformed = base + tail;
+    test(`whole fraction ownership rejects ${malformed} in both directions and self`, () => {
+      for (const [claim, evidence] of [[malformed, base], [base, malformed], [malformed, malformed],
+        ["1/20", malformed], [malformed, `${base} 1 20 3`]]) {
+        assert.equal(quantitiesSupported(claim, evidence), false, `${claim} / ${evidence}`);
+      }
+      assert.equal(quantitiesSupported(base, `${malformed}; ${base}`), true, "separate valid evidence survives");
+    });
+  }
+}
+
+test("whole fraction units reject mixed scripts and percent compositions", () => {
+  for (const value of ["1/20%분", "1/20분%", "1/20ms분", "1/20분ms", "1/20msλ", "1/20로ms"]) {
+    assert.equal(quantitiesSupported(value, value), false, value);
+    assert.equal(quantitiesSupported("1/20", value), false, value);
+  }
+  for (const [claim, evidence] of [["1/20%분", "1/20%"], ["1/20분%", "1/20분"]]) {
+    assert.equal(quantitiesSupported(claim, evidence), false);
+    assert.equal(quantitiesSupported(evidence, claim), false);
+  }
+  for (const value of ["1/20ms로", "1/20%로", "1/20수준", "1/20분으로", "1/20ms/s로"]) {
+    assert.equal(quantitiesSupported(value, value), true, value);
+    assert.equal(quantitiesSupported("1/20", value), true, value);
+  }
+  for (const value of ["1/20, prose", "1/20. prose", "1/20ms, prose", "1/20ms. prose"]) {
+    assert.equal(quantitiesSupported("1/20", value), true, value);
+  }
+});
+
+test("whole fraction ownership retains malformed signs and unterminated interiors", () => {
+  for (const value of ["++1/20ms로", "–1/20", "1/−20ms", "/ - 1/20ms", "١/20ms", "1/٢٠ms",
+    "1/", "1 / /", "1/20/", "1/20로/", "1/20ms/٣", "1/20로٣/40"]) {
+    assert.equal(quantitiesSupported(value, `${value}; 1 20 40 1/20`), false, value);
+    for (const claim of ["1", "20", "40", "1/20"]) {
+      assert.equal(quantitiesSupported(claim, value), false, `${claim} from ${value}`);
+    }
+  }
+});
+
+test("fraction slash boundaries cannot hide malformed claims", () => {
+  for (const value of malformedFractionBoundaries) {
+    assert.equal(quantitiesSupported(value, "1/20 1/20ms 1/20분 -1/20 +1/20 1 20"), false, value);
+  }
+});
+
+test("fraction slash boundaries cannot lend an evidence prefix", () => {
+  for (const value of malformedFractionBoundaries) {
+    assert.equal(quantitiesSupported("1/20", value), false, value);
+  }
+});
+
+test("fraction slash boundary malformations fail even against themselves", () => {
+  for (const value of malformedFractionBoundaries) {
+    assert.equal(quantitiesSupported(value, value), false, value);
+  }
+  for (const value of ["1/20/s", "1 / 20 / s", "1/20ms/s", "30/s", "30 ms / s"]) {
+    assert.equal(quantitiesSupported(value, value), true, `ASCII rate: ${value}`);
+  }
+});
+
 for (const endpoint of ["lfm", "qwen"]) test(`actual bounded positive signed rate improvement/${endpoint}`, () => {
   const request = "현재 프로젝트에서 캐싱을 어떻게 개선했어?";
   const preparation = prepareGroundedRequest(request, { ...context, currentTargetId: "project-makertion-db" });

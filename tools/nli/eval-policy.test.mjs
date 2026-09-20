@@ -8,6 +8,7 @@ import { lfmReportFixture, qwenReportFixture } from "./eval-proof-fixture.mjs";
 import { validLfmReport, validQwenReport } from "./eval-proof-validation.mjs";
 import { runBoundVerification } from "./eval-bound-probe.mjs";
 import { prepareProbeCases } from "./probe-request.mjs";
+import { validReceipt } from "./qwen-verification-proof.mjs";
 
 test("8s Qwen receipt and evaluation report cannot authorize amended 16s settings", async () => {
   const context = await loadNliContext();
@@ -65,3 +66,49 @@ test("Qwen report, evaluation binding and exact receipt must all carry the share
   delete oldReceipt.verificationPolicy;
   assert.equal(validQwenReport(report, oldReceipt, inputs, Date.now()), false);
 });
+
+for (const endpoint of ["lfm", "qwen"]) {
+  test(`${endpoint}: explicit v1 semantic proof is stale despite unchanged hashes`, async () => {
+    const config = createGatewayConfig({});
+    const inputs = await createEvaluationInputs(endpoint, endpoint === "lfm" ? config.lfm : config.model, await loadNliContext());
+    const { report, receipt } = endpoint === "lfm" ? { report: lfmReportFixture(inputs) } : qwenReportFixture(inputs);
+    const valid = (value, proof = receipt) => endpoint === "lfm" ? validLfmReport(value, inputs, Date.now()) :
+      validQwenReport(value, proof, inputs, Date.now());
+    assert.equal(VERIFICATION_POLICY, "shared-acceptance-v2");
+    assert.equal(report.version, 1);
+    assert.equal(valid(report), true);
+    for (const select of [(r) => r, (r) => r.evaluationBinding, ...(endpoint === "qwen" ? [(r) => r.binding] : [])]) {
+      const old = structuredClone(report);
+      select(old).verificationPolicy = "shared-acceptance-v1";
+      assert.equal(valid(old), false);
+    }
+    if (endpoint === "qwen") {
+      const runtime = { binding: inputs.runtimeBinding, matrix: inputs.matrix };
+      const old = { ...receipt, verificationPolicy: "shared-acceptance-v1" };
+      assert.equal(receipt.version, 1);
+      assert.equal(validReceipt(receipt, runtime, Date.now()), true);
+      assert.equal(validReceipt(old, runtime, Date.now()), false);
+      assert.equal(valid(report, old), false);
+    }
+  });
+
+  test(`${endpoint}: bound producer cannot relabel a v1 report as v2`, async () => {
+    const context = await loadNliContext();
+    const config = createGatewayConfig({});
+    const settings = endpoint === "lfm" ? config.lfm : config.model;
+    const inputs = await createEvaluationInputs(endpoint, settings, context);
+    const current = endpoint === "lfm" ? lfmReportFixture(inputs) : qwenReportFixture(inputs).report;
+    const old = { ...current, verificationPolicy: "shared-acceptance-v1" };
+    delete old.evaluationBinding;
+    const options = { endpoint, mode: "verify", context, settings, cases: prepareProbeCases(inputs.fixtures, context) };
+    const result = await runBoundVerification(options, { runProbe: async () => old });
+    assert.equal(result.ok, false);
+    assert.equal(result.verified, false);
+    assert.equal(result.verificationPolicy, "shared-acceptance-v1");
+    assert.equal(result.evaluationBinding, undefined);
+    assert.ok(result.blockers.includes("verification_policy_mismatch"));
+    const fresh = await runBoundVerification(options, { runProbe: async () => current });
+    assert.equal(fresh.verified, true);
+    assert.equal(fresh.evaluationBinding.verificationPolicy, "shared-acceptance-v2");
+  });
+}
