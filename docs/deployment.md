@@ -108,12 +108,12 @@ LM_STUDIO_OUTPUT_MODE=json_schema
 LFM_BASE_URL=http://192.168.0.106:1234/v1
 # GTX1060-optimized loaded Q4_0 model, not the unloaded @q4_0 alias.
 LFM_MODEL=lfm2.5-2.6b
-LFM_TIMEOUT_MS=6000
+LFM_TIMEOUT_MS=6500
 LFM_MAX_TOKENS=512
 LFM_MAX_RESPONSE_BYTES=65536
 LFM_MAX_CONCURRENT_REQUESTS=4
 LFM_OUTPUT_MODE=json_schema
-NLI_CASCADE_TIMEOUT_MS=23000
+NLI_CASCADE_TIMEOUT_MS=23500
 NLI_CASCADE_MAX_CONCURRENT_REQUESTS=4
 NLI_QWEN_ENABLED=true
 NLI_QWEN_VERIFICATION_FILE=.nli/qwen-no-thinking.json
@@ -125,7 +125,7 @@ NLI_QWEN_VERIFICATION_FILE=.nli/qwen-no-thinking.json
 
 LFM이 이미 충족한 답변은 낮은 confidence라도 그대로 종료합니다. 비교/종합/근거 있는 모호성이 미해결이고 coverage·검증 receipt·잔여 시간·입장 조건이 충족될 때만 Qwen 한 번을 호출합니다. ordinary timeout/JSON 실패만으로 승격하지 않습니다. 모델 요약은 `answer_portfolio`의 source 버튼으로 이동하며 자동 스크롤하지 않습니다. legacy offline summary만 기존 동작을 유지합니다.
 
-LFM 6,000ms/512 tokens와 Qwen 16,000ms/768 tokens는 성능 약속이 아닌 제한입니다. 단일 기준은 `tools/nli/timeout-policy.mjs`입니다. resolver 진입부터 전체 23,000ms clock에는 context, retrieval, admission과 Qwen metadata가 포함되며, metadata 최대 1,000ms도 Qwen 16,000ms stage 안에서 소모됩니다. 응답 여유는 1,000ms이고 각 stage는 `min(stage cap, configured timeout, remaining - 1000ms)`이며 Qwen에는 최소 2,000ms가 필요합니다. 평가 HTTP caller 기본값은 30,000ms입니다. `NLI_REQUEST_TIMEOUT_MS=15000`은 inbound HTTP body/header 수신 제한일 뿐 응답 deadline이 아닙니다. 요청당 최대 두 순차 추론, endpoint별/공유 최대 네 active operation, queue/repair/retry 없음입니다. client abort가 원격 GPU 중단을 증명하지는 않습니다. 두 모델과 fallback은 scope·intent·coverage 조건을 지키지만 보수적 grounding이 임의의 semantic entailment를 보장하지는 않습니다.
+LFM 6,500ms/512 tokens와 Qwen 16,000ms/768 tokens는 성능 약속이 아닌 제한입니다. 단일 기준은 `tools/nli/timeout-policy.mjs`입니다. resolver 진입부터 전체 23,500ms clock에는 context, retrieval, admission과 Qwen metadata가 포함되며, metadata 최대 1,000ms도 Qwen 16,000ms stage 안에서 소모됩니다. 응답 여유는 1,000ms이고 각 stage는 `min(stage cap, configured timeout, remaining - 1000ms)`이며 Qwen에는 최소 2,000ms가 필요합니다. 평가 HTTP caller 기본값은 30,000ms입니다. `NLI_REQUEST_TIMEOUT_MS=15000`은 inbound HTTP body/header 수신 제한일 뿐 응답 deadline이 아닙니다. 요청당 최대 두 순차 추론, endpoint별/공유 최대 네 active operation, queue/repair/retry 없음입니다. client abort가 원격 GPU 중단을 증명하지는 않습니다. 두 모델과 fallback은 scope·intent·coverage 조건을 지키지만 보수적 grounding이 임의의 semantic entailment를 보장하지는 않습니다.
 
 서버에서는 `.env.example`을 `.env`로 복사한 뒤 값을 수정해서 사용할 수 있습니다. `tools/nli-gateway.mjs`는 시작할 때 프로젝트 루트의 `.env` 파일을 자동으로 읽습니다.
 
@@ -163,11 +163,11 @@ node tools/nli-cascade-eval.mjs --output "$RUN_DIR/live-eval.json" --lfm-verific
 
 - `--receipt`는 **실제 `NLI_QWEN_VERIFICATION_FILE` 경로**와 일치시켜야 합니다. 기본 상대 경로는 workspace 기준이며 launch cwd 기준이 아닙니다. 출력/receipt parent는 먼저 존재해야 합니다. report는 서로 다른 새 파일로 exclusive 0600 생성되며 기존 파일/symlink를 덮어쓰지 않습니다. CLI에 `--help`는 없으며 지원 flags는 parser와 위 명령을 기준으로 합니다.
 - **bound-probe Qwen `--mode verify --receipt`는 기존 probe의 atomic 발급 API를 호출**합니다. 6종 × 3회 = 18개의 clean stop-terminated visible JSON, 실제 닫힌 빈 think template, model/build/template identity를 확인하고 0600 임시 파일 + fsync + atomic rename합니다. proof 실패는 새 receipt를 발급하지 않습니다. adapter의 사후 binding 검사까지 실패하면 receipt가 있더라도 rollout을 차단하고 checkpoint로 복원합니다. baseline과 cascade eval은 발급 도구가 아닙니다.
-- receipt 최대 age는 24시간입니다. 재시작, model/build/template, prompt/schema bytes, Qwen request settings 또는 output mode 변경 후 새 Qwen 검증을 수행합니다. 실제 승격 직전 `/props`/`/apply-template` fingerprint 재검증은 최대 1,000ms이며 Qwen 16초 단일 stage 예산 안에 포함됩니다. Issue #6의 LFM timeout 변경은 LFM settings binding을 바꾸므로 fresh LFM bound report가 필요합니다. LFM/전체/평가 timeout 변경만으로 Qwen settings/payload binding은 바뀌지 않습니다. Qwen proof/receipt는 나머지 binding, matrix, freshness와 runtime gate가 모두 일치할 때만 재사용 가능합니다. 전체 application 상한/기본값은 23,000ms (LFM 6초 + Qwen 16초 + 응답 여유 1초)이며 더 작은 명시적 timeout은 유지합니다. `NLI_REQUEST_TIMEOUT_MS=15000`은 inbound HTTP body/header 수신 제한이며 response deadline이 아닙니다. 승격 최소 잔여 2,000ms, 공유 동시 작업 4, 최대 순차 추론 2회는 그대로입니다. missing/stale/mismatched receipt, unknown proof, metadata 실패, reasoning 위반은 Qwen을 차단합니다. missing reasoning usage는 unknown이며 0으로 바꾸지 않습니다. 이것은 비정상 서버에 대한 암호학적 attestation이 아닙니다.
+- receipt 최대 age는 24시간입니다. 재시작, model/build/template, prompt/schema bytes, Qwen request settings 또는 output mode 변경 후 새 Qwen 검증을 수행합니다. 실제 승격 직전 `/props`/`/apply-template` fingerprint 재검증은 최대 1,000ms이며 Qwen 16초 단일 stage 예산 안에 포함됩니다. Issue #6의 LFM timeout 변경은 LFM settings binding을 바꾸므로 fresh LFM bound report가 필요합니다. LFM/전체/평가 timeout 변경만으로 Qwen settings/payload binding은 바뀌지 않습니다. Qwen proof/receipt는 나머지 binding, matrix, freshness와 runtime gate가 모두 일치할 때만 재사용 가능합니다. 전체 application 상한/기본값은 23,500ms (LFM 6.5초 + Qwen 16초 + 응답 여유 1초)이며 더 작은 명시적 timeout은 유지합니다. `NLI_REQUEST_TIMEOUT_MS=15000`은 inbound HTTP body/header 수신 제한이며 response deadline이 아닙니다. 승격 최소 잔여 2,000ms, 공유 동시 작업 4, 최대 순차 추론 2회는 그대로입니다. missing/stale/mismatched receipt, unknown proof, metadata 실패, reasoning 위반은 Qwen을 차단합니다. missing reasoning usage는 unknown이며 0으로 바꾸지 않습니다. 이것은 비정상 서버에 대한 암호학적 attestation이 아닙니다.
 - 현재 timestamp, requested/returned model, prompt/schema, settings와 mode에 묶인 **이번 실행의** verify report를 사용합니다. adapter는 **실제 검증 전에** `evaluationBinding`을 캡처하고 producer/runtime payload 일치와 원래 semantic/transport 검증 및 사후 입력 불변성을 확인합니다. binding에는 전체 settings, normalized endpoint, 선택 mode, prompt/schema/fixture bytes, 실제 prepared payload와 semantic expectations가 포함됩니다. 기존 report에 현재 hash/binding을 덧붙여 자격을 소급 부여하지 않습니다. producer projection이 다르면 `producer_runtime_payload_mismatch`로 차단하며 해당 owner 수정 후 새로운 검증이 필요합니다. 인터페이스: `.omo/evidence/lfm25-middle-model/task12-fix1-proof-interface.md`.
 - evaluator의 두 report flags는 진단에는 선택 사항이나 **ready=true에는 필수**입니다. Qwen report는 timestamp, binding, proof, 결과 순서/반환 model/accounting이 실제 configured receipt 및 runtime gate와도 일치해야 합니다. 모든 named gate와 exit 0/ready=true를 확인해야 full readiness입니다. report 없이 eval을 실행하면 bounded diagnostic일 뿐입니다.
 - evaluator는 fresh loopback/ephemeral Gateway를 suite마다 생성하여 rate-limit 상태를 분리합니다. 실제 26 success/10 adversarial CLI는 threshold 1, HTTP caller timeout 30000입니다. suite watchdog은 case 수 × 30000ms + 30000ms입니다. 실제 LFM ordinary 채택, 3회 warm 반복, same-case Qwen baseline, concurrency 1/4, natural difficult, synthetic-first-stage + genuine Qwen 승격 및 cleanup까지 검증합니다. fallback HTTP 200이나 fake 테스트는 live LFM acceptance가 아닙니다.
-- Issue #6의 현재 Q4_0 새 예산 실측 및 fresh LFM proof는 **pending**입니다. Issue #5와 공유 서버 측정을 먼저 조율하고 별도 승인 후 실행합니다. 최종 통합 live 검증은 #7에서 추적합니다. 최종 답변 시간, strict 답변 채택, fallback을 각각 집계하고 timeout/취소를 성공 응답 latency에 섞지 않습니다. 실제 Gateway loopback의 지연 응답 시험과 fake-clock 경계 시험은 실제 Q4_0 성능 증거가 아닙니다. 이 변경은 배포·재시작·모델 교체·reload 승인이 아니며 activation-blocked / ready=false를 유지합니다.
+- Issue #6의 6.5초 예산은 사용자 승인으로 2026-09-20 실제 LFM에서 측정했습니다. 대표 요청 완료 15/15·채택 12/15·timeout 0회, 별도 Gateway 5회는 LFM 채택 4회·로컬 fallback 1회입니다. fresh bound 검증은 schema 4/6·plain 0/6으로 실패했으므로 **성공한 fresh LFM proof는 pending**입니다. 상세 결과와 한계는 [PR #10](https://github.com/mixedsider/portfolio-nli/pull/10)에 기록합니다. #5 수정 반영과 cache/load 차이 때문에 이전 6초 표본과의 차이를 timeout 증가에만 귀속하지 않습니다. 최종 통합 live 검증은 #7에서 추적합니다. 완료 시간·답변 채택·fallback은 분리 집계하며, loopback/fake-clock 시험을 실제 모델 성능 증거로 간주하지 않습니다. 이 변경은 배포·재시작·모델 교체·reload 승인이 아니며 activation-blocked / ready=false를 유지합니다.
 
 ## 3. GitHub Actions로 NLI Gateway 자동 배포
 
