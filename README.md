@@ -98,10 +98,12 @@ node tools/nli-gateway.mjs
 
 | 역할 | endpoint / 요청 모델 ID | 제한 (보장 성능 아님) |
 | --- | --- | --- |
-| 기본 LFM (GTX1060 최적화 Q4_0) | `http://192.168.0.106:1234/v1` / `lfm2.5-2.6b` | 4,000ms / 512 tokens |
+| 기본 LFM (GTX1060 최적화 Q4_0) | `http://192.168.0.106:1234/v1` / `lfm2.5-2.6b` | 6,000ms / 512 tokens |
 | 어려운 미해결 요청의 Qwen (`LM_STUDIO_*`) | `http://192.168.0.57:1234/v1` / `Qwen3.8-27B-UD-Q4_K_M` | 16,000ms / 768 tokens |
 
-두 output mode는 최종 유지값 `json_schema`이며 자동 plain 재시도는 없습니다. 응답 상한은 각각 65,536 bytes, endpoint별/공유 동시 작업 상한은 각각 4입니다. 사용자 승인 timeout amendment에 따라 전체 상한/기본값은 21,000ms (LFM 4초 + Qwen 16초 + 응답 여유 1초)이며 resolver 진입부터 검색/입장/metadata까지 포함합니다. metadata 최대 1,000ms는 Qwen의 단일 16초 stage 안에서 소모하며 승격 최소 잔여 예산은 2,000ms입니다. 더 작은 명시적 timeout은 유지합니다. 평가 HTTP caller 기본값은 25,000ms입니다. `NLI_REQUEST_TIMEOUT_MS=15000`은 inbound HTTP body/header 수신 제한이며 응답 deadline이 아닙니다. 요청당 LFM 먼저 최대 두 번의 **순차** 추론만 허용합니다. timeout settings 변경으로 기존 proof는 재사용할 수 없으며 fresh receipt/live QA 전까지 activation-blocked 상태를 유지합니다.
+Issue #6 시간 정책의 단일 기준은 `tools/nli/timeout-policy.mjs`입니다. 두 output mode는 최종 유지값 `json_schema`이며 자동 plain 재시도는 없습니다. 응답 상한은 각각 65,536 bytes, endpoint별/공유 동시 작업 상한은 각각 4입니다. 전체 상한/기본값은 23,000ms (LFM 6초 + Qwen 16초 + 응답 여유 1초)이며 resolver 진입부터 검색/입장/metadata까지 포함합니다. metadata 최대 1,000ms는 Qwen의 단일 16초 stage 안에서 소모하며 승격 최소 잔여 예산은 2,000ms입니다. 더 작은 명시적 timeout은 유지합니다. 평가 HTTP caller 기본값은 30,000ms입니다. `NLI_REQUEST_TIMEOUT_MS=15000`은 inbound HTTP body/header 수신 제한이며 응답 deadline이 아닙니다. 요청당 LFM 먼저 최대 두 번의 **순차** 추론만 허용합니다.
+
+LFM timeout 변경은 LFM settings binding을 바꾸므로 fresh LFM bound verification이 필요합니다. LFM/전체/평가 timeout 변경만으로 Qwen binding이 바뀌지는 않으며, Qwen settings/payload/prompt/schema/matrix 및 model/build/template가 같고 유효 기간·runtime gate를 통과하는 receipt만 재사용 가능합니다. 현재 Q4_0의 새 예산 실측과 최종 통합 live 검증(#7)은 **pending**입니다. Issue #5 작업과 공유 서버 측정을 조율한 뒤 별도 승인으로 실행하며, loopback/fake-clock 성공을 실제 모델 성능이나 배포 완료로 간주하지 않습니다. fresh 증거와 전체 gate 통과 전까지 activation-blocked / ready=false를 유지합니다.
 
 Qwen은 `reasoning_effort: "none"`과 `chat_template_kwargs: { enable_thinking: false }`를 고정 전송합니다. 옵션이나 reasoning 필드 부재만으로 reasoning-off를 입증하지 않습니다. Gateway host에서 **probe `--mode verify --receipt`만** 18개 clean completion과 실제 template/model/build 증거를 통과한 후 receipt를 atomic rename으로 발급합니다. 최대 유효 기간은 24시간이며 재시작 또는 model/build/template/prompt/schema/settings 변경 후 재검증해야 합니다. 매 승격 시 제한된 metadata 검증도 필요합니다. [정확한 검증/rollback 절차](docs/deployment.md#모델-활성화-preflight-gateway-host에서만)를 따르세요.
 
