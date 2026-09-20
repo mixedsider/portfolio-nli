@@ -44,8 +44,8 @@ test("existing client characterization: length JSON is accepted, reasoning-only 
   assert.equal(await ask("fixture", context), null);
 });
 
-test("LFM probe caps oversized overrides at 6s while preserving smaller bounds and bound settings", async () => {
-  for (const configured of [99000, 1234]) {
+test("LFM probe caps oversized overrides at 6.5s while preserving smaller bounds and bound settings", async () => {
+  for (const configured of [99000, 6000, 1234]) {
     const bounds = [];
     const settings = { ...PROBE_ENDPOINTS.lfm, timeoutMs: configured };
     const report = await runProbe({ endpoint: "lfm", mode: "verify", settings, cases, context, schema }, {
@@ -55,7 +55,7 @@ test("LFM probe caps oversized overrides at 6s while preserving smaller bounds a
         return { ok: false, kind: "timeout" };
       }
     });
-    assert.deepEqual(bounds, Array(12).fill(Math.min(configured, 6000)));
+    assert.deepEqual(bounds, Array(12).fill(Math.min(configured, 6500)));
     assert.deepEqual(report.settings, settings);
     assert.equal(report.verified, false);
   }

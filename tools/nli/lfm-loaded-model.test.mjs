@@ -41,11 +41,11 @@ test("loaded LFM ID and custom override reach HTTP unchanged and match probe pay
       assert.equal(captured.body.response_format.json_schema.strict, true);
       assert.equal(captured.body.reasoning_effort, "none");
       assert.deepEqual(captured.body.chat_template_kwargs, { enable_thinking: false });
-      assert.equal(config.lfm.timeoutMs, 6000);
+      assert.equal(config.lfm.timeoutMs, 6500);
       assert.equal(config.model.name, "Qwen3.8-27B-UD-Q4_K_M");
       assert.equal(PROBE_ENDPOINTS.qwen.name, config.model.name);
       assert.deepEqual([config.model.timeoutMs, config.model.maxTokens, config.cascade.timeoutMs,
-        config.requestTimeoutMs], [16000, 768, 23000, 15000]);
+        config.requestTimeoutMs], [16000, 768, 23500, 15000]);
     }
     assert.equal(bodies.length, 2);
   } finally {

@@ -36,8 +36,8 @@ test("HTTP non-2xx stays an error, not a successful rejection fixture", async ()
 });
 
 test("deadline boundaries and no-thinking gate retain independent actual counters", async () => {
-  // 23s application - 1s reserve - 2s minimum escalation budget.
-  for (const [elapsedMs, expectedCalls] of [[20000, 1], [20001, 0]]) {
+  // 23.5s application - 1s reserve - 2s minimum escalation budget.
+  for (const [elapsedMs, expectedCalls] of [[20500, 1], [20501, 0]]) {
     const item = { ...fixtures.find((entry) => entry.id === "ambiguous-unverified-clarification"), verification: "verified",
       models: { lfm: { failure: "timeout", elapsedMs }, qwen: { failure: "invalid_json" } } };
     const fake = createFakeResolver(item, context);
