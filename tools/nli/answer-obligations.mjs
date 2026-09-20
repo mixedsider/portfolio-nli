@@ -1,6 +1,7 @@
 import { isAnswerSupportedBySelectedEvidence } from "./answer-evidence-support.mjs";
 import { getObligationSourceGroups, obligationCatalog } from "./obligation-sources.mjs";
 import { mentionSpans, normalizeObligationText, PARTICLES } from "./obligation-vocabulary.mjs";
+import { readFractionAtom } from "./fraction-atom.mjs";
 
 const ANSWER_SUFFIXES = [...PARTICLES, "에서는", "에서도", "에는", "에선", "도", "로", "으로", "입니다", "이다"];
 
@@ -66,8 +67,19 @@ function parseQuantities(value) {
     /(?<![a-z0-9_])(?:p(?:50|90|95|99)|n\+1|1\+n)(?![a-z0-9_%٪‰‱/]|[.+−-]\d)/gu, " ");
   // Scan maximal numeric-looking atoms first. Invalid atoms remain failed obligations
   // instead of disappearing or being retried as unsigned/numeric substrings.
-  const quantities = text.matchAll(/((?:[+\p{Pd}−]\s*)*\.*\p{N}[\p{N}.,]*)(\s*(?:[a-zμ%٪‰‱][a-zμ0-9%٪‰‱/]*|\/\s*[a-zμ0-9%٪‰‱/]*|[가-힣]+)(?:\s*\/\s*[a-zμ0-9%٪‰‱/]+)*)?/gu);
-  return ranges.concat([...quantities].map((match) => {
+  const starts = /(?:[+\p{Pd}−/⁄∕]\s*)*\.*\p{N}[\p{N}.,]*/gu;
+  const scalar = /((?:[+\p{Pd}−]\s*)*\.*\p{N}[\p{N}.,]*)(\s*(?:[a-zμ%٪‰‱][a-zμ0-9%٪‰‱/]*|\/\s*[a-zμ0-9%٪‰‱/]*|[가-힣]+)(?:\s*\/\s*[a-zμ0-9%٪‰‱/]+)*)?/gu;
+  const quantities = [...ranges];
+  for (let start; (start = starts.exec(text));) {
+    const fraction = readFractionAtom(text, start.index);
+    if (fraction) {
+      quantities.push(fraction);
+      starts.lastIndex = fraction.end;
+      continue;
+    }
+    scalar.lastIndex = start.index;
+    const match = scalar.exec(text);
+    starts.lastIndex = scalar.lastIndex;
     let number = match[1].replace(/\s+/gu, "");
     let unit = (match[2] || "").replace(/\s+/gu, "").replace(/(?:에서|부터|까지|으로|로|의|은|는|을|를)$/u, "");
     // A single sentence/list delimiter is punctuation, not a decimal/group separator.
@@ -77,8 +89,9 @@ function parseQuantities(value) {
     }
     const valid = /^[+−-]?(?:(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|\.\d+)$/u.test(number) &&
       /^(?:[%٪‰‱]|[a-zμ]+(?:\/[a-zμ]+)?|\/[a-zμ]+|[가-힣]+)?$/u.test(unit);
-    return { valid, number, unit };
-  }));
+    quantities.push({ valid, number, unit });
+  }
+  return quantities;
 }
 
 function splitAttributedClauses(answer, projects) {
