@@ -98,12 +98,12 @@ node tools/nli-gateway.mjs
 
 | 역할 | endpoint / 요청 모델 ID | 제한 (보장 성능 아님) |
 | --- | --- | --- |
-| 기본 LFM (GTX1060 최적화 Q4_0) | `http://192.168.0.106:1234/v1` / `lfm2.5-2.6b` | 6,000ms / 512 tokens |
+| 기본 LFM (GTX1060 최적화 Q4_0) | `http://192.168.0.106:1234/v1` / `lfm2.5-2.6b` | 6,500ms / 512 tokens |
 | 어려운 미해결 요청의 Qwen (`LM_STUDIO_*`) | `http://192.168.0.57:1234/v1` / `Qwen3.8-27B-UD-Q4_K_M` | 16,000ms / 768 tokens |
 
-Issue #6 시간 정책의 단일 기준은 `tools/nli/timeout-policy.mjs`입니다. 두 output mode는 최종 유지값 `json_schema`이며 자동 plain 재시도는 없습니다. 응답 상한은 각각 65,536 bytes, endpoint별/공유 동시 작업 상한은 각각 4입니다. 전체 상한/기본값은 23,000ms (LFM 6초 + Qwen 16초 + 응답 여유 1초)이며 resolver 진입부터 검색/입장/metadata까지 포함합니다. metadata 최대 1,000ms는 Qwen의 단일 16초 stage 안에서 소모하며 승격 최소 잔여 예산은 2,000ms입니다. 더 작은 명시적 timeout은 유지합니다. 평가 HTTP caller 기본값은 30,000ms입니다. `NLI_REQUEST_TIMEOUT_MS=15000`은 inbound HTTP body/header 수신 제한이며 응답 deadline이 아닙니다. 요청당 LFM 먼저 최대 두 번의 **순차** 추론만 허용합니다.
+Issue #6 시간 정책의 단일 기준은 `tools/nli/timeout-policy.mjs`입니다. 두 output mode는 최종 유지값 `json_schema`이며 자동 plain 재시도는 없습니다. 응답 상한은 각각 65,536 bytes, endpoint별/공유 동시 작업 상한은 각각 4입니다. 전체 상한/기본값은 23,500ms (LFM 6.5초 + Qwen 16초 + 응답 여유 1초)이며 resolver 진입부터 검색/입장/metadata까지 포함합니다. metadata 최대 1,000ms는 Qwen의 단일 16초 stage 안에서 소모하며 승격 최소 잔여 예산은 2,000ms입니다. 더 작은 명시적 timeout은 유지합니다. 평가 HTTP caller 기본값은 30,000ms입니다. `NLI_REQUEST_TIMEOUT_MS=15000`은 inbound HTTP body/header 수신 제한이며 응답 deadline이 아닙니다. 요청당 LFM 먼저 최대 두 번의 **순차** 추론만 허용합니다.
 
-LFM timeout 변경은 LFM settings binding을 바꾸므로 fresh LFM bound verification이 필요합니다. LFM/전체/평가 timeout 변경만으로 Qwen binding이 바뀌지는 않으며, Qwen settings/payload/prompt/schema/matrix 및 model/build/template가 같고 유효 기간·runtime gate를 통과하는 receipt만 재사용 가능합니다. 현재 Q4_0의 새 예산 실측과 최종 통합 live 검증(#7)은 **pending**입니다. Issue #5 작업과 공유 서버 측정을 조율한 뒤 별도 승인으로 실행하며, loopback/fake-clock 성공을 실제 모델 성능이나 배포 완료로 간주하지 않습니다. fresh 증거와 전체 gate 통과 전까지 activation-blocked / ready=false를 유지합니다.
+LFM timeout 변경은 LFM settings binding을 바꾸므로 fresh LFM bound verification이 필요합니다. LFM/전체/평가 timeout 변경만으로 Qwen binding이 바뀌지는 않으며, Qwen settings/payload/prompt/schema/matrix 및 model/build/template가 같고 유효 기간·runtime gate를 통과하는 receipt만 재사용 가능합니다. 사용자 승인으로 2026-09-20에 6.5초 설정을 실측했습니다. 대표 요청은 완료 15/15·채택 12/15·timeout 0회이며 CateQuest는 3/3 채택됐지만 Makertion 비용은 3/3 `quantity_unsupported`였습니다. 별도 실제 Gateway 5회는 LFM 채택 4회·로컬 fallback 1회입니다. fresh bound 검증은 schema 4/6·plain 0/6으로 실패했습니다. #5 수정도 함께 반영된 결과이므로 이전 실측과의 차이를 timeout 증가만의 효과로 해석하지 않습니다. 상세 근거는 [PR #10](https://github.com/mixedsider/portfolio-nli/pull/10)에 있으며, 성공한 fresh proof 및 최종 통합 live 검증(#7)은 **pending**입니다. 전체 gate 통과 전까지 activation-blocked / ready=false를 유지합니다.
 
 Qwen은 `reasoning_effort: "none"`과 `chat_template_kwargs: { enable_thinking: false }`를 고정 전송합니다. 옵션이나 reasoning 필드 부재만으로 reasoning-off를 입증하지 않습니다. Gateway host에서 **probe `--mode verify --receipt`만** 18개 clean completion과 실제 template/model/build 증거를 통과한 후 receipt를 atomic rename으로 발급합니다. 최대 유효 기간은 24시간이며 재시작 또는 model/build/template/prompt/schema/settings 변경 후 재검증해야 합니다. 매 승격 시 제한된 metadata 검증도 필요합니다. [정확한 검증/rollback 절차](docs/deployment.md#모델-활성화-preflight-gateway-host에서만)를 따르세요.
 
