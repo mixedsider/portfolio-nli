@@ -52,13 +52,22 @@ export function quantitiesSupported(claim, evidence) {
 }
 
 function parseQuantities(value) {
+  const ranges = [];
+  // Only standalone or explicitly temporal YYYY.MM ~ YYYY.MM ranges are dates.
+  // Preserve newlines here: following prose is not a unit, but "2025.11 ms" is.
+  const dated = (typeof value === "string" ? value.normalize("NFKC").toLowerCase().trim() : "").replace(
+    /(?<![\p{L}\p{N}_.,]|[+\p{Pd}−]\s*)\d{4}\.(?:0[1-9]|1[0-2])\s*~\s*\d{4}\.(?:0[1-9]|1[0-2])(?=$|[\r\n;!?。)\]]|[.,](?:\s|$)|[ \t]+기간(?:에|에는|은|동안)?(?=\s|$|[.,;!?。]))/gu,
+    (range) => {
+      ranges.push({ valid: true, number: range.replace(/\s+/gu, ""), unit: "calendar-month-range" });
+      return " ";
+    });
   // Exempt whole technical identifiers, never all digits adjacent to letters/signs.
-  const text = normalizeObligationText(value).replace(
+  const text = normalizeObligationText(dated).replace(
     /(?<![a-z0-9_])(?:p(?:50|90|95|99)|n\+1|1\+n)(?![a-z0-9_%٪‰‱/]|[.+−-]\d)/gu, " ");
   // Scan maximal numeric-looking atoms first. Invalid atoms remain failed obligations
   // instead of disappearing or being retried as unsigned/numeric substrings.
   const quantities = text.matchAll(/((?:[+\p{Pd}−]\s*)*\.*\p{N}[\p{N}.,]*)(\s*(?:[a-zμ%٪‰‱][a-zμ0-9%٪‰‱/]*|\/\s*[a-zμ0-9%٪‰‱/]*|[가-힣]+)(?:\s*\/\s*[a-zμ0-9%٪‰‱/]+)*)?/gu);
-  return [...quantities].map((match) => {
+  return ranges.concat([...quantities].map((match) => {
     let number = match[1].replace(/\s+/gu, "");
     let unit = (match[2] || "").replace(/\s+/gu, "").replace(/(?:에서|부터|까지|으로|로|의|은|는|을|를)$/u, "");
     // A single sentence/list delimiter is punctuation, not a decimal/group separator.
@@ -69,7 +78,7 @@ function parseQuantities(value) {
     const valid = /^[+−-]?(?:(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|\.\d+)$/u.test(number) &&
       /^(?:[%٪‰‱]|[a-zμ]+(?:\/[a-zμ]+)?|\/[a-zμ]+|[가-힣]+)?$/u.test(unit);
     return { valid, number, unit };
-  });
+  }));
 }
 
 function splitAttributedClauses(answer, projects) {
