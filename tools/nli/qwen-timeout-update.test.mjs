@@ -52,7 +52,7 @@ test("verification and generation share one 16s deadline, smaller stage budgets 
       h.dependencies.lfmClient = async () => { h.setTime(3500); return inspected("lfm", partial()); };
       h.dependencies.verifier.verify = async (options) => {
         assert.equal(options.deadlineAt, expectedDeadline);
-        assert.equal(options.budgetMs, 1000);
+        assert.equal(options.budgetMs, expectedDeadline - 3500);
         h.setTime(4400);
         return { ok: true, returnedModelId: "fixture-qwen" };
       };

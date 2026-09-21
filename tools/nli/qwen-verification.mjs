@@ -29,7 +29,7 @@ export function createQwenVerifier(settings, cascadeConfig, dependencies = {}) {
       const counters = { metadataCalls: 0, inferenceCalls: 0 };
       const fail = (detail) => ({ ok: false, reason: "qwen_unverified", detail, elapsedMs: Math.max(0, now() - started), ...counters });
       if (!enabled || invalidated) return fail(!enabled ? "disabled" : "invalidated");
-      const budgetMs = Math.min(1000, inputs.settings.timeoutMs, options.budgetMs ?? 1000);
+      const budgetMs = Math.min(inputs.settings.timeoutMs, options.budgetMs ?? inputs.settings.timeoutMs);
       if (!Number.isFinite(budgetMs) || budgetMs <= 0 || (options.deadlineAt !== undefined && !Number.isFinite(options.deadlineAt))) return fail("timeout");
       try {
         return await withVerificationBudget({ ...options, now, budgetMs }, async (scope) => {

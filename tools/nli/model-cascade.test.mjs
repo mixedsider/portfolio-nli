@@ -68,7 +68,7 @@ test("disabled or false gate prevents Qwen; verifier busy/abort stays terminal",
   }
 });
 
-test("1999 skips and 2000 allows Qwen; reserve subtracted once, metadata consumes original deadline", async () => {
+test("1999 skips and 2000 allows Qwen; metadata and generation share the Qwen deadline", async () => {
   for (const budget of [1999, 2000, 8000]) {
     const h = harness();
     h.dependencies.verifier.verify = async (options) => {
@@ -83,18 +83,18 @@ test("1999 skips and 2000 allows Qwen; reserve subtracted once, metadata consume
       assert.equal(h.calls.verify.length + h.calls.qwen.length, 0);
     } else {
       assert.equal(h.calls.verify[0].deadlineAt, budget);
-      assert.equal(h.calls.verify[0].budgetMs, 1000);
+      assert.equal(h.calls.verify[0].budgetMs, budget);
       assert.equal(h.calls.qwen[0][3].deadlineAt, budget);
       assert.equal(h.calls.qwen[0][3].budgetMs, budget - 900);
     }
   }
 });
 
-test("metadata exhaustion never resets Qwen deadline or permits a second call", async () => {
+test("metadata exhaustion at the Qwen deadline never permits generation", async () => {
   const h = harness();
-  h.dependencies.verifier.verify = async () => { h.setTime(1001); return { ok: true, returnedModelId: "fixture-qwen" }; };
+  h.dependencies.verifier.verify = async () => { h.setTime(12000); return { ok: true, returnedModelId: "fixture-qwen" }; };
   const result = await createModelCascade(config, h.dependencies).resolve(request());
-  assert.equal(result.reason, "qwen_unverified");
+  assert.equal(result.reason, "deadline_exhausted");
   assert.equal(h.calls.qwen.length, 0);
 });
 

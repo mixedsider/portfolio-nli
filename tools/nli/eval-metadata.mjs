@@ -11,7 +11,7 @@ import { requestProbeJson } from "./probe-http.mjs";
 // Read-only template rendering/tokenization: never generation, settings mutation or model loading.
 export async function inspectPromptSizes(config, context, cases, request = requestProbeJson) {
   const origin = new URL(config.model.baseUrl).origin;
-  const options = { timeoutMs: 1000, maxResponseBytes: 262144 };
+  const options = { timeoutMs: config.model.timeoutMs, maxResponseBytes: 262144 };
   const props = await request(`${origin}/props`, options);
   const rows = [];
   for (const item of cases) {

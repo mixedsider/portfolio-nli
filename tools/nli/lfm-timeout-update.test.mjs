@@ -70,7 +70,7 @@ test("Qwen includes metadata in its 16s cap after 5.5s LFM and rejects late resp
       h.dependencies.lfmClient = async () => { h.setTime(5500); return inspected("lfm", partial()); };
       h.dependencies.verifier.verify = async (options) => {
         assert.equal(options.deadlineAt, expectedDeadline);
-        assert.equal(options.budgetMs, 1000);
+        assert.equal(options.budgetMs, expectedDeadline - 5500);
         h.setTime(6400);
         return { ok: true, returnedModelId: "fixture-qwen" };
       };

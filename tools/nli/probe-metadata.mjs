@@ -8,7 +8,8 @@ export function probeSha256(value) {
 export async function collectProbeMetadata(endpoint, settings, payload, dependencies = {}) {
   const request = dependencies.request || requestProbeJson;
   const origin = new URL(settings.baseUrl).origin;
-  const options = { timeoutMs: Math.min(settings.timeoutMs, 1000), maxResponseBytes: settings.maxResponseBytes };
+  const timeoutMs = endpoint === "qwen" ? settings.timeoutMs : Math.min(settings.timeoutMs, 1000);
+  const options = { timeoutMs, maxResponseBytes: settings.maxResponseBytes };
   const describe = ({ ok, kind, status, bytes, elapsedMs }) => ({ ok, kind, status, bytes, elapsedMs });
   if (endpoint === "lfm") {
     const response = await request(`${origin}/api/v0/models`, options);

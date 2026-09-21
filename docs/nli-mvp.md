@@ -71,9 +71,9 @@ node tools/nli-gateway.mjs
 - `NLI_HOST`: `127.0.0.1`
 - `NLI_PORT`: `8787`
 - `LM_STUDIO_BASE_URL`: `http://192.168.0.57:1234/v1`
-- `LM_STUDIO_MODEL`: `qwen/qwen3.5-9b`
+- `LM_STUDIO_MODEL`: `Qwen3.8-27B-UD-Q4_K_M`
 - `reasoning_effort`: Gateway 고정값 `none` (환경 변수 없음; 모델 또는 LM Studio 버전을 변경하면 direct strict JSON probe를 다시 실행)
-- `LM_STUDIO_TIMEOUT_MS`: `8000`
+- `LM_STUDIO_TIMEOUT_MS`: `16000` (운영 환경에서 더 작은 값으로 override 가능)
 - `NLI_MAX_REQUEST_BYTES`: `16384`
 - `NLI_MAX_MESSAGE_LENGTH`: `500`
 - `NLI_RATE_LIMIT_WINDOW_MS`: `60000`
@@ -81,11 +81,11 @@ node tools/nli-gateway.mjs
 - `NLI_RATE_LIMIT_MAX_BUCKETS`: `10000`
 - `NLI_REQUEST_TIMEOUT_MS`: `15000`
 - `NLI_ALLOWED_ORIGINS`: production에서는 정확한 포트폴리오 origin 목록
-- `LM_STUDIO_MAX_TOKENS`: `256`
+- `LM_STUDIO_MAX_TOKENS`: `768`
 - `LM_STUDIO_MAX_RESPONSE_BYTES`: `65536`
 - `LM_STUDIO_MAX_CONCURRENT_REQUESTS`: `4`
 
-운영 모델 선택은 경험적 검증 결과입니다. 기본 Qwen은 8초 제한에서 이동·용어·카테고리·후속 질문의 네 동작 매트릭스를 완료했기 때문에 사용합니다. `LM_STUDIO_BASE_URL`과 `LM_STUDIO_MODEL` 환경 변수로 Gemma를 포함한 다른 모델을 선택할 수 있지만, Gemma는 같은 매트릭스를 8초 안에 완료하지 못했습니다. 이 경우 Gateway는 검증된 안전한 fallback으로 처리하며, 이 결과는 성능 보장이 아닙니다.
+운영 모델 선택은 경험적 검증 결과입니다. Qwen metadata proof와 inference는 `LM_STUDIO_TIMEOUT_MS`의 단일 stage deadline을 공유하고 caller/application deadline을 넘지 않습니다. `LM_STUDIO_BASE_URL`, `LM_STUDIO_MODEL`, timeout을 변경하면 현재 설정으로 fresh bound verification을 수행해야 합니다. 검증 실패 시 Gateway는 검증된 안전한 fallback으로 처리하며, 이 제한은 성능 보장이 아닙니다.
 
 예시 값은 `.env.example`에도 정리되어 있습니다.
 
