@@ -25,6 +25,8 @@ test("deployment checkpoints the verified process before a non-destructive envir
   assert.doesNotMatch(deployScript, /wait_for_pm2_nli_listener_identity\(\)/);
   assert.doesNotMatch(deployScript, /gateway_pm2_pid\(\)/);
   assert.doesNotMatch(deployScript, /match\(\$0,/);
+  assert.doesNotMatch(deployScript, /command -v pm2[^\n]*snapshot\.json/);
+  assert.match(deployScript, /export SYSTEMCTL_BIN="\$\(command -v systemctl \|\| true\)"/);
 
   const snapshotIndex = deployScript.indexOf('lifecycle.mjs" snapshot');
   const checkoutIndex = deployScript.indexOf('git checkout --detach "${DEPLOY_SHA}"');
@@ -35,11 +37,30 @@ test("deployment checkpoints the verified process before a non-destructive envir
   assert.ok(deployScript.indexOf('lifecycle.mjs" preflight "${DEPLOY_SHA}"') > listenerCheckIndex);
   assert.doesNotMatch(deployScript, /pm2 delete/);
   const lifecycle = extractWorkflowLifecycle(workflow);
-  assert.match(lifecycle, /\["restart", state\.name, "--update-env"\]/);
+  assert.match(lifecycle, /manager = \{ type: "pm2", bin, name, existed: true \}/);
+  assert.match(lifecycle, /manager = systemdManagerFor\(pid, systemctlBin\)/);
+  assert.match(lifecycle, /if \(systemdManagers\.length\) fail\("snapshot_manager_conflict"\)/);
+  assert.match(lifecycle, /JSON\.stringify\(\{ env, rawEnv, manager, receipt, hadReceipt \}\)/);
+  assert.match(lifecycle, /\["restart", state\.manager\.name, "--update-env"\]/);
   assert.match(lifecycle, /const env = \{ \.\.\.state\.env, GIT_COMMIT_SHA: revision \}/);
+  assert.match(lifecycle, /sameApplicationEnv\(state\.rawEnv, actualRaw\)/);
+  assert.match(lifecycle, /sameApplicationEnv\(state\.env, actual\)/);
+  assert.match(lifecycle, /readFileSync\(`\/proc\/\$\{pid\}\/status`, "utf8"\)/);
+  assert.match(lifecycle, /const runtimeDir = `\/run\/user\/\$\{uid\}`/);
+  assert.match(lifecycle, /manager\.uid !== deploymentUid/);
+  assert.match(lifecycle, /!info\.isFile\(\) \|\| !trustedOwner\(info\) \|\| \(info\.mode & 0o022\)/);
+  assert.match(lifecycle, /info\.uid === 0 && Boolean\(info\.mode & 0o1000\)/);
+  assert.match(lifecycle, /const env = \{ PATH: managerPath, LANG: "C", LC_ALL: "C" \}/);
+  assert.doesNotMatch(lifecycle, /systemdCommandEnv|managerCommandEnv\([^)]*state\.env|managerCommandEnv\([^)]*rawEnv/);
   assert.match(lifecycle, /tools\/nli\/eval-bound-probe\.mjs/);
   assert.doesNotMatch(lifecycle, /tools\/nli-model-probe\.mjs/);
-  assert.match(lifecycle, /run\("systemctl", \["--user", "restart", state\.name \+ "\.service"\], state\.env\)/);
+  assert.match(lifecycle, /validSystemdManager\(state\.manager, process\.env\.GATEWAY_PID\)/);
+  assert.match(lifecycle,
+    /const commandEnv = managerCommandEnv\(state\.manager\);\s+if \(!commandEnv\) fail\(\);\s+run\(state\.manager\.bin, systemdArgs\(state\.manager\.scope, \["restart", state\.manager\.unit\]\),\s+commandEnv\)/);
+  assert.doesNotMatch(lifecycle,
+    /run\(state\.manager\.bin, systemdArgs\(state\.manager\.scope, \["restart", state\.manager\.unit\]\),\s+managerCommandEnv\(/);
+  assert.doesNotMatch(lifecycle, /spawnSync\("systemctl"|run\("systemctl"/);
+  assert.doesNotMatch(lifecycle, /state\.name \+ "\.service"|if \(state\.bin\)/);
 });
 
 test("rollback restores the pre-restart receipt and captured environment with the previous revision", () => {
@@ -59,6 +80,7 @@ test("rollback restores the pre-restart receipt and captured environment with th
   assert.doesNotMatch(rollbackScript, /wait_for_pm2_nli_listener_identity\(\)/);
   assert.doesNotMatch(rollbackScript, /gateway_pm2_pid\(\)/);
   assert.doesNotMatch(rollbackScript, /match\(\$0,/);
+  assert.doesNotMatch(rollbackScript, /command -v pm2[^\n]*snapshot\.json/);
   assert.match(rollbackScript, /snapshot\.json" \] \|\| exit 0/);
   assert.doesNotMatch(rollbackScript, /pm2 delete/);
   const restoreIndex = rollbackScript.indexOf('lifecycle.mjs" restore');
