@@ -93,10 +93,9 @@ export function createModelCascade(config, { context, lfmClient, qwenClient, ver
       qwenEnabled: settings.cascade.qwenEnabled, qwenVerified: !invalidated, remainingStageMs, admissionAvailable: available });
     emit("escalation", "qwen", eligibility.reason);
     if (!eligibility.allow) return fallback(eligibility.reason === "admission_unavailable" ? "busy" : eligibility.reason);
-    const metadataDeadline = Math.min(qwenDeadline, now() + 1000);
     const checked = await runCascadeOperation((stageSignal) => verifier.verify({ signal: stageSignal,
-      deadlineAt: qwenDeadline, budgetMs: metadataDeadline - now()
-    }), { signal, deadlineAt: metadataDeadline, now });
+      deadlineAt: qwenDeadline, budgetMs: qwenDeadline - now()
+    }), { signal, deadlineAt: qwenDeadline, now });
     if (terminal()) return finish("upstream_error", terminal());
     const gate = checked.value;
     if (checked.failure === "aborted" || ["aborted", "busy"].includes(gate?.detail)) return fallback(checked.failure ?? gate.detail);
