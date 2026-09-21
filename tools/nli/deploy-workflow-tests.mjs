@@ -45,12 +45,23 @@ export function registerWorkflowLifecycleTests(workflow, root) {
         assert.equal(Object.hasOwn(snapshot.env, "h1"), false);
 
         await rm(snapshotFile);
+        const invalidPathState = await f.manager.state();
+        invalidPathState.pm2_env.pm_cwd = join(f.app, "fake-private-sentinel");
+        await f.manager.setState(invalidPathState);
+        const invalidPathResult = await invoke();
+        assertRedacted(invalidPathResult);
+        assert.equal(invalidPathResult.code, 1, "unexpected PM2 registration errors must fail closed");
+        assert.match(invalidPathResult.stderr, /reason=snapshot_pm2_entry/);
+        await assert.rejects(access(snapshotFile), { code: "ENOENT" });
+
         const driftState = await f.manager.state();
+        driftState.pm2_env.pm_cwd = f.app;
         driftState.pm2_env.env.GIT_COMMIT_SHA = "registered-only";
         await f.manager.setState(driftState);
         const driftResult = await invoke();
         assertRedacted(driftResult);
         assert.equal(driftResult.code, 1, "registered user environment drift must still fail closed");
+        assert.match(driftResult.stderr, /reason=snapshot_environment_drift/);
         await assert.rejects(access(snapshotFile), { code: "ENOENT" });
       } finally {
         assert.deepEqual(await f.close(), { listening: false, activeChildren: 0 });
@@ -70,6 +81,10 @@ export function registerWorkflowLifecycleTests(workflow, root) {
             env: { ...f.ssh, GATEWAY_PID: String((await f.manager.state())?.pid ?? "") } });
           assertRedacted(result);
           assert.equal(result.code, expected, `${scenario}/${action}`);
+          if (expected === 1 && action !== "snapshot") {
+            assert.equal(result.stderr.trim(),
+              "Gateway lifecycle/preflight failed; private host checkpoint retained until cleanup.");
+          }
         }
         try {
           await writeFile(helper, lifecycle);

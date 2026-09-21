@@ -69,6 +69,20 @@ test("rollback restores the pre-restart receipt and captured environment with th
   assert.match(workflow, /name: Remove private host lifecycle snapshot\n\s+if: \$\{\{ always\(\) && steps\.previous\.outputs\.sha != '' \}\}/);
 });
 
+test("manual snapshot diagnostics stop before lifecycle mutation", () => {
+  assert.match(workflow, /workflow_dispatch:\n\s+inputs:\n\s+snapshot_only:/);
+  assert.match(workflow, /NLI_SNAPSHOT_ONLY: \$\{\{ inputs\.snapshot_only && 'true' \|\| 'false' \}\}/);
+  assert.match(deployScript, /GATEWAY_PID="\$\(nli_listener_pids\)" node "\$\{PREFLIGHT_DIR\}\/lifecycle\.mjs" snapshot\nif \[ "\$\{SNAPSHOT_ONLY\}" = "true" \]; then\n\s+echo "Snapshot diagnostic completed without lifecycle mutation\."\n\s+exit 0\nfi\ngit fetch/);
+  for (const step of [
+    "Process health and revision check (not model readiness)",
+    "Run live NLI functional tests",
+    "Run live NLI adversarial tests"
+  ]) {
+    assert.match(workflow, new RegExp(`name: ${step.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\n\\s+if: \\$\\{\\{ env\\.NLI_SNAPSHOT_ONLY != 'true' \\}\\}`));
+  }
+  assert.match(workflow, /name: Roll back failed deployment\n\s+if: \$\{\{ failure\(\) && env\.NLI_SNAPSHOT_ONLY != 'true' && steps\.previous\.outputs\.sha != '' \}\}/);
+});
+
 registerWorkflowLifecycleTests(workflow, root);
 registerFirstUpgradeTests(workflow, root);
 registerWorkflowDiagnosticTests(workflow);
