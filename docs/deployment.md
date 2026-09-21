@@ -253,7 +253,7 @@ pm2 save
 
 PM2 등록이 아예 없고 listener도 없을 때만 bootstrap으로 분류합니다. 이 경우 보존할 prior service env는 없으므로 SSH 환경 + 현재 `.env`로 초기 checkpoint를 만들고 `pm2 start`합니다. bootstrap 실패 rollback도 그 **동일한 초기 환경**과 prior code/revision으로 재기동합니다. 기존 user-systemd service는 계속 해당 unit으로 restart하며 unit/manager 환경은 변경하지 않습니다. systemd는 기존 revision 공급 방식이 health의 target revision 검사까지 만족해야 하며, 맞지 않으면 성공으로 간주하지 않습니다.
 
-preflight는 새 PID의 실제 환경과 checkpoint receipt 경로가 같은지 확인한 뒤 bound probes/eval을 실행합니다. 기존 SSH 사용자에게 서비스 환경 읽기 권한이 없으면 실패하며 sudo/새 credential로 우회하지 않습니다. PM2 및 자식 명령 stdout/stderr에는 환경 값이 있을 수 있어 CI로 전달하지 않고 실패 시 고정 오류 문구만 출력합니다. snapshot/receipt 백업은 로그/git/Actions artifact에 넣지 않습니다. `set -e` 안의 preflight 실패는 이후 success-only 단계를 막고 기존 `failure() && previous.sha` rollback으로 연결됩니다. checkout 전 snapshot 실패라면 code/service를 변경하지 않았으므로 rollback도 재시작하지 않습니다.
+preflight는 새 PID의 실제 환경과 checkpoint receipt 경로가 같은지 확인한 뒤 bound probes/eval을 실행합니다. 기존 SSH 사용자에게 서비스 환경 읽기 권한이 없으면 실패하며 sudo/새 credential로 우회하지 않습니다. PM2 및 자식 명령 stdout/stderr에는 환경 값이 있을 수 있어 CI로 전달하지 않습니다. snapshot 실패는 값이나 raw 오류 대신 allowlist의 고정 `reason=<code>`만 generic 오류 문구에 추가하고, 이후 lifecycle 실패는 기존 고정 문구만 출력합니다. snapshot/receipt 백업은 로그/git/Actions artifact에 넣지 않습니다. `set -e` 안의 preflight 실패는 이후 success-only 단계를 막고 기존 `failure() && previous.sha` rollback으로 연결됩니다. checkout 전 snapshot 실패라면 code/service를 변경하지 않았으므로 rollback도 재시작하지 않습니다.
 
 배포/rollback의 모든 listener 불일치 진단은 PID와 고정 사유만 출력합니다. `/proc/<pid>/cmdline`은 identity 판정에만 사용하며 raw argv, 실제 cwd 또는 command-line credential을 로그로 보내지 않습니다. 실제 프로세스를 조사하지 않는 fake `/proc` sentinel 회귀 테스트로 이 경계를 유지합니다.
 

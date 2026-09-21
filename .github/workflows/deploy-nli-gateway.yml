@@ -267,7 +267,12 @@ jobs:
           const action = process.argv[2];
           const revision = process.argv[3];
           const snapshotPath = dir + "/snapshot.json";
-          function fail() { throw new Error("lifecycle_failed"); }
+          let checkpoint = "initialization";
+          class LifecycleFailure extends Error {
+            constructor(reason) { super("lifecycle_failed"); this.reason = reason; }
+          }
+          function mark(reason) { checkpoint = reason; }
+          function fail(reason) { throw new LifecycleFailure(reason); }
           function run(command, args, env) {
             const child = spawnSync(command, args, { env, encoding: "utf8", timeout: 900000, maxBuffer: 16777216 });
             // PM2/child output can contain environment values; never relay it.
@@ -299,34 +304,43 @@ jobs:
           }
           try {
             if (action === "snapshot") {
+              mark("snapshot_pm2_binary");
               const bin = process.env.PM2_BIN ? realpathSync(process.env.PM2_BIN) : null;
               const name = process.env.PROCESS_NAME;
+              mark("snapshot_pm2_entry");
               const prior = bin ? entryFor(bin, name, process.env) : null;
               const pid = process.env.GATEWAY_PID;
               let env;
               if (prior) {
-                if (String(prior.pid) !== pid || prior.pm2_env.status !== "online") fail();
+                if (String(prior.pid) !== pid || prior.pm2_env.status !== "online") fail("snapshot_pm2_identity");
+                mark("snapshot_process_environment");
                 const actual = processEnv(pid);
                 // Preserve string-valued process variables, not PM2's internal
                 // metadata objects or mutable bookkeeping masquerading as env.
+                mark("snapshot_registered_environment");
                 env = Object.fromEntries(Object.entries(prior.pm2_env.env)
                   .filter(([, value]) => typeof value === "string"));
                 for (const key of Object.keys(env)) {
-                  if (actual[key] !== env[key]) fail();
+                  if (actual[key] !== env[key]) fail("snapshot_environment_drift");
                 }
-                if (!env.PM2_HOME || env.PM2_HOME !== actual.PM2_HOME) fail();
+                if (!env.PM2_HOME || env.PM2_HOME !== actual.PM2_HOME) fail("snapshot_pm2_home");
               } else if (bin) {
-                if (pid) fail(); // no registration + occupied port is not bootstrap
+                if (pid) fail("snapshot_unregistered_listener"); // no registration + occupied port is not bootstrap
                 env = { ...process.env, PM2_HOME: process.env.PM2_HOME || resolve(process.env.HOME, ".pm2") };
                 for (const key of ["PREFLIGHT_DIR", "PREFLIGHT_ID", "PM2_BIN", "GATEWAY_PID", "DEPLOY_SHA"]) delete env[key];
-              } else env = processEnv(pid); // existing user-systemd service
+              } else {
+                mark("snapshot_process_environment");
+                env = processEnv(pid); // existing user-systemd service
+              }
+              mark("snapshot_configuration");
               const config = await configFor(env);
-              if (!config.allowedOrigins.size || config.allowedOrigins.has("*")) fail();
+              if (!config.allowedOrigins.size || config.allowedOrigins.has("*")) fail("snapshot_allowed_origins");
               const receiptSetting = config.cascade?.qwenVerificationFile ??
                 (env.NLI_QWEN_VERIFICATION_FILE || ".nli/qwen-no-thinking.json");
-              if (typeof receiptSetting !== "string" || !receiptSetting.trim()) fail();
+              if (typeof receiptSetting !== "string" || !receiptSetting.trim()) fail("snapshot_receipt_setting");
               const receipt = resolve(app, receiptSetting);
               const hadReceipt = existsSync(receipt);
+              mark("snapshot_write");
               if (hadReceipt) copyFileSync(receipt, dir + "/previous-receipt.json");
               writeFileSync(snapshotPath, JSON.stringify({ env, bin, name, existed: Boolean(prior), receipt, hadReceipt }),
                 { flag: "wx", mode: 0o600 });
@@ -374,8 +388,10 @@ jobs:
                 } else rmSync(state.receipt, { force: true });
               } else fail();
             }
-          } catch {
-            console.error("Gateway lifecycle/preflight failed; private host checkpoint retained until cleanup.");
+          } catch (error) {
+            const reason = error instanceof LifecycleFailure && error.reason ? error.reason : checkpoint;
+            const suffix = action === "snapshot" ? ` (reason=${reason})` : "";
+            console.error(`Gateway lifecycle/preflight failed${suffix}; private host checkpoint retained until cleanup.`);
             process.exitCode = 1;
           }
           LIFECYCLE
