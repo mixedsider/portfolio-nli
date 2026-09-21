@@ -197,14 +197,17 @@ test("bounded HTTP covers status, redirect, malformed body, limit, disconnect an
   }
 });
 
-test("mode selection cannot turn semantic failure into plain fallback", () => {
+test("mode selection keeps schema qualification independent from plain fallback", () => {
   assert.equal(selectProbeMode([], 6), null);
-  const rows = ["json_schema", "plain"].flatMap((outputMode) => cases.map((item) => ({ caseId: item.id, outputMode, ok: true })));
-  assert.equal(selectProbeMode(rows, 6), "json_schema");
-  rows[0].ok = false;
-  assert.equal(selectProbeMode(rows, 6), null);
-  rows[0].schemaUnsupported = true;
-  assert.equal(selectProbeMode(rows, 6), "plain");
+  const rows = (outputMode, ok, extra = {}) => cases.map((item) => ({ caseId: item.id, outputMode, ok, ...extra }));
+  const schemaPasses = rows("json_schema", true);
+  const plainPasses = rows("plain", true);
+  const plainFails = rows("plain", false);
+  const schemaSemanticFailure = schemaPasses.map((row, index) => index === 0 ? { ...row, ok: false } : row);
+  const schemaUnsupported = schemaSemanticFailure.map((row, index) => index === 0 ? { ...row, schemaUnsupported: true } : row);
+  assert.equal(selectProbeMode([...schemaPasses, ...plainFails], 6), "json_schema");
+  assert.equal(selectProbeMode([...schemaSemanticFailure, ...plainPasses], 6), null);
+  assert.equal(selectProbeMode([...schemaUnsupported, ...plainPasses], 6), "plain");
 });
 
 test("runner fake baseline covers both modes without granting Qwen verification", async (t) => {
