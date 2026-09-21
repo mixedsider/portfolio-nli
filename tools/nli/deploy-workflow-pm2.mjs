@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 export async function createFakePm2(app, initialEnv, bootstrap) {
   let child = null;
+  let cold = bootstrap;
   const calls = [];
   const children = [];
   const sockets = new Set();
@@ -45,7 +46,11 @@ export async function createFakePm2(app, initialEnv, bootstrap) {
   async function handle({ args, env }) {
     const action = args[0];
     const current = await state();
-    if (action === "jlist") return { code: 0, output: JSON.stringify(current ? [current] : []) };
+    if (action === "jlist") {
+      const banner = cold ? "[PM2] Spawning PM2 daemon\n[PM2] PM2 Successfully daemonized\n" : "";
+      cold = false;
+      return { code: 0, output: banner + JSON.stringify(current ? [current] : []) };
+    }
     calls.push(action);
     if (action === "save") return { code: 0, output: "" };
     if (!["restart", "start"].includes(action)) return { code: 9, output: "" };
