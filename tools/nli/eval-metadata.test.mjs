@@ -22,8 +22,10 @@ test("tokenizer reports token count or explicit unavailable, never guessed count
   const f = await evalFixture();
   try {
     const calls = [];
-    const report = await inspectPromptSizes(f.config, f.context, ordinaryCases(f.cases), async (url) => {
+    const timeouts = [];
+    const report = await inspectPromptSizes(f.config, f.context, ordinaryCases(f.cases), async (url, options) => {
       calls.push(url);
+      timeouts.push(options.timeoutMs);
       return { ok: true, status: 200, data: url.endsWith("/props") ? { default_generation_settings: { n_ctx: 12345 } } :
         url.endsWith("/apply-template") ? { prompt: "fixture-render" } : { tokens: [10, 20, 30] } };
     });
@@ -31,5 +33,6 @@ test("tokenizer reports token count or explicit unavailable, never guessed count
     assert.ok(report.rows.every((row) => row.renderedPromptTokens === 3));
     assert.equal(calls.length, 13);
     assert.ok(calls.every((url) => !url.includes("chat/completions")));
+    assert.deepEqual(timeouts, Array(13).fill(f.config.model.timeoutMs));
   } finally { await f.close(); }
 });
