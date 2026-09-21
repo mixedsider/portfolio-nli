@@ -1,4 +1,4 @@
-// Issue #6: 6.5s LFM + 16s Qwen (including metadata) + 1s response reserve.
+// Issue #6: 6.5s LFM + one shared 16s Qwen metadata/inference stage + 1s response reserve.
 // HTTP body receipt has its own unchanged NLI_REQUEST_TIMEOUT_MS setting.
 export const LFM_TIMEOUT_MS = 6_500;
 export const QWEN_TIMEOUT_MS = 16_000;
