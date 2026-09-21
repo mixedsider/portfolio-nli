@@ -180,7 +180,7 @@ jobs:
 
             listener_cwd="$(readlink -f "/proc/${listener_pid}/cwd")"
             [ "${listener_cwd}" = "${APP_DIR}" ] || return 1
-            if command -v pm2 >/dev/null 2>&1 && [ -f "${APP_DIR}/.nli/preflight-${PREFLIGHT_ID:-}/snapshot.json" ]; then
+            if [ -f "${APP_DIR}/.nli/preflight-${PREFLIGHT_ID:-}/snapshot.json" ]; then
               GATEWAY_PID="${listener_pid}" node "${APP_DIR}/.nli/preflight-${PREFLIGHT_ID}/lifecycle.mjs" identity "${GIT_COMMIT_SHA}"
               return $?
             fi
@@ -257,16 +257,19 @@ jobs:
           export PREFLIGHT_DIR="${APP_DIR}/.nli/preflight-${PREFLIGHT_ID}"
           mkdir -m 700 "${PREFLIGHT_DIR}"
           export PM2_BIN="$(command -v pm2 || true)"
+          export SYSTEMCTL_BIN="$(command -v systemctl || true)"
           cat > "${PREFLIGHT_DIR}/lifecycle.mjs" <<'LIFECYCLE'
-          import { readFileSync, writeFileSync, copyFileSync, existsSync, renameSync, rmSync, realpathSync } from "node:fs";
+          import { accessSync, constants, lstatSync, readFileSync, writeFileSync, copyFileSync, existsSync, renameSync, rmSync, realpathSync } from "node:fs";
           import { spawnSync } from "node:child_process";
           import { pathToFileURL, fileURLToPath } from "node:url";
           import { dirname, resolve } from "node:path";
           const dir = dirname(fileURLToPath(import.meta.url));
-          const app = resolve(dir, "../..");
+          const app = realpathSync(resolve(dir, "../.."));
           const action = process.argv[2];
           const revision = process.argv[3];
           const snapshotPath = dir + "/snapshot.json";
+          const deploymentUid = process.geteuid();
+          const managerPath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
           let checkpoint = "initialization";
           class LifecycleFailure extends Error {
             constructor(reason) { super("lifecycle_failed"); this.reason = reason; }
@@ -285,6 +288,155 @@ jobs:
             return Object.fromEntries(readFileSync(`/proc/${pid}/environ`, "utf8").split("\0").filter(Boolean).map((entry) => {
               const at = entry.indexOf("="); return [entry.slice(0, at), entry.slice(at + 1)];
             }));
+          }
+          function processIdentity(pid) {
+            if (!/^\d+$/.test(String(pid)) || Number(pid) <= 0) return false;
+            try {
+              const cwd = realpathSync(`/proc/${pid}/cwd`);
+              const argv = readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0").filter(Boolean);
+              return cwd === realpathSync(app) && argv.length >= 2 && /(^|\/)node(js)?$/.test(argv[0]) &&
+                argv[1] === app + "/tools/nli-gateway.mjs";
+            } catch { return false; }
+          }
+          function safeSystemdUnit(unit) {
+            return typeof unit === "string" && /^[A-Za-z0-9][A-Za-z0-9_.@:\\-]*\.service$/.test(unit);
+          }
+          function processControlGroups(pid) {
+            try {
+              return [...new Set(readFileSync(`/proc/${pid}/cgroup`, "utf8").split("\n").filter(Boolean)
+                .map((line) => {
+                  const separator = line.indexOf(":", line.indexOf(":") + 1);
+                  return separator >= 0 ? line.slice(separator + 1) : "";
+                })
+                .filter((value) => value.startsWith("/") && !value.includes("\0")))];
+            } catch { return []; }
+          }
+          function systemdArgs(scope, args) { return scope === "user" ? ["--user", ...args] : args; }
+          function trustedOwner(info) { return info.uid === 0 || info.uid === deploymentUid; }
+          function safeExecutableAncestor(path) {
+            const info = lstatSync(path);
+            if (!info.isDirectory() || !trustedOwner(info)) return false;
+            const writable = info.mode & 0o022;
+            return !writable || (info.uid === 0 && Boolean(info.mode & 0o1000));
+          }
+          function safeSystemctlBinary(bin) {
+            try {
+              if (typeof bin !== "string" || !bin.startsWith("/") || realpathSync(bin) !== bin ||
+                  bin === app || bin.startsWith(app + "/")) return false;
+              const info = lstatSync(bin);
+              if (!info.isFile() || !trustedOwner(info) || (info.mode & 0o022)) return false;
+              accessSync(bin, constants.X_OK);
+              for (let ancestor = dirname(bin);; ancestor = dirname(ancestor)) {
+                if (!safeExecutableAncestor(ancestor)) return false;
+                if (ancestor === "/") break;
+              }
+              return true;
+            } catch { return false; }
+          }
+          function snapshotSystemctlBinary() {
+            if (!process.env.SYSTEMCTL_BIN) return null;
+            const bin = realpathSync(process.env.SYSTEMCTL_BIN);
+            if (!safeSystemctlBinary(bin)) fail("snapshot_systemctl_binary");
+            return bin;
+          }
+          function processUid(pid) {
+            try {
+              const match = readFileSync(`/proc/${pid}/status`, "utf8").match(/^Uid:\s+\d+\s+(\d+)\s/m);
+              return match ? Number(match[1]) : null;
+            } catch { return null; }
+          }
+          function userRuntimeIdentity(pid) {
+            const uid = processUid(pid);
+            if (!Number.isSafeInteger(uid) || uid < 0 || uid !== deploymentUid) return null;
+            const runtimeDir = `/run/user/${uid}`;
+            try {
+              const info = lstatSync(runtimeDir);
+              if (!info.isDirectory() || info.uid !== uid || (info.mode & 0o022)) return null;
+            } catch { return null; }
+            return { uid, runtimeDir, busAddress: `unix:path=${runtimeDir}/bus` };
+          }
+          function safeUserManager(manager) {
+            if (manager.scope !== "user") return true;
+            const expectedRuntime = `/run/user/${manager.uid}`;
+            if (!Number.isSafeInteger(manager.uid) || manager.uid !== deploymentUid ||
+                manager.runtimeDir !== expectedRuntime || manager.busAddress !== `unix:path=${expectedRuntime}/bus`) return false;
+            try {
+              const info = lstatSync(expectedRuntime);
+              return info.isDirectory() && info.uid === manager.uid && !(info.mode & 0o022);
+            } catch { return false; }
+          }
+          function managerCommandEnv(manager) {
+            const env = { PATH: managerPath, LANG: "C", LC_ALL: "C" };
+            if (manager.scope === "user") {
+              if (!safeUserManager(manager)) return null;
+              env.XDG_RUNTIME_DIR = manager.runtimeDir;
+              env.DBUS_SESSION_BUS_ADDRESS = manager.busAddress;
+            }
+            return env;
+          }
+          function systemdProperties(manager) {
+            const env = managerCommandEnv(manager);
+            if (!env) return null;
+            const child = spawnSync(manager.bin, systemdArgs(manager.scope, ["show",
+              "--property=Id,LoadState,ActiveState,SubState,MainPID,ControlGroup", manager.unit]),
+              { env, encoding: "utf8", timeout: 30000, maxBuffer: 1048576 });
+            if (child.error || child.signal || child.status !== 0) return null;
+            const lines = child.stdout.trimEnd().split("\n");
+            if (lines.length !== 6) return null;
+            const values = Object.fromEntries(lines.map((line) => {
+              const separator = line.indexOf("=");
+              return separator > 0 ? [line.slice(0, separator), line.slice(separator + 1)] : ["", ""];
+            }));
+            if (Object.keys(values).length !== 6) return null;
+            return { id: values.Id, load: values.LoadState, active: values.ActiveState, sub: values.SubState,
+              mainPid: values.MainPID, controlGroup: values.ControlGroup };
+          }
+          function safeSystemdManager(manager) {
+            return manager?.type === "systemd" && ["system", "user"].includes(manager.scope) &&
+              safeSystemctlBinary(manager.bin) && safeSystemdUnit(manager.unit) && typeof manager.controlGroup === "string" &&
+              manager.controlGroup.endsWith("/" + manager.unit) && !manager.controlGroup.includes("..") &&
+              safeUserManager(manager);
+          }
+          function validSystemdManager(manager, pid) {
+            if (!safeSystemdManager(manager) || !processIdentity(pid) ||
+                !processControlGroups(pid).includes(manager.controlGroup) ||
+                (manager.scope === "user" && processUid(pid) !== manager.uid)) return false;
+            const properties = systemdProperties(manager);
+            return properties?.id === manager.unit && properties.load === "loaded" && properties.active === "active" &&
+              properties.sub === "running" && properties.mainPid === String(pid) &&
+              properties.controlGroup === manager.controlGroup;
+          }
+          function systemdManagersFor(pid, bin) {
+            if (!bin || !processIdentity(pid)) return [];
+            const userIdentity = userRuntimeIdentity(pid);
+            const candidates = processControlGroups(pid).flatMap((controlGroup) => {
+              const unit = controlGroup.slice(controlGroup.lastIndexOf("/") + 1);
+              return safeSystemdUnit(unit) ? [{ unit, controlGroup }] : [];
+            });
+            const managers = candidates.flatMap(({ unit, controlGroup }) => ["system", "user"]
+              .map((scope) => scope === "user" && !userIdentity ? null :
+                ({ type: "systemd", scope, unit, controlGroup, bin,
+                  ...(scope === "user" ? userIdentity : {}) })))
+              .filter((manager) => manager && validSystemdManager(manager, pid));
+            return managers;
+          }
+          function systemdManagerFor(pid, bin) {
+            if (!processIdentity(pid)) fail("snapshot_listener_identity");
+            const managers = systemdManagersFor(pid, bin);
+            if (managers.length !== 1) fail("snapshot_systemd_owner");
+            return managers[0];
+          }
+          function applicationEnv(env) {
+            return Object.fromEntries(Object.entries(env).filter(([key]) => /^(NLI_|LFM_|LM_STUDIO_)/.test(key)));
+          }
+          function sameApplicationEnv(expected, actual) {
+            const expectedApplication = applicationEnv(expected);
+            const actualApplication = applicationEnv(actual);
+            const expectedKeys = Object.keys(expectedApplication).sort();
+            const actualKeys = Object.keys(actualApplication).sort();
+            return expectedKeys.length === actualKeys.length &&
+              expectedKeys.every((key, index) => key === actualKeys[index] &&
+                expectedApplication[key] === actualApplication[key]);
           }
           function entryFor(bin, name, env) {
             const output = pm2(bin, ["jlist"], env).trimEnd();
@@ -310,11 +462,17 @@ jobs:
               mark("snapshot_pm2_entry");
               const prior = bin ? entryFor(bin, name, process.env) : null;
               const pid = process.env.GATEWAY_PID;
-              let env;
+              let env, manager, rawEnv;
+              const listenerEnv = pid ? processEnv(pid) : null;
+              mark("snapshot_systemctl_binary");
+              const systemctlBin = pid ? snapshotSystemctlBinary() : null;
+              const systemdManagers = pid ? systemdManagersFor(pid, systemctlBin) : [];
               if (prior) {
                 if (String(prior.pid) !== pid || prior.pm2_env.status !== "online") fail("snapshot_pm2_identity");
+                if (systemdManagers.length) fail("snapshot_manager_conflict");
+                manager = { type: "pm2", bin, name, existed: true };
                 mark("snapshot_process_environment");
-                const actual = processEnv(pid);
+                const actual = listenerEnv;
                 // Preserve string-valued process variables, not PM2's internal
                 // metadata objects or mutable bookkeeping masquerading as env.
                 mark("snapshot_registered_environment");
@@ -324,14 +482,17 @@ jobs:
                   if (actual[key] !== env[key]) fail("snapshot_environment_drift");
                 }
                 if (!env.PM2_HOME || env.PM2_HOME !== actual.PM2_HOME) fail("snapshot_pm2_home");
-              } else if (bin) {
-                if (pid) fail("snapshot_unregistered_listener"); // no registration + occupied port is not bootstrap
-                env = { ...process.env, PM2_HOME: process.env.PM2_HOME || resolve(process.env.HOME, ".pm2") };
-                for (const key of ["PREFLIGHT_DIR", "PREFLIGHT_ID", "PM2_BIN", "GATEWAY_PID", "DEPLOY_SHA"]) delete env[key];
-              } else {
+              } else if (pid) {
+                mark("snapshot_systemd_owner");
+                manager = systemdManagerFor(pid, systemctlBin);
                 mark("snapshot_process_environment");
-                env = processEnv(pid); // existing user-systemd service
-              }
+                rawEnv = listenerEnv;
+                env = { ...rawEnv };
+              } else if (bin) {
+                manager = { type: "pm2", bin, name, existed: false };
+                env = { ...process.env, PM2_HOME: process.env.PM2_HOME || resolve(process.env.HOME, ".pm2") };
+                for (const key of ["PREFLIGHT_DIR", "PREFLIGHT_ID", "PM2_BIN", "SYSTEMCTL_BIN", "GATEWAY_PID", "DEPLOY_SHA"]) delete env[key];
+              } else fail("snapshot_manager_missing");
               mark("snapshot_configuration");
               const config = await configFor(env);
               if (!config.allowedOrigins.size || config.allowedOrigins.has("*")) fail("snapshot_allowed_origins");
@@ -342,35 +503,44 @@ jobs:
               const hadReceipt = existsSync(receipt);
               mark("snapshot_write");
               if (hadReceipt) copyFileSync(receipt, dir + "/previous-receipt.json");
-              writeFileSync(snapshotPath, JSON.stringify({ env, bin, name, existed: Boolean(prior), receipt, hadReceipt }),
+              writeFileSync(snapshotPath, JSON.stringify({ env, rawEnv, manager, receipt, hadReceipt }),
                 { flag: "wx", mode: 0o600 });
             } else {
               const state = JSON.parse(readFileSync(snapshotPath, "utf8"));
               const env = { ...state.env, GIT_COMMIT_SHA: revision };
               if (action === "restart") {
                 if (!/^[a-f0-9]{40}$/.test(revision)) fail();
-                if (state.bin) {
-                  const entry = entryFor(state.bin, state.name, env);
-                  if (state.existed && !entry) fail(); // never silently replace a lost registration
-                  pm2(state.bin, entry ? ["restart", state.name, "--update-env"] :
-                    ["start", app + "/tools/nli-gateway.mjs", "--name", state.name, "--cwd", app], env);
-                  pm2(state.bin, ["save"], env);
-                } else run("systemctl", ["--user", "restart", state.name + ".service"], state.env);
+                if (state.manager?.type === "pm2") {
+                  const entry = entryFor(state.manager.bin, state.manager.name, env);
+                  if (state.manager.existed && !entry) fail(); // never silently replace a lost registration
+                  pm2(state.manager.bin, entry ? ["restart", state.manager.name, "--update-env"] :
+                    ["start", app + "/tools/nli-gateway.mjs", "--name", state.manager.name, "--cwd", app], env);
+                  pm2(state.manager.bin, ["save"], env);
+                } else if (safeSystemdManager(state.manager)) {
+                  const commandEnv = managerCommandEnv(state.manager);
+                  if (!commandEnv) fail();
+                  run(state.manager.bin, systemdArgs(state.manager.scope, ["restart", state.manager.unit]),
+                    commandEnv);
+                } else fail();
               } else if (action === "identity" || action === "preflight") {
-                const actual = processEnv(process.env.GATEWAY_PID);
-                if (state.bin) {
-                  const entry = entryFor(state.bin, state.name, env);
+                const actualRaw = processEnv(process.env.GATEWAY_PID);
+                let actual = actualRaw;
+                let config;
+                if (state.manager?.type === "pm2") {
+                  const entry = entryFor(state.manager.bin, state.manager.name, env);
                   if (!entry || String(entry.pid) !== process.env.GATEWAY_PID) fail();
                   for (const [key, value] of Object.entries(env)) {
-                    if (actual[key] !== value || entry.pm2_env.env[key] !== value) fail();
+                    if (actualRaw[key] !== value || entry.pm2_env.env[key] !== value) fail();
                   }
-                } else {
-                  for (const [key, value] of Object.entries(state.env)) {
-                    if (/^(NLI_|LFM_|LM_STUDIO_)/.test(key) && actual[key] && actual[key] !== value) fail();
-                  }
-                }
+                } else if (state.manager?.type === "systemd") {
+                  if (!validSystemdManager(state.manager, process.env.GATEWAY_PID) ||
+                      !state.rawEnv || !sameApplicationEnv(state.rawEnv, actualRaw)) fail();
+                  actual = { ...actualRaw };
+                  config = await configFor(actual);
+                  if (!sameApplicationEnv(state.env, actual)) fail();
+                } else fail();
                 if (action === "preflight") {
-                  const config = await configFor(actual);
+                  config ??= await configFor(actual);
                   if (!config.cascade.qwenEnabled || config.cascade.qwenVerificationFile !== state.receipt) fail();
                   for (const [endpoint, extra] of [["qwen", ["--receipt", state.receipt]], ["lfm", []]]) {
                     run(process.execPath, ["tools/nli/eval-bound-probe.mjs", "--endpoint", endpoint, "--mode", "verify",
@@ -506,7 +676,7 @@ jobs:
 
             listener_cwd="$(readlink -f "/proc/${listener_pid}/cwd")"
             [ "${listener_cwd}" = "${APP_DIR}" ] || return 1
-            if command -v pm2 >/dev/null 2>&1 && [ -f "${APP_DIR}/.nli/preflight-${PREFLIGHT_ID:-}/snapshot.json" ]; then
+            if [ -f "${APP_DIR}/.nli/preflight-${PREFLIGHT_ID:-}/snapshot.json" ]; then
               GATEWAY_PID="${listener_pid}" node "${APP_DIR}/.nli/preflight-${PREFLIGHT_ID}/lifecycle.mjs" identity "${GIT_COMMIT_SHA}"
               return $?
             fi
