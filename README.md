@@ -94,7 +94,7 @@ $env:NLI_ALLOWED_ORIGINS="http://127.0.0.1:4173"
 node tools/nli-gateway.mjs
 ```
 
-기존 `.env`를 덮어쓰지 마세요. **비어 있지 않은 process 환경 변수가 `.env`보다 우선**하므로 PM2/systemd 환경도 함께 확인해야 합니다. `.env`와 `.nli/` receipt는 비밀을 포함할 수 있는 host-local 파일이며 추적/업로드하지 않습니다.
+기존 `.env`를 덮어쓰지 마세요. **비어 있지 않은 process 환경 변수가 `.env`보다 우선**하므로 PM2와 system-level/user systemd 환경도 함께 확인해야 합니다. `.env`와 `.nli/` receipt는 비밀을 포함할 수 있는 host-local 파일이며 추적/업로드하지 않습니다.
 
 | 역할 | endpoint / 요청 모델 ID | 제한 (보장 성능 아님) |
 | --- | --- | --- |
@@ -107,7 +107,7 @@ LFM timeout 변경은 LFM settings binding을 바꾸므로 fresh LFM bound verif
 
 Qwen은 `reasoning_effort: "none"`과 `chat_template_kwargs: { enable_thinking: false }`를 고정 전송합니다. 옵션이나 reasoning 필드 부재만으로 reasoning-off를 입증하지 않습니다. Gateway host에서 **probe `--mode verify --receipt`만** 18개 clean completion과 실제 template/model/build 증거를 통과한 후 receipt를 atomic rename으로 발급합니다. 최대 유효 기간은 24시간이며 재시작 또는 model/build/template/prompt/schema/settings 변경 후 재검증해야 합니다. 매 승격 시 제한된 metadata 검증도 필요합니다. [정확한 검증/rollback 절차](docs/deployment.md#모델-활성화-preflight-gateway-host에서만)를 따르세요.
 
-새 evaluator readiness에는 `node tools/nli/eval-bound-probe.mjs --endpoint lfm|qwen --mode verify --output <fresh-report>` (`qwen`은 `--receipt <configured-path>` 추가)를 사용합니다. adapter는 기존 atomic probe 발급 API를 호출하되 **검증 시작 전에** 현재 runtime payload/settings/fixture/prompt/schema의 `evaluationBinding`을 캡처합니다. ordinary/과거 report에 새 binding을 덧붙이면 안 됩니다. producer/runtime projection 불일치도 activation blocker입니다. 배포 workflow는 PM2를 delete/start하지 않고 **재시작 전** 등록 환경·실제 PID·receipt 경로를 private checkpoint한 뒤 같은 환경으로 restart/rollback하며 revision stamp만 변경합니다. 환경 snapshot은 성공/실패 후 host cleanup으로 제거합니다.
+새 evaluator readiness에는 `node tools/nli/eval-bound-probe.mjs --endpoint lfm|qwen --mode verify --output <fresh-report>` (`qwen`은 `--receipt <configured-path>` 추가)를 사용합니다. adapter는 기존 atomic probe 발급 API를 호출하되 **검증 시작 전에** 현재 runtime payload/settings/fixture/prompt/schema의 `evaluationBinding`을 캡처합니다. ordinary/과거 report에 새 binding을 덧붙이면 안 됩니다. producer/runtime projection 불일치도 activation blocker입니다. 배포 workflow는 **재시작 전** 검증된 PM2 또는 system-level/user systemd manager descriptor, raw process 환경, `.env`를 반영한 effective 환경, 실제 PID와 receipt 경로를 private checkpoint합니다. 기존 PM2 등록은 delete/start하지 않고 보존 환경으로 restart하며 revision stamp만 변경하고, systemd는 checkout 전에 고정한 외부 `systemctl`과 정확한 scope/unit으로 restart/rollback합니다. 환경 snapshot은 성공/실패 후 host cleanup으로 제거합니다.
 
 첫 업그레이드의 이전 config에 `cascade`가 없어도 checkpoint는 가능합니다. 기존 config의 receipt 경로, 명시적 `NLI_QWEN_VERIFICATION_FILE`, workspace 기본 `.nli/qwen-no-thinking.json` 순으로 이전 파일/부재를 기록하며 이를 검증된 receipt로 간주하지 않습니다. checkout 후에는 새 config와 bound-probe/eval 검증을 반드시 통과해야 합니다. listener 불일치 로그는 PID와 고정 사유만 남기며 raw command line을 출력하지 않습니다.
 

@@ -179,9 +179,9 @@ node tools/nli-cascade-eval.mjs --output "$RUN_DIR/live-eval.json" --lfm-verific
 GitHub Actions self-hosted runner
 -> SSH 접속
 -> 192.168.0.90 NLI Gateway 서버
--> 기존 PM2 등록 환경/실제 PID와 기존 receipt 경로를 재시작 전에 private checkpoint
+-> 기존 listener의 검증된 manager descriptor(PM2 등록 또는 정확한 system/user systemd unit), 실제 PID 환경과 기존 receipt 경로를 재시작 전에 private checkpoint
 -> push 이벤트의 정확한 commit checkout
--> 보존된 환경으로 PM2 restart (revision stamp만 변경) / 기존 user-systemd restart
+-> 캡처한 manager descriptor로 PM2 restart (revision stamp만 변경) 또는 정확한 systemd scope/unit restart
 -> Gateway host의 실제 process 환경으로 Qwen/LFM bound-probe + isolated cascade eval
 -> 5초 간격으로 최대 3회 health check
 -> 기능 live test와 rate-limit window를 분리한 adversarial live test (각 threshold 1 / 30000ms)
@@ -236,7 +236,7 @@ cd ~/portfolio-nli
 cp .env.example .env
 ```
 
-Gateway 프로세스는 `pm2` 또는 user systemd service 중 하나로 관리합니다. 기본 권장은 `pm2`입니다.
+Gateway 프로세스는 `pm2`, system-level systemd service 또는 user systemd service 중 하나로 관리합니다. 기본 권장은 `pm2`입니다.
 
 ```bash
 pm2 start tools/nli-gateway.mjs --name portfolio-nli-gateway --update-env
@@ -247,23 +247,25 @@ pm2 save
 
 **PM2 보존 경계:** checkout/restart 전에 기존 `pm2 jlist`를 메모리로만 캡처하고, 단일 online fork 등록의 script/cwd 및 listener PID를 확인합니다. 등록된 사용자 환경 각 값이 기존 `/proc/<pid>/environ`과 일치해야 하며 현재 `.env`의 누락값만 기존 loader 규칙대로 보충합니다. 이렇게 얻은 effective 환경과 **이 시점의 실제 receipt 경로/기존 파일**을 host-local `.nli/preflight-<run_id>-<run_attempt>/snapshot.json` (0600, parent0700)에 checkpoint합니다. PM2_HOME/등록 환경을 검증할 수 없거나 기존 등록이 사라졌다면 fail-closed입니다. 중단된/중복/cluster 등록을 임의로 교체하지 않습니다.
 
-**이전 model-only release에서의 첫 업그레이드:** 이 checkpoint는 checkout 전 old config의 `cascade` 필드를 요구하지 않습니다. 먼저 이전 effective PM2 환경을 확보하고, old config가 제공하는 `cascade.qwenVerificationFile`이 있으면 사용합니다. 없으면 명시적 `NLI_QWEN_VERIFICATION_FILE`, 그것도 없으면 workspace의 `.nli/qwen-no-thinking.json` 경로를 선택합니다. 경로는 workspace 기준 절대 경로로 고정하고 기존 파일 또는 파일 부재를 백업합니다. 이전 release가 receipt를 사용하지 않았거나 기본 경로가 없다는 사실은 **검증 성공이 아닙니다**. checkout 후 candidate config의 cascade, 실제 receipt 경로 일치, Qwen enablement, fresh bound probes와 evaluator gate는 그대로 필수입니다. rollback은 새 config를 필요로 하지 않고 그 이전 환경/경로를 복원합니다.
+**manager 선택 경계:** snapshot은 PM2 실행 파일의 존재가 아니라 검증된 listener 소유권으로 manager descriptor를 고정합니다. PM2에 해당 이름의 등록이 있으면 기존 PM2 PID/script/cwd 검증을 사용하되, 같은 listener PID가 systemd의 `MainPID`로도 독립 검증되면 `snapshot_manager_conflict`로 fail-closed합니다. systemd가 PM2 daemon만 관리하고 `MainPID`가 Gateway listener와 다르면 PM2 listener 소유권과 충돌하지 않습니다. PM2가 설치되어 있어도 registry가 비어 있고 port에 listener가 있으면 bootstrap이나 PM2 migration으로 간주하지 않습니다. 이때 유일한 listener의 canonical cwd가 `NLI_GATEWAY_APP_DIR`이고 argv[0]이 Node/nodejs, argv[1]이 정확한 `<APP_DIR>/tools/nli-gateway.mjs`인지 먼저 확인한 뒤 cgroup에서 실제 `.service` unit을 찾습니다. unit 이름은 안전한 형식이어야 하며, 해당 system 또는 user scope의 `systemctl show`가 같은 unit/control group, `loaded`/`active`/`running`, `MainPID=<listener PID>`를 모두 증명할 때만 manager를 checkpoint합니다. `systemctl`은 checkout 전에 찾은 executable을 canonical absolute path로 고정하며 `APP_DIR` 내부 경로는 거부합니다. 파일은 root 또는 배포 UID 소유의 일반 executable이고 group/world writable이 아니어야 합니다. 모든 상위 directory도 root/배포 UID 소유이며 writable하지 않아야 하고, root 소유 sticky directory만 임시 경로를 위해 예외로 허용합니다. descriptor의 이 경로와 `{scope, unit, controlGroup}`만 이후 조회/restart에 사용하고 `NLI_GATEWAY_PROCESS`에서 unit 이름을 만들지 않습니다.
+
+**이전 model-only release에서의 첫 업그레이드:** 이 checkpoint는 checkout 전 old config의 `cascade` 필드를 요구하지 않습니다. 먼저 캡처한 manager/process 기준 effective 환경을 확보하고, listener가 없는 PM2 bootstrap이면 초기 SSH 환경과 `.env`의 effective 환경을 사용합니다. old config가 제공하는 `cascade.qwenVerificationFile`이 있으면 사용하고, 없으면 명시적 `NLI_QWEN_VERIFICATION_FILE`, 그것도 없으면 workspace의 `.nli/qwen-no-thinking.json` 경로를 선택합니다. 경로는 workspace 기준 절대 경로로 고정하고 기존 파일 또는 파일 부재를 백업합니다. 이전 release가 receipt를 사용하지 않았거나 기본 경로가 없다는 사실은 **검증 성공이 아닙니다**. checkout 후 candidate config의 cascade, 실제 receipt 경로 일치, Qwen enablement, fresh bound probes와 evaluator gate는 그대로 필수입니다. rollback은 새 config를 필요로 하지 않고 그 이전 환경/경로를 복원합니다.
 
 기존 PM2 등록은 **delete하지 않습니다**. `restart --update-env`의 자식 환경은 SSH login env가 아니라 checkpoint 환경만 사용하며 유일한 의도적 값 변경은 `GIT_COMMIT_SHA=<target revision>`입니다. `.env`에서 보충한 값도 같은 effective 값으로 고정됩니다. PM2 자체 PID/uptime/restart counter 등 내부 bookkeeping은 사용자 등록 변수 보존 대상이 아닙니다. 재시작 후 등록 환경과 실제 PID 환경을 checkpoint의 모든 사용자 변수와 비교하며 revision만 target으로 확인합니다. PM2 wrapper의 argv 대신 등록 script/cwd + PID 대응도 검증하여 실제 PM2 fork lifecycle을 지원합니다.
 
-PM2 등록이 아예 없고 listener도 없을 때만 bootstrap으로 분류합니다. 이 경우 보존할 prior service env는 없으므로 SSH 환경 + 현재 `.env`로 초기 checkpoint를 만들고 `pm2 start`합니다. bootstrap 실패 rollback도 그 **동일한 초기 환경**과 prior code/revision으로 재기동합니다. 기존 user-systemd service는 계속 해당 unit으로 restart하며 unit/manager 환경은 변경하지 않습니다. systemd는 기존 revision 공급 방식이 health의 target revision 검사까지 만족해야 하며, 맞지 않으면 성공으로 간주하지 않습니다.
+PM2 등록이 아예 없고 listener도 없을 때만 PM2 bootstrap으로 분류합니다. 이 경우 보존할 prior service env는 없으므로 SSH 환경 + 현재 `.env`로 초기 checkpoint를 만들고 `pm2 start`하며 systemctl이 없어도 됩니다. bootstrap 실패 rollback도 그 **동일한 초기 환경**과 prior code/revision으로 재기동합니다. 검증된 system/user systemd listener는 PM2 설치 여부와 관계없이 캡처한 정확한 executable/scope/unit으로만 restart합니다. 모든 systemctl 조회/restart는 application, loader, listener, `.env`, SSH 변수를 전달하지 않고 고정 PATH/locale만 포함한 최소 환경을 사용합니다. user scope는 `/proc/<pid>/status`의 listener effective UID가 배포 process UID와 같은지 확인하고, 해당 UID 소유이며 group/world writable이 아닌 `/run/user/<uid>`에서 D-Bus 주소를 직접 구성해 최소 환경에만 추가합니다. 새 PID에서도 같은 UID/runtime identity를 재검증합니다. 캡처한 manager가 실패하면 다른 manager나 direct signal로 fallback하지 않습니다. systemd는 기존 revision 공급 방식이 health의 target revision 검사까지 만족해야 하며, 맞지 않으면 성공으로 간주하지 않습니다.
 
-preflight는 새 PID의 실제 환경과 checkpoint receipt 경로가 같은지 확인한 뒤 bound probes/eval을 실행합니다. 기존 SSH 사용자에게 서비스 환경 읽기 권한이 없으면 실패하며 sudo/새 credential로 우회하지 않습니다. PM2 및 자식 명령 stdout/stderr에는 환경 값이 있을 수 있어 CI로 전달하지 않습니다. snapshot 실패는 값이나 raw 오류 대신 allowlist의 고정 `reason=<code>`만 generic 오류 문구에 추가하고, 이후 lifecycle 실패는 기존 고정 문구만 출력합니다. snapshot/receipt 백업은 로그/git/Actions artifact에 넣지 않습니다. `set -e` 안의 preflight 실패는 이후 success-only 단계를 막고 기존 `failure() && previous.sha` rollback으로 연결됩니다. checkout 전 snapshot 실패라면 code/service를 변경하지 않았으므로 rollback도 재시작하지 않습니다.
+systemd snapshot은 raw `/proc/<pid>/environ`과 그 복사본에 `.env`를 로드한 effective 환경을 별도로 보존합니다. identity/preflight는 새 PID의 process-supplied `NLI_`/`LFM_`/`LM_STUDIO_` key 전체 집합과 값을 raw snapshot과 비교한 뒤, 새 raw 복사본에 현재 checkout의 `.env`를 로드해 effective application key 전체 집합과 값도 snapshot과 비교합니다. 따라서 process 또는 `.env`에서 key가 제거·추가·변경되면 실패하며, `.env`에만 있던 key를 raw process 환경에 요구하지 않습니다. 이 effective 환경/config로 bound probes/eval을 실행합니다. 기존 SSH 사용자에게 서비스 환경 읽기 권한이 없으면 실패하며 sudo/새 credential로 우회하지 않습니다. PM2, systemctl 및 자식 명령 stdout/stderr에는 환경이나 process 정보가 있을 수 있어 CI로 전달하지 않습니다. snapshot 실패는 값이나 raw 오류 대신 allowlist의 고정 `reason=<code>`만 generic 오류 문구에 추가하고, 이후 lifecycle 실패는 기존 고정 문구만 출력합니다. snapshot/receipt 백업은 로그/git/Actions artifact에 넣지 않습니다. `set -e` 안의 preflight 실패는 이후 success-only 단계를 막고 기존 `failure() && previous.sha` rollback으로 연결됩니다. checkout 전 snapshot 실패라면 code/service를 변경하지 않았으므로 rollback도 재시작하지 않습니다.
 
 배포/rollback의 모든 listener 불일치 진단은 PID와 고정 사유만 출력합니다. `/proc/<pid>/cmdline`은 identity 판정에만 사용하며 raw argv, 실제 cwd 또는 command-line credential을 로그로 보내지 않습니다. 실제 프로세스를 조사하지 않는 fake `/proc` sentinel 회귀 테스트로 이 경계를 유지합니다.
 
-자동 rollback은 **재시작 전 checkpoint의 경로**에 receipt를 atomic 복원하거나 원래 없었다면 제거하고, prior code 및 checkpoint 환경으로 PM2 restart하되 `GIT_COMMIT_SHA`만 prior revision으로 바꿉니다. `.env`/service overrides는 workflow가 수정하지 않습니다. 마지막 `always()` host cleanup은 성공/실패 후 `snapshot.json`과 `previous-receipt.json`을 제거하며 로그에는 비밀을 내보내지 않습니다. SSH 불능/강제 job 취소 등으로 cleanup 또는 rollback이 실행 불가하면 별도 운영 복구가 필요하며 자동 보장을 주장하지 않습니다.
+자동 rollback은 **재시작 전 checkpoint의 경로**에 receipt를 atomic 복원하거나 원래 없었다면 제거하고, prior code 및 checkpoint 환경으로 캡처한 manager를 다시 사용합니다. PM2는 `GIT_COMMIT_SHA`만 prior revision으로 바꾸고, systemd는 캡처한 동일 scope/unit을 restart합니다. `.env`/service overrides는 workflow가 수정하지 않습니다. 마지막 `always()` host cleanup은 성공/실패 후 `snapshot.json`과 `previous-receipt.json`을 제거하며 로그에는 비밀을 내보내지 않습니다. SSH 불능/강제 job 취소 등으로 cleanup 또는 rollback이 실행 불가하면 별도 운영 복구가 필요하며 자동 보장을 주장하지 않습니다.
 
 ### Degraded mode와 full rollback
 
-`NLI_QWEN_ENABLED=false`는 Qwen 승격만 끄는 **degraded LFM/local 모드**이지 전체 rollback 또는 verified deployment가 아닙니다. `.env`만 바꿔도 기존 process 환경이 true이면 적용되지 않습니다. 승인된 운영 작업에서 PM2 환경/기존 user systemd unit 환경까지 맞추고 기존 restart 절차로 반영해야 합니다. 여기서는 실행하지 않습니다.
+`NLI_QWEN_ENABLED=false`는 Qwen 승격만 끄는 **degraded LFM/local 모드**이지 전체 rollback 또는 verified deployment가 아닙니다. `.env`만 바꿔도 기존 process 환경이 true이면 적용되지 않습니다. 승인된 운영 작업에서 PM2 환경 또는 기존 system-level/user systemd unit 환경까지 맞추고 기존 restart 절차로 반영해야 합니다. 여기서는 실행하지 않습니다.
 
-full rollback은 prior release **그리고 prior `.env` + process/service 환경 + receipt 가정**을 함께 복원해야 합니다. workflow는 위 checkpoint로 자신이 바꾼 code/PM2 revision/receipt를 복원하며, `.env`와 user-systemd 설정은 변경하지 않습니다. 별도 운영자가 동시에 설정을 바꿨다면 그 변경은 이 checkpoint 보장의 범위 밖이므로 이전 환경/PM2/systemd override까지 복구해야 합니다. code checkout만으로 process 환경은 되돌아가지 않습니다. 복원 receipt가 오래됐거나 재시작/현재 identity와 맞지 않으면 full readiness를 주장하지 말고 새 bound-probe 및 eval을 수행합니다. host-local report 보존 기간 종료 후 해당 preflight 디렉터리만 제거하며 활성 receipt는 임의 삭제하지 않습니다.
+full rollback은 prior release **그리고 prior `.env` + process/service 환경 + receipt 가정**을 함께 복원해야 합니다. workflow는 위 checkpoint로 자신이 바꾼 code/PM2 revision/receipt를 복원하며, `.env`와 system-level/user systemd 설정은 변경하지 않습니다. 별도 운영자가 동시에 설정을 바꿨다면 그 변경은 이 checkpoint 보장의 범위 밖이므로 이전 환경/PM2/systemd override까지 복구해야 합니다. code checkout만으로 process 환경은 되돌아가지 않습니다. 복원 receipt가 오래됐거나 재시작/현재 identity와 맞지 않으면 full readiness를 주장하지 말고 새 bound-probe 및 eval을 수행합니다. host-local report 보존 기간 종료 후 해당 preflight 디렉터리만 제거하며 활성 receipt는 임의 삭제하지 않습니다.
 
 ## 4. 프론트와 Gateway 연결
 
