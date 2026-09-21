@@ -282,9 +282,12 @@ jobs:
             }));
           }
           function entryFor(bin, name, env) {
-            const entries = JSON.parse(pm2(bin, ["jlist"], env)).filter((entry) => entry.name === name);
-            if (entries.length > 1) fail();
-            const entry = entries[0];
+            const output = pm2(bin, ["jlist"], env).trimEnd();
+            const entries = JSON.parse(output.slice(output.lastIndexOf("\n") + 1));
+            if (!Array.isArray(entries)) fail();
+            const matches = entries.filter((entry) => entry.name === name);
+            if (matches.length > 1) fail();
+            const entry = matches[0];
             if (entry && (entry.pm2_env.pm_exec_path !== app + "/tools/nli-gateway.mjs" ||
                 realpathSync(entry.pm2_env.pm_cwd) !== realpathSync(app) || entry.pm2_env.exec_mode !== "fork_mode")) fail();
             return entry;

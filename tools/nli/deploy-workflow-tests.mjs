@@ -59,7 +59,8 @@ export function registerWorkflowLifecycleTests(workflow, root) {
     });
   const scenarios = ["success", "before-restart", "restart-fail", "qwen-fail", "lfm-fail", "eval-fail", "eval-false", "receipt-drift"];
   for (const bootstrap of [false, true]) for (const hadReceipt of [false, true]) for (const scenario of scenarios) {
-    test(`PM2 environment lifecycle: bootstrap=${bootstrap} receipt=${hadReceipt} ${scenario}`,
+    const registration = bootstrap ? "cold PM2 bootstrap accepts daemon banner" : "registered PM2 lifecycle";
+    test(`${registration}: receipt=${hadReceipt} ${scenario}`,
       { skip: process.platform !== "linux", timeout: 60000 }, async () => {
         const f = await createWorkflowFixture(root, bootstrap, hadReceipt);
         const helper = join(f.directory, "lifecycle.mjs");
