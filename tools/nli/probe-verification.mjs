@@ -37,7 +37,7 @@ export async function runQwenVerification(options, dependencies = {}) {
   const bounded = (budgetMs, operation) => withVerificationBudget({ budgetMs, now, signal: options.signal }, (scope) =>
     operation(verificationRequest(inputs, { ...dependencies, admission }, scope, counters)));
   try {
-    const proof = await bounded(1000, (request) => collectQwenProof(inputs, request));
+    const proof = await bounded(inputs.settings.timeoutMs, (request) => collectQwenProof(inputs, request));
     for (const { item, repeat, payload } of inputs.matrix) {
       const data = await bounded(inputs.settings.timeoutMs, (request) => request(inputs.url, payload));
       const outcome = inspectModelCompletion(data, "qwen");
@@ -49,7 +49,7 @@ export async function runQwenVerification(options, dependencies = {}) {
         reasoningAccounting: metadata.reasoningAccounting });
       if (!ok) throw new Error("completion");
     }
-    const after = await bounded(1000, (request) => collectQwenProof(inputs, request));
+    const after = await bounded(inputs.settings.timeoutMs, (request) => collectQwenProof(inputs, request));
     if (sha256(after) !== sha256(proof)) throw new Error("identity_changed");
     const receipt = { version: 1, ...inputs.binding, returnedModelId: proof.returnedModelId, proof,
       checkedAt: new Date((dependencies.wallNow || Date.now)()).toISOString(), probeCount: results.length, results,

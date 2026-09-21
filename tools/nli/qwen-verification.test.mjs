@@ -8,6 +8,7 @@ import { spawn } from "node:child_process";
 import { loadNliContext } from "./context.mjs";
 import { createGatewayConfig } from "./config.mjs";
 import { createModelAdmission } from "./model-admission.mjs";
+import { collectProbeMetadata } from "./probe-metadata.mjs";
 import { createQwenVerifier } from "./qwen-verification.mjs";
 import { runQwenVerification } from "./probe-verification.mjs";
 import { VERIFICATION_POLICY } from "./verification-policy.mjs";
@@ -87,6 +88,61 @@ test("18 clean probes issue bound receipt; metadata-only gate preserves unknown 
   assert.ok(f.calls.slice(before).every((call) => !call.url.endsWith("/chat/completions")));
   gate.invalidate();
   assert.equal((await gate.verify()).reason, "qwen_unverified");
+});
+
+test("configured Qwen timeout covers both metadata proof passes during receipt issuance", async (t) => {
+  const f = await setup(t);
+  let time = 0;
+  const fetchImpl = async (url, options) => {
+    if (!url.endsWith("/chat/completions")) time += 60;
+    return f.dependencies.fetchImpl(url, options);
+  };
+  const report = await runQwenVerification({ settings: { ...f.config.model, timeoutMs: 8000 },
+    context, schema, schemaBytes, receipt: f.receipt }, { ...f.dependencies, fetchImpl, now: () => time });
+  assert.equal(report.verified, true, JSON.stringify(report));
+  assert.equal(report.metadataCalls, 38);
+  assert.equal(report.inferenceCalls, 18);
+  assert.equal(time, 2280);
+});
+
+test("baseline metadata uses the configured Qwen timeout and preserves the LFM one-second cap", async () => {
+  const timeoutMs = 8000;
+  const observed = [];
+  const request = async (url, options) => {
+    observed.push({ url, timeoutMs: options.timeoutMs });
+    if (url.endsWith("/props")) return { ok: true, data: { model_alias: "fixture", model_path: "/fixture",
+      build_info: "fixture", chat_template: "fixture" } };
+    return { ok: true, data: { prompt: "<|im_start|>assistant\n<think>\n</think>\n" } };
+  };
+  const settings = { baseUrl: "http://127.0.0.1:9876/v1", timeoutMs, maxResponseBytes: 65536 };
+  const metadata = await collectProbeMetadata("qwen", settings, { messages: [] }, { request });
+  assert.equal(metadata.ok, true);
+  assert.deepEqual(observed.map(({ timeoutMs: observedTimeout }) => observedTimeout), [timeoutMs, timeoutMs]);
+  observed.length = 0;
+  const lfm = await collectProbeMetadata("lfm", { ...settings, name: "fixture" }, { messages: [] }, { request: async (url, options) => {
+    observed.push({ url, timeoutMs: options.timeoutMs });
+    return { ok: true, data: { data: [{ id: "fixture", state: "loaded" }] } };
+  } });
+  assert.equal(lfm.ok, true);
+  assert.deepEqual(observed.map(({ timeoutMs: observedTimeout }) => observedTimeout), [1000]);
+});
+
+test("runtime proof uses configured timeout while preserving a smaller caller budget", async (t) => {
+  const f = await setup(t);
+  await f.verify();
+  let time = 0;
+  const fetchImpl = async (url, options) => {
+    time += 60;
+    return f.dependencies.fetchImpl(url, options);
+  };
+  const gate = f.gate({ fetchImpl, now: () => time });
+  const accepted = await gate.verify({ budgetMs: 8000, deadlineAt: 8000 });
+  assert.equal(accepted.ok, true, JSON.stringify(accepted));
+  assert.equal(accepted.metadataCalls, 19);
+  time = 0;
+  const bounded = await f.gate({ fetchImpl, now: () => time }).verify({ budgetMs: 1000, deadlineAt: 8000 });
+  assert.equal(bounded.ok, false);
+  assert.equal(bounded.detail, "timeout");
 });
 
 test("failed proof never writes receipt or persists raw reasoning", async (t) => {
