@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { access, readFile, stat, writeFile } from "node:fs/promises";
+import { access, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 import { createWorkflowFixture } from "./deploy-workflow-fixture.mjs";
@@ -26,6 +26,37 @@ export function assertRedacted(result) {
 export function registerWorkflowLifecycleTests(workflow, root) {
   const lifecycle = extractWorkflowLifecycle(workflow);
   const cleanup = extractWorkflowRemote(workflow, "Remove private host lifecycle snapshot");
+  test("PM2 snapshot excludes internal metadata but still rejects registered environment drift",
+    { skip: process.platform !== "linux" }, async () => {
+      const f = await createWorkflowFixture(root, false, false);
+      const helper = join(f.directory, "lifecycle.mjs");
+      const snapshotFile = join(f.directory, "snapshot.json");
+      const invoke = async () => execute(process.execPath, [helper, "snapshot"], { cwd: f.app,
+        env: { ...f.ssh, GATEWAY_PID: String((await f.manager.state()).pid) } });
+      try {
+        await writeFile(helper, lifecycle);
+        const metadataState = await f.manager.state();
+        metadataState.pm2_env.env.h1 = {};
+        await f.manager.setState(metadataState);
+        const metadataResult = await invoke();
+        assertRedacted(metadataResult);
+        assert.equal(metadataResult.code, 0, "PM2 internal metadata must not block a valid snapshot");
+        const snapshot = JSON.parse(await readFile(snapshotFile, "utf8"));
+        assert.equal(Object.hasOwn(snapshot.env, "h1"), false);
+
+        await rm(snapshotFile);
+        const driftState = await f.manager.state();
+        driftState.pm2_env.env.GIT_COMMIT_SHA = "registered-only";
+        await f.manager.setState(driftState);
+        const driftResult = await invoke();
+        assertRedacted(driftResult);
+        assert.equal(driftResult.code, 1, "registered user environment drift must still fail closed");
+        await assert.rejects(access(snapshotFile), { code: "ENOENT" });
+      } finally {
+        assert.deepEqual(await f.close(), { listening: false, activeChildren: 0 });
+        await assert.rejects(access(f.app), { code: "ENOENT" });
+      }
+    });
   const scenarios = ["success", "before-restart", "restart-fail", "qwen-fail", "lfm-fail", "eval-fail", "eval-false", "receipt-drift"];
   for (const bootstrap of [false, true]) for (const hadReceipt of [false, true]) for (const scenario of scenarios) {
     test(`PM2 environment lifecycle: bootstrap=${bootstrap} receipt=${hadReceipt} ${scenario}`,

@@ -304,11 +304,12 @@ jobs:
               if (prior) {
                 if (String(prior.pid) !== pid || prior.pm2_env.status !== "online") fail();
                 const actual = processEnv(pid);
-                // Preserve user-supplied registered variables, not PM2's mutable
-                // bookkeeping (pid/uptime/restart counters) masquerading as env.
-                env = { ...prior.pm2_env.env };
+                // Preserve string-valued process variables, not PM2's internal
+                // metadata objects or mutable bookkeeping masquerading as env.
+                env = Object.fromEntries(Object.entries(prior.pm2_env.env)
+                  .filter(([, value]) => typeof value === "string"));
                 for (const key of Object.keys(env)) {
-                  if (typeof env[key] !== "string" || actual[key] !== env[key]) fail();
+                  if (actual[key] !== env[key]) fail();
                 }
                 if (!env.PM2_HOME || env.PM2_HOME !== actual.PM2_HOME) fail();
               } else if (bin) {
