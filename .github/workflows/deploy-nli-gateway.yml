@@ -1,12 +1,6 @@
 name: Deploy NLI Gateway
 
 on:
-  workflow_dispatch:
-    inputs:
-      snapshot_only:
-        description: Diagnose the current Gateway snapshot without restarting it
-        type: boolean
-        default: false
   push:
     branches:
       - main
@@ -45,7 +39,6 @@ jobs:
       NLI_GATEWAY_APP_DIR: ${{ secrets.NLI_GATEWAY_APP_DIR }}
       NLI_GATEWAY_PROCESS: ${{ secrets.NLI_GATEWAY_PROCESS }}
       NLI_GATEWAY_KNOWN_HOSTS: ${{ secrets.NLI_GATEWAY_KNOWN_HOSTS }}
-      NLI_SNAPSHOT_ONLY: ${{ inputs.snapshot_only && 'true' || 'false' }}
 
     steps:
       - name: Checkout
@@ -148,7 +141,7 @@ jobs:
             -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile=~/.ssh/nli_gateway_known_hosts \
             "${NLI_GATEWAY_USER}@${NLI_GATEWAY_HOST}" \
-            "APP_DIR='${NLI_GATEWAY_APP_DIR}' PROCESS_NAME='${NLI_GATEWAY_PROCESS}' NLI_GATEWAY_PORT='${NLI_GATEWAY_PORT}' DEPLOY_SHA='${{ github.sha }}' GIT_COMMIT_SHA='${{ github.sha }}' PREFLIGHT_ID='${{ github.run_id }}-${{ github.run_attempt }}' SNAPSHOT_ONLY='${NLI_SNAPSHOT_ONLY}' bash -s" <<'REMOTE'
+            "APP_DIR='${NLI_GATEWAY_APP_DIR}' PROCESS_NAME='${NLI_GATEWAY_PROCESS}' NLI_GATEWAY_PORT='${NLI_GATEWAY_PORT}' DEPLOY_SHA='${{ github.sha }}' GIT_COMMIT_SHA='${{ github.sha }}' PREFLIGHT_ID='${{ github.run_id }}-${{ github.run_attempt }}' bash -s" <<'REMOTE'
           set -euo pipefail
           command -v ss >/dev/null 2>&1 || {
             echo "ss is required to verify the NLI Gateway listener"
@@ -403,10 +396,6 @@ jobs:
           }
           LIFECYCLE
           GATEWAY_PID="$(nli_listener_pids)" node "${PREFLIGHT_DIR}/lifecycle.mjs" snapshot
-          if [ "${SNAPSHOT_ONLY}" = "true" ]; then
-            echo "Snapshot diagnostic completed without lifecycle mutation."
-            exit 0
-          fi
           git fetch --no-tags origin "main:refs/remotes/origin/main"
           git cat-file -e "${DEPLOY_SHA}^{commit}"
           git merge-base --is-ancestor "${DEPLOY_SHA}" origin/main
@@ -417,7 +406,6 @@ jobs:
           REMOTE
 
       - name: Process health and revision check (not model readiness)
-        if: ${{ env.NLI_SNAPSHOT_ONLY != 'true' }}
         shell: bash
         env:
           DEPLOY_SHA: ${{ github.sha }}
@@ -450,14 +438,12 @@ jobs:
           done
 
       - name: Run live NLI functional tests
-        if: ${{ env.NLI_SNAPSHOT_ONLY != 'true' }}
         shell: bash
         run: |
           NLI_TEST_BASE_URL="http://${NLI_GATEWAY_HOST}:${NLI_GATEWAY_PORT}" \
             node tools/nli-test.mjs --live --cases nli/live-test-cases.json --kind success --min-pass-rate 1 --timeout-ms 30000
 
       - name: Run live NLI adversarial tests
-        if: ${{ env.NLI_SNAPSHOT_ONLY != 'true' }}
         shell: bash
         run: |
           # Separate suites must not share the default 30-request rate-limit window.
@@ -466,7 +452,7 @@ jobs:
             node tools/nli-test.mjs --live --cases nli/adversarial-test-cases.json --min-pass-rate 1 --timeout-ms 30000
 
       - name: Roll back failed deployment
-        if: ${{ failure() && env.NLI_SNAPSHOT_ONLY != 'true' && steps.previous.outputs.sha != '' }}
+        if: ${{ failure() && steps.previous.outputs.sha != '' }}
         shell: bash
         env:
           NLI_GATEWAY_USER: ${{ secrets.NLI_GATEWAY_USER }}
