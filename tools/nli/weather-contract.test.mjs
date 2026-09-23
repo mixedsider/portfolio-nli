@@ -14,12 +14,23 @@ const envelope = (candidate) => ({ model: "test-model", choices: [{
 }] });
 
 test("weather requests are explicitly rejected before portfolio intent selection", () => {
-  assert.match(context.prompt, /Determine scope before applying the intent-selection rules/);
-  assert.match(context.prompt, /real-time or external information/);
-  assert.match(context.prompt, /unrelated candidate sources/);
-  assert.match(context.prompt, /today's weather in Seoul/);
-  assert.ok(context.prompt.indexOf("Determine scope before") < context.prompt.indexOf("Treat a request for multiple cases"));
-  assert.ok(context.prompt.includes('{"intent":"reject_out_of_scope","confidence":1}'));
+  assert.match(context.prompt, /Decide scope first/);
+  assert.match(context.prompt, /current\/external requests \(including weather\)/);
+  assert.match(context.prompt, /unrelated context cannot expand scope/i);
+  assert.match(context.prompt, /Other one-section: one ≤60-character sentence/);
+  assert.match(context.prompt, /answer 4,000 characters/);
+  assert.match(context.prompt, /one supported ≤40-char clause per project\/subject/);
+  assert.doesNotMatch(context.prompt, /(?:at most|under) 600 characters/);
+  assert.match(context.prompt, /4,000/);
+  assert.doesNotMatch(context.prompt, /```/);
+  assert.ok(Buffer.byteLength(context.prompt) <= 2500);
+  assert.ok(context.prompt.indexOf("Decide scope first") < context.prompt.indexOf("`navigate` is only"));
+  for (const intent of ["navigate", "define_term", "answer_portfolio", "reject_out_of_scope"]) {
+    assert.ok(context.prompt.includes(intent));
+  }
+  for (const field of ["intent", "confidence", "targetId", "term", "answer", "sourceIds"]) {
+    assert.ok(context.prompt.includes(field));
+  }
 });
 
 test("weather fixture keeps strict production validation separate from intent matching", () => {
@@ -44,10 +55,11 @@ test("weather fixture keeps strict production validation separate from intent ma
       assert.equal(inspectProbeCompletion(envelope(invalid), weather, context, "lfm").kind, "proposal_invalid");
     }
 
-    const unrelated = weather.candidateSources[0];
-    assert.ok(unrelated);
+    assert.deepEqual(weather.candidateSources, []);
+    assert.deepEqual(weather.grounded.targets, []);
+    assert.deepEqual(weather.grounded.terms, []);
     const unsupported = { intent: "answer_portfolio", confidence: 1,
-      answer: "오늘 서울 날씨는 맑습니다.", sourceIds: [unrelated.id] };
+      answer: "오늘 서울 날씨는 맑습니다.", sourceIds: ["top"] };
     const result = inspectProbeCompletion(envelope(unsupported), weather, context, "lfm");
     assert.equal(result.kind, "proposal_invalid");
     assert.equal(result.visibleAnswer, undefined);
