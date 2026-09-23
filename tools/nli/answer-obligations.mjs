@@ -1,15 +1,21 @@
 import { isAnswerSupportedBySelectedEvidence } from "./answer-evidence-support.mjs";
 import { getObligationSourceGroups, obligationCatalog } from "./obligation-sources.mjs";
-import { mentionSpans, normalizeObligationText, PARTICLES } from "./obligation-vocabulary.mjs";
+import { mentionSpans, normalizeObligationText, PARTICLES, requestedQuantityCount, requestedQuantityUnits } from "./obligation-vocabulary.mjs";
 import { readFractionAtom } from "./fraction-atom.mjs";
 
 const ANSWER_SUFFIXES = [...PARTICLES, "에서는", "에서도", "에는", "에선", "도", "로", "으로", "입니다", "이다"];
 
 // Pure lexical checks over the selected, already bounded strings; never retrieve.
-export function checkAnswerObligations(answer, sourceIds, context, prepared) {
+export function checkAnswerObligations(answer, sourceIds, context, prepared, originalMessage = "") {
   const { obligations, candidateSources } = prepared;
   const selected = candidateSources.filter((card) => sourceIds.includes(card.id));
   const groups = getObligationSourceGroups(obligations, context);
+  const requestedCount = requestedQuantityCount(originalMessage);
+  const requestedUnits = requestedQuantityUnits(originalMessage);
+  const answerQuantities = parseQuantities(answer).filter((quantity) => quantity.valid &&
+    (!requestedUnits.length || requestedUnits.includes(quantity.unit)));
+  if (answerQuantities.length < requestedCount)
+    return "requested_quantity_missing";
   if (groups.some((group) => !selected.some((card) => group.sourceIds.includes(card.id)))) return "source_group_missing";
   const catalog = obligationCatalog(context);
   const projects = catalog.entries.filter((entry) => entry.type === "project");

@@ -11,6 +11,10 @@ export function buildEvidenceIndex(context) {
   const metricsByTargetId = groupMetrics(portfolio.metrics, targetIds);
   const glossaryByTargetId = groupGlossary(context?.glossary?.terms, targetIds);
   const partsByTargetId = new Map();
+  const summaryByTargetId = new Map();
+  const overviewByTargetId = new Map();
+  const comparisonByTargetId = new Map();
+  const detailByTargetId = new Map();
   const scopeByTargetId = new Map(targets.map((target) => [target.id, target.id]));
 
   for (const target of targets) {
@@ -33,10 +37,9 @@ export function buildEvidenceIndex(context) {
   for (const project of projects) {
     const projectTargetId = `project-${stringValue(project.id)}`;
     const projectText = projectEvidence(project);
-    const projectAliases = targets.find((target) => target.id === projectTargetId)?.aliases;
-
     if (targetIds.has(projectTargetId)) {
       appendEvidence(partsByTargetId, projectTargetId, projectText);
+      summaryByTargetId.set(projectTargetId, joinEvidence("주요 기술", projectText));
       scopeByTargetId.set(projectTargetId, projectTargetId);
     }
 
@@ -44,8 +47,24 @@ export function buildEvidenceIndex(context) {
       const sectionId = stringValue(section.id);
       if (!targetIds.has(sectionId)) continue;
 
-      appendEvidence(partsByTargetId, sectionId, project.title, projectAliases, section.title, section.result,
+      appendEvidence(partsByTargetId, sectionId, project.title, section.result,
         section.resultDetails, sectionEvidence(section), projectText);
+      const summaryEvidence = joinEvidence(project.title, section.result,
+        metricsByTargetId.get(sectionId)?.map(metricEvidence),
+        inlineCodeIdentifiers(section.action).slice(0, 1), quantityTokens(section.resultDetails),
+        summaryTableRows(section));
+      summaryByTargetId.set(sectionId, summaryEvidence);
+      overviewByTargetId.set(sectionId,
+        joinEvidence(project.title, section.result,
+          metricsByTargetId.get(sectionId)?.slice(0, 1).map(primaryMetricEvidence),
+          inlineCodeIdentifiers(section.action).slice(0, 1)));
+      comparisonByTargetId.set(sectionId,
+        joinEvidence(project.title, metricsByTargetId.get(sectionId)?.map(primaryMetricEvidence), section.result));
+      const linkedTerms = (glossaryByTargetId.get(sectionId) || []).map((term) => stringValue(term.term)).filter(Boolean);
+      const methodSummary = linkedTerms.length > 1 ? `${linkedTerms[0]}: ${linkedTerms.slice(1).join(", ")}.` : "";
+      detailByTargetId.set(sectionId, joinEvidence(
+        methodSummary, linkedTerms, section.title,
+        summaryEvidence, detailActionWitnesses(section.action)));
       scopeByTargetId.set(sectionId, projectTargetId || sectionId);
     }
   }
@@ -59,7 +78,14 @@ export function buildEvidenceIndex(context) {
     order,
     evidence: joinEvidence(partsByTargetId.get(target.id)),
     metricCount: metricsByTargetId.get(target.id)?.length || 0,
-    scopeKey: scopeByTargetId.get(target.id) || target.id
+    scopeKey: scopeByTargetId.get(target.id) || target.id,
+    summaryEvidence: summaryByTargetId.get(target.id),
+    overviewEvidence: overviewByTargetId.get(target.id),
+    comparisonEvidence: comparisonByTargetId.get(target.id),
+    detailEvidence: detailByTargetId.get(target.id),
+    searchAliases: target.type === "section"
+      ? targets.find((entry) => entry.id === scopeByTargetId.get(target.id))?.aliases
+      : []
   }));
 }
 
@@ -77,7 +103,7 @@ export function tokenizeEvidence(value) {
   return [...terms];
 }
 
-function createEvidenceCard({ target, order, evidence, metricCount, scopeKey }) {
+function createEvidenceCard({ target, order, evidence, metricCount, scopeKey, summaryEvidence, overviewEvidence, comparisonEvidence, detailEvidence, searchAliases }) {
   const card = {
     id: target.id,
     targetId: target.id,
@@ -90,6 +116,11 @@ function createEvidenceCard({ target, order, evidence, metricCount, scopeKey }) 
     metricCount: { value: metricCount, enumerable: false },
     order: { value: order, enumerable: false },
     scopeKey: { value: scopeKey, enumerable: false },
+    summaryEvidence: { value: summaryEvidence, enumerable: false },
+    overviewEvidence: { value: overviewEvidence, enumerable: false },
+    comparisonEvidence: { value: comparisonEvidence, enumerable: false },
+    detailEvidence: { value: detailEvidence, enumerable: false },
+    searchAliases: { value: joinEvidence(searchAliases), enumerable: false },
     searchText: { value: normalize(evidence), enumerable: false },
     tokenSet: { value: new Set(tokenizeEvidence(evidence)), enumerable: false }
   });
@@ -168,15 +199,37 @@ function projectEvidence(project) {
 
 function sectionEvidence(section) {
   return joinEvidence(
-    section.problem,
-    section.analyze,
     section.action,
-    asArray(section.tables).flatMap((table) => (isRecord(table) ? [table.caption, table.headers, table.rows] : []))
+    asArray(section.tables).flatMap((table) => (isRecord(table) ? [table.caption, table.headers, table.rows] : [])),
+    section.problem,
+    section.analyze
   );
+}
+
+function inlineCodeIdentifiers(value) {
+  return asArray(value).flatMap((part) => stringValue(part).match(/`[^`]+`/g) || []);
+}
+
+function quantityTokens(value) {
+  return asArray(value).flatMap((part) => stringValue(part).match(/[+-]?\d+(?:[.,]\d+)*(?:\s*~\s*[+-]?\d+(?:[.,]\d+)*)?\s*(?:%|ms|s|회|대|MB|개)?/g) || []);
+}
+
+function summaryTableRows(section) {
+  return asArray(section.tables).filter(isRecord).flatMap((table) => asArray(table.rows).slice(0, 2));
+}
+
+function detailActionWitnesses(value) {
+  return asArray(value).filter((part, index) => index === 0 || /\d\s*\/\s*\d/u.test(stringValue(part)));
 }
 
 function metricEvidence(metric) {
   return joinEvidence(metric.label, metric.value, metric.caption);
+}
+
+function primaryMetricEvidence(metric) {
+  const value = stringValue(metric.value);
+  const caption = stringValue(metric.caption);
+  return joinEvidence(metric.label, /(?:->|→|에서)/u.test(value) ? value : caption || value);
 }
 
 function glossaryEvidence(term) {

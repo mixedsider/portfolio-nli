@@ -1,6 +1,8 @@
 export const MAX_GROUNDED_CANDIDATES = 8;
 export const MAX_GROUNDED_SOURCES = 6;
-export const MAX_GROUNDED_CARD_EVIDENCE_BYTES = 3_000;
+// With action/tables ordered before narrative analysis, 1,741 is the measured
+// minimum that retains the cache RPS witness used by existing acceptance tests.
+export const MAX_GROUNDED_CARD_EVIDENCE_BYTES = 1_741;
 
 export function boundedCandidateSources(value) {
   if (!Array.isArray(value)) return [];

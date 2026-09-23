@@ -1,7 +1,7 @@
-import { ALL_INTENTS, COMPARISON, COMPOSITION, PARTICLES, hasSignal, mentionSpans, normalizeObligationText, requestWording } from "./obligation-vocabulary.mjs";
+import { COMPARISON, COMPOSITION, PARTICLES, hasSignal, mentionSpans, normalizeObligationText, requestWording } from "./obligation-vocabulary.mjs";
 import { coverageFits, getObligationSourceGroups, obligationCatalog } from "./obligation-sources.mjs";
 import { findSkillExperienceMatch } from "./skills.mjs";
-import { hasPortfolioIntentAnchor, hasUnknownPageQualifier, isUnqualifiedPageMention } from "./obligation-intent-anchors.mjs";
+import { hasAssistantIdentityAnchor, hasPortfolioIntentAnchor, hasUnknownPageQualifier, isUnqualifiedPageMention } from "./obligation-intent-anchors.mjs";
 
 export { getObligationSourceGroups } from "./obligation-sources.mjs";
 
@@ -60,11 +60,13 @@ export function analyzeRequestObligations(message, context = {}, evidenceIndex =
   if (wording.fabrication) difficultyReasons.length = 0;
   const kind = difficultyReasons[0] || "ordinary";
   const anchored = scopeIds.length > 0 || subjects.length > 0 || hasPortfolioIntentAnchor(text, context, matches, evidenceIndex);
-  let expectedIntents = [...ALL_INTENTS];
-  if (wording.fabrication) expectedIntents = ["reject_out_of_scope"];
+  let expectedIntents = ["reject_out_of_scope"];
+  if (wording.fabrication || wording.external) expectedIntents = ["reject_out_of_scope"];
+  else if (!anchored) expectedIntents = ["reject_out_of_scope"];
   else if (kind === "comparison" || kind === "synthesis") expectedIntents = ["answer_portfolio"];
   else if (anchored && (wording.contextual || hasSignal(operation, COMPOSITION) || hasSignal(operation, COMPARISON))) expectedIntents = ["answer_portfolio"];
   else if (wording.navigation && unique(resolved.map((match) => match.id)).length > 0 && !ambiguousTargetIds.length) expectedIntents = ["navigate"];
+  else if (anchored && hasAssistantIdentityAnchor(text)) expectedIntents = ["answer_portfolio"];
   else if (subjects.length && wording.definition && !scopeIds.length && !wording.reference) expectedIntents = ["define_term"];
   else if (anchored && (scopeIds.length || wording.definition || !subjects.length)) expectedIntents = ["answer_portfolio"];
   const result = { kind, difficultyReasons, requiredProjectIds, requiredSubjectIds, allowedSourceIds, expectedIntents, ambiguousTargetIds, coveragePossible: true, scopeSource };

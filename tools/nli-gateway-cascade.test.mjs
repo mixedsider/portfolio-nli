@@ -243,7 +243,7 @@ test("explicit legacy seam retains zero-call summary and vetoes even an otherwis
   assert.equal((await resolveNliRequest("이 프로젝트에서 비용은 어떻게 줄였어?", context,
     { currentTargetId: "project-makertion", modelClient })).intent, "navigate");
   assert.equal(calls, 1);
-  assert.match(context.prompt, /not a hard sentence limit/);
-  assert.match(context.prompt, /up to six concise attributed clauses/);
+  assert.match(context.prompt, /one supported ≤40-char clause per project\/subject/);
+  assert.match(context.prompt, /sourceIds six/);
   assert.doesNotMatch(context.prompt, /at most two Korean sentences and three `sourceIds`/);
 });

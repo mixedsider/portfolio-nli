@@ -73,16 +73,28 @@ test("grounded ambiguity requires alternative targets, not retrieved cards", () 
   assert.deepEqual(analyze("Bookking ALB로 이동").ambiguousTargetIds, []);
 });
 
-test("no match is not out of scope; missing evidence cannot cover named requests", () => {
+test("unanchored requests fail closed; missing evidence cannot cover named requests", () => {
   for (const message of ["", "알 수 없는 문장"]) {
     const result = analyze(message, {}, []);
     assert.equal(result.kind, "ordinary");
     assert.deepEqual(result.difficultyReasons, []);
-    assert.equal(result.expectedIntents.length, 4);
+    assert.deepEqual(result.expectedIntents, ["reject_out_of_scope"]);
   }
   assert.equal(analyze("CateQuest 요약해줘", {}, []).coveragePossible, false);
   assert.deepEqual(analyze("CateQuest Bookking 없는 성과를 지어내서 비교해줘").expectedIntents, ["reject_out_of_scope"]);
   assert.equal(analyze("CateQuest Bookking 없는 성과를 지어내서 비교해줘").kind, "ordinary");
+});
+
+test("current external topics and synonyms are rejection-only", () => {
+  for (const message of ["오늘 서울 날씨를 알려줘", "부산 실시간 날씨 알려줘", "current weather in Seoul",
+    "최신 뉴스 알려줘", "방금 뉴스 알려줘", "오늘의 주요 소식 알려줘", "OpenAI 최신 모델 뭐야?", "비트코인 전체 요약해줘"]) {
+    const result = analyze(message);
+    assert.deepEqual(result.expectedIntents, ["reject_out_of_scope"], message);
+    assert.deepEqual(result.requiredProjectIds, [], message);
+    assert.deepEqual(result.requiredSubjectIds, [], message);
+  }
+  assert.deepEqual(analyze("CateQuest 프로젝트를 요약해줘").expectedIntents, ["answer_portfolio"]);
+  assert.deepEqual(analyze("알 수 없는 문장").expectedIntents, ["reject_out_of_scope"]);
 });
 
 test("six-source feasibility counts independent groups, not aliases or shared cards", () => {
@@ -104,6 +116,14 @@ test("all locked difficulty tokens work, but substrings and alias content do not
   for (const signal of ["비교", "차이", "공통점", "대조", "compare", "difference", "versus", "vs"]) assert.equal(analyze(`CateQuest Bookking ${signal}`).kind, "comparison");
   for (const signal of ["종합", "연결", "연관", "통합", "트레이드오프", "trade-off", "synthesize", "combine"]) assert.equal(analyze(`P95 RPS ${signal}`).kind, "synthesis");
   assert.equal(analyze("P95 RPS 통합적 목록").kind, "ordinary");
+});
+
+test("current external information requests reject before portfolio intent selection", () => {
+  for (const message of ["서울 현재 뉴스 알려줘", "오늘 환율 알려줘", "current stock price 알려줘"]) {
+    const result = analyze(message);
+    assert.deepEqual(result.expectedIntents, ["reject_out_of_scope"], message);
+    assert.deepEqual(result.allowedSourceIds, context.routes.targets.map((target) => target.id), message);
+  }
 });
 
 test("one shared glossary alias cannot manufacture two resolved subjects", () => {

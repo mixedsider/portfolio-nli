@@ -1,7 +1,6 @@
 export const PARTICLES = ["에서", "은", "는", "이", "가", "을", "를", "와", "과", "의"];
 export const COMPARISON = ["비교", "차이", "공통점", "대조", "compare", "difference", "versus", "vs"];
 export const COMPOSITION = ["종합", "연결", "연관", "통합", "트레이드오프", "trade-off", "synthesize", "combine"];
-export const ALL_INTENTS = ["navigate", "define_term", "answer_portfolio", "reject_out_of_scope"];
 const WORD = /[\p{L}\p{N}_+#]/u;
 const SIGNAL_ENDINGS = [...PARTICLES, "해줘", "해주세요", "해", "하기", "하여", "하고", "해서", "해줄래", "점"];
 
@@ -32,6 +31,8 @@ export function hasSignal(text, words) {
 }
 
 export function requestWording(text) {
+  const externalTopic = /(?:날씨|뉴스|주가|환율|교통|미세먼지|경기\s*(?:결과|점수)|\b(?:weather|news|stock\s*price|exchange\s*rate|traffic|air\s*quality|live\s*score)\b)/u.test(text);
+  const current = /(?:오늘|현재|지금|실시간|\b(?:today(?:'s)?|current|now|real[- ]?time)\b)/u.test(text);
   return {
     reference: /(?:^|\s)(?:그(?:\s|것|거)|이 프로젝트|현재 프로젝트|지금 보고 있는|현재 보고 있는)/u.test(text),
     current: /(?:현재 프로젝트|지금 보고 있는|현재 보고 있는|이 프로젝트)/u.test(text),
@@ -39,6 +40,29 @@ export function requestWording(text) {
     navigation: /(?:이동|보여줘|보여주세요|열어줘|\b(?:navigate|open|show|go to)\b)/u.test(text),
     definition: /(?:뭐야|무엇|뜻|의미|설명|정의|\b(?:define|meaning|what is)\b)/u.test(text),
     contextual: /(?:왜|어떻게|줄였|개선|사용|적용|구현|해결|경험|사례|요약|정리|프로필|자기소개|이은성|연락|메일|목록|리스트|성과|기술|스택|할 수|\b(?:why|how|summary|experience|list)\b)/u.test(text),
-    fabrication: /(?:지어내|날조|조작해|없는.{0,20}(?:만들어|꾸며)|\b(?:fabricate|invent unsupported)\b)/u.test(text)
+    fabrication: /(?:지어내|날조|조작해|없는.{0,20}(?:만들어|꾸며)|\b(?:fabricate|invent unsupported)\b)/u.test(text),
+    external: externalTopic && current
   };
+}
+
+export function requestedQuantityCount(value) {
+  return requestedQuantity(value).count;
+}
+
+export function requestedQuantityUnits(value) {
+  return requestedQuantity(value).units;
+}
+
+function requestedQuantity(value) {
+  const text = normalizeObligationText(value);
+  const duration = /(?:응답|소요|지연)(?:은|이|의)?(?:.{0,8})?(?:시간|몇\s*(?:ms|s|초|분))|몇\s*(?:ms|s|초|분)/u.test(text);
+  const throughput = /(?:처리량|\brps\b)/u.test(text);
+  const requested = duration || throughput || /(?:수치|수량|숫자|몇\s*(?:회|번|개)|얼마|횟수|before\s*(?:and|&)\s*after)/u.test(text);
+  if (!requested) return { count: 0, units: [] };
+  const count = /(?:전후|이전.{0,12}이후|before\s*(?:and|&)\s*after)/u.test(text) ? 2 : 1;
+  if (duration) return { count, units: ["ms", "s", "초", "분"] };
+  if (throughput) return { count, units: ["/s", "req/s"] };
+  const query = /(?:쿼리|db\s*접근)/u.test(text);
+  const occurrences = /(?:수치|수량|숫자|횟수|전후|몇\s*(?:회|번))/u.test(text);
+  return { count, units: query && occurrences ? ["회", "번"] : [] };
 }

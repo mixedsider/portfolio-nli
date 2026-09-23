@@ -111,12 +111,13 @@ function boundedTargets(value) {
     if (!target || typeof target !== "object") continue;
     const id = boundedString(target.id, 128);
     if (!id || targets.some((item) => item.id === id)) continue;
-    targets.push({
+    const bounded = {
       id,
       label: boundedString(target.label, 256),
-      type: boundedString(target.type, 64),
-      aliases: boundedAliases(target.aliases)
-    });
+      type: boundedString(target.type, 64)
+    };
+    if (Object.hasOwn(target, "aliases")) bounded.aliases = boundedAliases(target.aliases);
+    targets.push(bounded);
     if (targets.length === MAX_GROUNDED_TARGETS) break;
   }
   return targets;
@@ -130,7 +131,9 @@ function boundedTerms(value) {
     if (!entry || typeof entry !== "object") continue;
     const term = boundedString(entry.term, 128);
     if (!term || terms.some((item) => item.term === term)) continue;
-    terms.push({ term, aliases: boundedAliases(entry.aliases) });
+    const bounded = { term };
+    if (Object.hasOwn(entry, "aliases")) bounded.aliases = boundedAliases(entry.aliases);
+    terms.push(bounded);
     if (terms.length === MAX_GROUNDED_TERMS) break;
   }
   return terms;

@@ -29,6 +29,20 @@ function accept(data, endpoint, request = prepared) {
   return acceptTransportProposal(outcome, context, request, message);
 }
 
+test("short root-only CateQuest overview passes production and probe acceptance", () => {
+  const text = "CateQuest는 사용자 맞춤 카테고리별 질문 생성 애플리케이션입니다.";
+  const ids = ["project-catequest"];
+  const item = { id: "project-summary", message, prepared, candidateSources: prepared.candidateSources,
+    grounded: JSON.parse(prepared.groundedRequestBlock), expected: {
+      intent: "answer_portfolio", groups: [{ sourceId: "project-catequest", label: "CateQuest" }]
+    } };
+  for (const endpoint of ["lfm", "qwen"]) {
+    const data = envelope(text, ids);
+    assert.equal(accept(data, endpoint).accepted, true);
+    assert.equal(inspectProbeCompletion(data, item, context, endpoint).ok, true);
+  }
+});
+
 for (const endpoint of ["lfm", "qwen"]) {
   test(`live CateQuest date-range summary passes shared production and probe gate/${endpoint}`, () => {
     const config = createGatewayConfig({});
