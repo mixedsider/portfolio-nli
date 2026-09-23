@@ -58,7 +58,8 @@ export function verificationRequest(inputs, dependencies, scope, counters) {
           if (bytes > inputs.settings.maxResponseBytes) throw new Error("body_limit");
           chunks.push(part.value);
         }
-        return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        try { return JSON.parse(Buffer.concat(chunks).toString("utf8")); }
+        catch { throw new Error("invalid_json"); }
       };
       return await Promise.race([operation(), aborted]);
     } finally {
