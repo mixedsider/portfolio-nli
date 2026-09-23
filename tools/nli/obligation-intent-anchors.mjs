@@ -26,6 +26,10 @@ function hasUnqualifiedAnchor(text, names) {
   return anchorMentions(text, names).some((match) => isUnqualifiedPageMention(text, match));
 }
 
+export function hasAssistantIdentityAnchor(text) {
+  return hasUnqualifiedAnchor(text, assistantIdentityWords);
+}
+
 // Intent authority only: never invent scope IDs or infer authority from retrieved
 // cards alone. Generic summary/explanation verbs say how to answer, not what about.
 export function hasPortfolioIntentAnchor(text, context, matches, evidenceIndex) {
@@ -36,7 +40,7 @@ export function hasPortfolioIntentAnchor(text, context, matches, evidenceIndex) 
   if (matches.some((match) => available.has(match.id) && (match.type !== "page" || isUnqualifiedPageMention(text, match)))) return true;
   if (available.has("about") && (hasSignal(text, [context.portfolio?.profile?.name, context.portfolio?.profile?.englishName]) ||
     hasUnqualifiedAnchor(text, [...profileWords, ...contactWords]))) return true;
-  if (available.has("top") && hasUnqualifiedAnchor(text, ["포트폴리오", "도우미", ...assistantIdentityWords])) return true;
+  if (available.has("top") && (hasUnqualifiedAnchor(text, ["포트폴리오"]) || hasAssistantIdentityAnchor(text))) return true;
 
   // A display title's terminal sentence punctuation may be omitted in prose.
   // This recognizes its topic only; strict registered scope matching is unchanged.

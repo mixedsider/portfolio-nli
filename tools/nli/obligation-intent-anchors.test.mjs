@@ -6,7 +6,6 @@ import { buildEvidenceIndex } from "./evidence-cards.mjs";
 import { prepareGroundedRequest } from "./evidence-selection.mjs";
 import { acceptProposal } from "./proposal-acceptance.mjs";
 import { analyzeRequestObligations } from "./request-obligations.mjs";
-import { ALL_INTENTS } from "./obligation-vocabulary.mjs";
 import { runTestCase } from "./test-runner.mjs";
 
 const root = new URL("../../", import.meta.url);
@@ -14,18 +13,26 @@ const context = await loadNliContext(root.pathname);
 const index = buildEvidenceIndex(context);
 const fixtures = JSON.parse(await readFile(new URL("nli/live-test-cases.json", root), "utf8")).cases;
 const rejection = { intent: "reject_out_of_scope", confidence: 0.01 };
-const outside = ["OpenAI 최신 모델 뭐야?", "오늘 뉴스 요약해줘", "OpenAI 한눈에 정리해줘", "비트코인 전체 요약해줘"];
+const outside = ["OpenAI 최신 모델 뭐야?", "OpenAI 한눈에 정리해줘", "비트코인 전체 요약해줘"];
+const addressedOutside = ["도우미 최신 뉴스 알려줘", "도우미 방금 뉴스 알려줘", "도우미 오늘의 주요 소식 알려줘",
+  "도우미 OpenAI 최신 모델 뭐야?", "도우미 Bitcoin 전체 요약해줘"];
 
-test("fix2: generic operations without portfolio anchors permit a valid model rejection", () => {
-  for (const message of [...outside, "NebulaWorks 설명해줘", "NebulaWorks 경험 정리해줘", "Redistribution 경험 요약해줘", "요약해줘", "어떻게 개선했어?"]) {
+test("fix2: generic operations without portfolio anchors permit only a valid model rejection", () => {
+  for (const message of [...outside, ...addressedOutside, "NebulaWorks 설명해줘", "NebulaWorks 경험 정리해줘", "Redistribution 경험 요약해줘", "요약해줘", "어떻게 개선했어?"]) {
     const prepared = prepareGroundedRequest(message, context);
     const result = prepared.obligations;
     assert.equal(result.kind, "ordinary", message);
     assert.deepEqual(result.requiredProjectIds, [], message);
     assert.deepEqual(result.requiredSubjectIds, [], message);
     assert.equal(result.scopeSource, "none", message);
-    assert.deepEqual(result.expectedIntents, ALL_INTENTS, message);
+    assert.deepEqual(result.expectedIntents, ["reject_out_of_scope"], message);
+    assert.deepEqual(prepared.candidateSources, [], message);
+    assert.deepEqual(prepared.groundedRequest.targets, [], message);
+    assert.deepEqual(prepared.groundedRequest.terms, [], message);
     assert.equal(acceptProposal(rejection, context, prepared, message).accepted, true, message);
+    assert.equal(acceptProposal({ intent: "answer_portfolio", confidence: 1,
+      answer: "N+1 쿼리: DTO Projection과 JPQL로 54회에서 1회로 줄였습니다.",
+      sourceIds: ["project-catequest-n1"] }, context, prepared, message).accepted, false, message);
   }
 });
 
@@ -34,7 +41,7 @@ test("fix2: incidental current target and unreferenced history cannot anchor unr
   for (const message of outside) {
     const obligations = analyzeRequestObligations(message, incidental, index);
     assert.equal(obligations.scopeSource, "none");
-    assert.deepEqual(obligations.expectedIntents, ALL_INTENTS);
+    assert.deepEqual(obligations.expectedIntents, ["reject_out_of_scope"]);
   }
 });
 
@@ -98,7 +105,7 @@ test("fix3: unknown subject qualifiers cannot gain authority from generic page n
       assert.deepEqual(prepared.obligations.requiredSubjectIds, [], message);
       assert.deepEqual(prepared.obligations.ambiguousTargetIds, [], message);
       assert.equal(prepared.obligations.scopeSource, "none", message);
-      assert.deepEqual(prepared.obligations.expectedIntents, ALL_INTENTS, message);
+      assert.deepEqual(prepared.obligations.expectedIntents, ["reject_out_of_scope"], message);
       assert.equal(acceptProposal(rejection, context, prepared, message).accepted, true, message);
     }
   }
@@ -114,7 +121,7 @@ test("fix3: generic page nouns remain authoritative in standalone portfolio requ
     assert.deepEqual(acceptProposal(rejection, context, prepared, message), { accepted: false, reason: "false_rejection" }, message);
   }
   assert.deepEqual(analyzeRequestObligations("프로젝트로 이동", context, index).expectedIntents, ["navigate"]);
-  assert.deepEqual(analyzeRequestObligations("NebulaWorks 프로젝트로 이동", context, index).expectedIntents, ALL_INTENTS);
+  assert.deepEqual(analyzeRequestObligations("NebulaWorks 프로젝트로 이동", context, index).expectedIntents, ["reject_out_of_scope"]);
 });
 
 test("fix3: known names and resolved user/current context outrank generic-noun qualification", () => {
