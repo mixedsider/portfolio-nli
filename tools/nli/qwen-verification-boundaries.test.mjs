@@ -21,17 +21,26 @@ test("metadata uses ONE capped deadline and no permit survives a signal-ignoring
   assert.equal(now, 1002);
   assert.equal(count.metadataCalls, 2);
   assert.equal(admission.active, 0);
+  const stalledCount = counters();
   await assert.rejects(withVerificationBudget({ budgetMs: 20 }, (scope) =>
-    verificationRequest(inputs, { admission, fetchImpl: () => new Promise(() => {}) }, scope, counters())("http://fixture/props")), /timeout/);
+    verificationRequest(inputs, { admission, fetchImpl: () => new Promise(() => {}) }, scope, stalledCount)("http://fixture/props")), { message: "timeout" });
+  assert.deepEqual(stalledCount, { metadataCalls: 1, inferenceCalls: 0 });
   assert.equal(admission.active, 0);
 });
 
 test("body abort, malformed JSON, non-2xx, oversized streams and late headers clean up", async () => {
-  for (const makeResponse of [() => new Response("SECRET"), () => new Response("SECRET", { status: 500 }),
-    () => new Response("x".repeat(65))]) {
+  for (const [makeResponse, message] of [[() => new Response("SECRET"), "invalid_json"],
+    [() => new Response("SECRET", { status: 500 }), "http_error"],
+    [() => new Response("x".repeat(65)), "body_limit"]]) {
     const admission = createModelAdmission(1);
+    const count = counters();
     await assert.rejects(withVerificationBudget({ budgetMs: 1000 }, (scope) =>
-      verificationRequest(inputs, { admission, fetchImpl: async () => makeResponse() }, scope, counters())("http://fixture/props")));
+      verificationRequest(inputs, { admission, fetchImpl: async () => makeResponse() }, scope, count)("http://fixture/props")), (error) => {
+      assert.equal(error.message === message, true);
+      assert.equal(JSON.stringify({ name: error.name, message: error.message }).includes("SECRET"), false);
+      return true;
+    });
+    assert.deepEqual(count, { metadataCalls: 1, inferenceCalls: 0 });
     assert.equal(admission.active, 0);
   }
   let cancelled = false;
@@ -39,18 +48,22 @@ test("body abort, malformed JSON, non-2xx, oversized streams and late headers cl
   const started = new Promise((resolve) => { bodyStarted = resolve; });
   const controller = new AbortController();
   const admission = createModelAdmission(1);
+  const abortCount = counters();
   const fetchImpl = async () => new Response(new ReadableStream({ pull() { bodyStarted(); }, cancel() { cancelled = true; } }));
   const pending = withVerificationBudget({ budgetMs: 1000, signal: controller.signal }, (scope) =>
-    verificationRequest(inputs, { admission, fetchImpl }, scope, counters())("http://fixture/props"));
+    verificationRequest(inputs, { admission, fetchImpl }, scope, abortCount)("http://fixture/props"));
   await started;
   controller.abort();
-  await assert.rejects(pending, /aborted/);
+  await assert.rejects(pending, { message: "aborted" });
+  assert.deepEqual(abortCount, { metadataCalls: 1, inferenceCalls: 0 });
   assert.equal(cancelled, true);
   assert.equal(admission.active, 0);
   let headers;
   const late = new Promise((resolve) => { headers = resolve; });
+  const lateCount = counters();
   await assert.rejects(withVerificationBudget({ budgetMs: 20 }, (scope) =>
-    verificationRequest(inputs, { admission, fetchImpl: () => late }, scope, counters())("http://fixture/props")), /timeout/);
+    verificationRequest(inputs, { admission, fetchImpl: () => late }, scope, lateCount)("http://fixture/props")), { message: "timeout" });
+  assert.deepEqual(lateCount, { metadataCalls: 1, inferenceCalls: 0 });
   cancelled = false;
   headers(new Response(new ReadableStream({ cancel() { cancelled = true; } })));
   await new Promise((resolve) => setImmediate(resolve));
