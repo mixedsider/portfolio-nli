@@ -115,3 +115,51 @@ test("canonical local portfolio fallback must meet identical clause obligations"
   const completeLocal = canonicalizeModelResponse(proposal(), context, { candidateSources: comparison.candidateSources });
   assert.equal(isCompatibleLocalFallback(completeLocal, context, comparison), true);
 });
+
+test("explicit method and before-after quantity requests require quantitative results", () => {
+  const message = "CateQuest N+1 해결 방법과 전후 쿼리 수치를 설명해줘";
+  const prepared = prepareGroundedRequest(message, context);
+  const sourceIds = ["project-catequest-n1"];
+  assert.equal(acceptProposal({ intent: "answer_portfolio", confidence: 1,
+    answer: "N+1 쿼리: DTO Projection, JPQL.", sourceIds }, context, prepared, message).reason,
+  "requested_quantity_missing");
+  assert.equal(acceptProposal({ intent: "answer_portfolio", confidence: 1,
+    answer: "N+1 쿼리: DTO Projection과 JPQL로 54회에서 1회로 줄였습니다.", sourceIds }, context, prepared, message).accepted,
+  true);
+  assert.equal(acceptProposal({ intent: "answer_portfolio", confidence: 1,
+    answer: "N+1 쿼리: DTO Projection과 JPQL로 263ms에서 64ms로 줄였습니다.", sourceIds }, context, prepared, message).reason,
+  "requested_quantity_missing");
+
+  const durationMessage = "CateQuest N+1 해결 방법과 응답 시간 전후를 설명해줘";
+  const duration = prepareGroundedRequest(durationMessage, context);
+  assert.equal(acceptProposal({ intent: "answer_portfolio", confidence: 1,
+    answer: "N+1 쿼리: DTO Projection과 JPQL로 54회에서 1회로 줄였습니다.", sourceIds }, context, duration, durationMessage).reason,
+  "requested_quantity_missing");
+  assert.equal(acceptProposal({ intent: "answer_portfolio", confidence: 1,
+    answer: "N+1 쿼리: DTO Projection과 JPQL로 263ms에서 64ms로 줄였습니다.", sourceIds }, context, duration, durationMessage).accepted,
+  true);
+
+  for (const [message, acceptedAnswer, rejectedAnswer] of [
+    ["CateQuest N+1 쿼리 응답 시간 전후를 설명해줘",
+      "N+1 쿼리: DTO Projection과 JPQL로 263ms에서 64ms로 줄였습니다.",
+      "N+1 쿼리: DTO Projection과 JPQL로 54회에서 1회로 줄였습니다."],
+    ["CateQuest N+1 몇 번의 쿼리였어?",
+      "N+1 쿼리: DTO Projection과 JPQL로 54회에서 1회로 줄였습니다.",
+      "N+1 쿼리: DTO Projection과 JPQL로 263ms에서 64ms로 줄였습니다."],
+    ["CateQuest N+1 응답은 몇 ms였어?",
+      "N+1 쿼리: DTO Projection과 JPQL로 263ms에서 64ms로 줄였습니다.",
+      "N+1 쿼리: DTO Projection과 JPQL로 54회에서 1회로 줄였습니다."],
+    ["CateQuest N+1 응답은 몇 s였어?",
+      "N+1 쿼리: DTO Projection과 JPQL로 263ms에서 64ms로 줄였습니다.",
+      "N+1 쿼리: DTO Projection과 JPQL로 54회에서 1회로 줄였습니다."],
+    ["CateQuest N+1 응답은 몇 분이었어?",
+      "N+1 쿼리: DTO Projection과 JPQL로 263ms에서 64ms로 줄였습니다.",
+      "N+1 쿼리: DTO Projection과 JPQL로 54회에서 1회로 줄였습니다."]
+  ]) {
+    const request = prepareGroundedRequest(message, context);
+    assert.equal(acceptProposal({ intent: "answer_portfolio", confidence: 1,
+      answer: acceptedAnswer, sourceIds }, context, request, message).accepted, true, message);
+    assert.equal(acceptProposal({ intent: "answer_portfolio", confidence: 1,
+      answer: rejectedAnswer, sourceIds }, context, request, message).reason, "requested_quantity_missing", message);
+  }
+});

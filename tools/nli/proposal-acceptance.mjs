@@ -4,11 +4,12 @@ import { getObligationSourceGroups, obligationCatalog } from "./obligation-sourc
 import { mentionSpans, normalizeObligationText, PARTICLES } from "./obligation-vocabulary.mjs";
 import { assistantIdentityWords, capabilityWords } from "./routing-vocabulary.mjs";
 import { hasAny, normalize } from "./text.mjs";
+import { MAX_GROUNDED_CARD_EVIDENCE_BYTES } from "./grounded-bounds.mjs";
 
 export const PROPOSAL_FAILURE_REASONS = Object.freeze([
   "transport_invalid", "prepared_invalid", "proposal_invalid", "coverage_impossible", "ambiguous_request",
   "false_rejection", "intent_mismatch", "scope_mismatch", "source_group_missing", "ambiguous_attribution",
-  "clause_unsupported", "quantity_unsupported", "project_clause_missing", "subject_clause_missing"
+    "clause_unsupported", "quantity_unsupported", "requested_quantity_missing", "project_clause_missing", "subject_clause_missing"
 ]);
 
 // Detailed task6 success is gate 1, not semantic acceptance. No draft is returned on failure.
@@ -82,7 +83,7 @@ function responseObligations(response, context, prepared, originalMessage) {
   if (response.intent === "answer_portfolio") {
     const ids = response.sources.map((source) => source.id);
     if (ids.some((id) => !obligations.allowedSourceIds.includes(id))) return "scope_mismatch";
-    return checkAnswerObligations(response.answer, ids, context, prepared);
+    return checkAnswerObligations(response.answer, ids, context, prepared, originalMessage);
   }
   return null;
 }
@@ -94,7 +95,8 @@ function validPrepared(prepared, context) {
     .every((field) => Array.isArray(obligations[field]))) return false;
   if (!Array.isArray(candidateSources) || candidateSources.length > 8) return false;
   return new Set(candidateSources.map((card) => card?.id)).size === candidateSources.length && candidateSources.every((card) =>
-    card && typeof card.evidence === "string" && card.evidence.trim() && Buffer.byteLength(card.evidence, "utf8") <= 3000 &&
+    card && typeof card.evidence === "string" && card.evidence.trim() &&
+    Buffer.byteLength(card.evidence, "utf8") <= MAX_GROUNDED_CARD_EVIDENCE_BYTES &&
     card.id === card.targetId && context.targetById.has(card.id) && obligations.allowedSourceIds.includes(card.id));
 }
 
