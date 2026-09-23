@@ -181,13 +181,18 @@ function compareCandidates(left, right) {
 }
 
 function publicCard(card) {
-  return {
+  const result = {
     id: card.targetId,
     targetId: card.targetId,
     label: stringValue(card.label),
     type: stringValue(card.type),
     evidence: stringValue(card.evidence)
   };
+  Object.defineProperty(result, "summaryEvidence", { value: card.summaryEvidence, enumerable: false });
+  Object.defineProperty(result, "overviewEvidence", { value: card.overviewEvidence, enumerable: false });
+  Object.defineProperty(result, "comparisonEvidence", { value: card.comparisonEvidence, enumerable: false });
+  Object.defineProperty(result, "detailEvidence", { value: card.detailEvidence, enumerable: false });
+  return result;
 }
 
 function metricCount(card) {
