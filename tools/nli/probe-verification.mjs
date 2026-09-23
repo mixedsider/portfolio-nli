@@ -69,8 +69,11 @@ export async function runQwenVerification(options, dependencies = {}) {
     Object.assign(report, { ok: true, verified: true, status: "live-verified", checkedAt: receipt.checkedAt,
       binding: inputs.binding, proof, reasoningAccounting: receipt.reasoningAccounting });
   } catch (error) {
+    for (const row of results) delete row.returnedModelId;
     report.blockers.push("qwen_unverified");
-    report.detail = failureDetails.has(error?.message) ? error.message :
+    let message;
+    try { message = error?.message; } catch { message = undefined; }
+    report.detail = failureDetails.has(message) ? message :
       stage === "initial_proof" ? "metadata_transport" : stage === "receipt_write" ? "receipt_write" : "unknown";
   }
   return { ...report, ...counters };

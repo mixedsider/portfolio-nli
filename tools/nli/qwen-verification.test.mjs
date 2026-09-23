@@ -163,6 +163,41 @@ test("failed proof never writes receipt or persists raw reasoning", async (t) =>
   }
 });
 
+test("failed completion never exposes an upstream model ID in a partial report", async (t) => {
+  const f = await setup(t, { model: "SECRET /private/model/path", finish: "length" });
+  const report = await f.verify();
+  assert.equal(report.ok, false);
+  assert.equal(report.verified, false);
+  assert.equal(report.status, "activation-blocked");
+  assert.deepEqual(report.blockers, ["qwen_unverified"]);
+  assert.equal(report.detail, "completion");
+  assert.equal(report.metadataCalls, 19);
+  assert.equal(report.inferenceCalls, 1);
+  assert.equal(report.receiptWritten, false);
+  assert.equal(report.results.length, 1);
+  assert.equal(report.results[0].ok, false);
+  assert.equal(Object.hasOwn(report.results[0], "returnedModelId"), false);
+  assert.ok(!JSON.stringify(report).includes("SECRET"), "failed report contains upstream model ID");
+  assert.ok(!JSON.stringify(report).includes("/private/model/path"), "failed report contains upstream model path");
+  await assert.rejects(readFile(f.receipt));
+  assert.deepEqual(await readdir(f.dir), []);
+});
+
+test("hostile thrown message getter cannot bypass the bounded failure report", async (t) => {
+  const f = await setup(t);
+  const error = new Error("untrusted");
+  Object.defineProperty(error, "message", { get() { throw new Error("SECRET /private/model/path"); } });
+  const report = await runQwenVerification({ settings: f.config.model, context, schema, schemaBytes, receipt: f.receipt },
+    { ...f.dependencies, fetchImpl: async () => { throw error; } });
+  assert.equal(report.ok, false);
+  assert.equal(report.detail, "metadata_transport");
+  assert.deepEqual(report.blockers, ["qwen_unverified"]);
+  assert.equal(report.metadataCalls, 1);
+  assert.equal(report.inferenceCalls, 0);
+  assert.ok(!JSON.stringify(report).includes("SECRET"));
+  await assert.rejects(readFile(f.receipt));
+});
+
 test("issuer failures expose only stage-bounded details", async (t) => {
   const secret = "SECRET /private/model/path";
   const cases = [
@@ -362,6 +397,51 @@ test("CLI report and streams redact malformed metadata body", { timeout: 10000 }
     for (const forbidden of ["SECRET", "/private/model/path", "raw parser body", "SyntaxError", "at async"]) {
       assert.ok(!text.includes(forbidden), `CLI leaked ${forbidden}`);
     }
+  }
+});
+
+test("CLI failed completion redacts model ID from serialized report and streams", { timeout: 10000 }, async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "qwen-cli-model-failure-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const fake = fakeQwen(context, { model: "SECRET /private/model/path", finish: "length" });
+  const server = createServer(async (req, res) => {
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    const response = await fake.fetchImpl(`http://fixture${req.url}`, { body: body || undefined });
+    res.writeHead(response.status, { "Content-Type": "application/json" });
+    res.end(await response.text());
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => { server.closeAllConnections(); server.close(resolve); }));
+  const output = join(dir, "report.json");
+  const receipt = join(dir, "receipt.json");
+  const child = spawn(process.execPath, ["tools/nli-model-probe.mjs", "--endpoint", "qwen", "--mode", "verify", "--output", output, "--receipt", receipt],
+    { cwd: new URL("../../", import.meta.url), env: { ...process.env,
+      LM_STUDIO_BASE_URL: `http://127.0.0.1:${server.address().port}/v1` }, stdio: "pipe" });
+  t.after(() => { if (child.exitCode === null) child.kill(); });
+  let stdout = "";
+  let stderr = "";
+  child.stdout.setEncoding("utf8").on("data", (chunk) => { stdout += chunk; });
+  child.stderr.setEncoding("utf8").on("data", (chunk) => { stderr += chunk; });
+  const exit = await new Promise((resolve, reject) => { child.on("error", reject); child.on("close", resolve); });
+  assert.equal(exit, 1);
+  const bytes = await readFile(output, "utf8");
+  const report = JSON.parse(bytes);
+  assert.equal(report.detail, "completion");
+  assert.equal(report.ok, false);
+  assert.equal(report.verified, false);
+  assert.equal(report.status, "activation-blocked");
+  assert.deepEqual(report.blockers, ["qwen_unverified"]);
+  assert.equal(report.metadataCalls, 19);
+  assert.equal(report.inferenceCalls, 1);
+  assert.equal(report.cleanup.receiptWritten, false);
+  assert.equal(report.results.length, 1);
+  assert.equal(Object.hasOwn(report.results[0], "returnedModelId"), false);
+  await assert.rejects(readFile(receipt));
+  assert.deepEqual(await readdir(dir), ["report.json"]);
+  for (const text of [bytes, stdout, stderr]) {
+    assert.ok(!text.includes("SECRET"), "CLI leaked upstream model ID");
+    assert.ok(!text.includes("/private/model/path"), "CLI leaked upstream model path");
   }
 });
 
