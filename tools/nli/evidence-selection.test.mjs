@@ -11,6 +11,8 @@ import { isAnswerSupportedBySelectedEvidence } from "./answer-evidence-support.m
 import { retrieveEvidenceCandidates } from "./evidence-ranking.mjs";
 import { assistantIdentityWords } from "./routing-vocabulary.mjs";
 import { resolveLocalFastPath } from "./local-fast-path.mjs";
+import { MAX_GROUNDED_CARD_EVIDENCE_BYTES } from "./grounded-bounds.mjs";
+import { acceptProposal } from "./proposal-acceptance.mjs";
 
 const context = await loadNliContext(new URL("../../", import.meta.url).pathname);
 const prepare = (message, extra = {}) => prepareGroundedRequest(message, { ...context, ...extra });
@@ -31,7 +33,7 @@ test("shared assistant identity wording retains bounded top evidence without unr
       const groups = getObligationSourceGroups(prepared.obligations, context);
       if (!groups.length) assert.deepEqual(ids(prepared), ["top"], message);
       for (const group of groups) assert.ok(group.sourceIds.some((id) => ids(prepared).includes(id)), message);
-      assert.ok(Buffer.byteLength(top.evidence) <= 3000);
+      assert.ok(Buffer.byteLength(top.evidence) <= MAX_GROUNDED_CARD_EVIDENCE_BYTES);
       assert.deepEqual(JSON.parse(prepared.groundedRequestBlock).candidateSources, prepared.candidateSources);
       assert.equal(buildGroundedRequestBlock(prepared.groundedRequest), prepared.groundedRequestBlock);
     }
@@ -77,7 +79,7 @@ test("email and project summary use exact bounded prompt candidates despite unre
     const prepared = prepare(message, { currentTargetId: "project-ott" });
     assert.deepEqual(JSON.parse(prepared.groundedRequestBlock).candidateSources, prepared.candidateSources);
     assert.equal(buildGroundedRequestBlock(prepared.groundedRequest), prepared.groundedRequestBlock);
-    assert.ok(prepared.candidateSources.every((card) => Buffer.byteLength(card.evidence) <= 3000));
+    assert.ok(prepared.candidateSources.every((card) => Buffer.byteLength(card.evidence) <= MAX_GROUNDED_CARD_EVIDENCE_BYTES));
     if (message.includes("이메일")) assert.ok(prepared.candidateSources.some((card) => card.id === "about" && card.evidence.includes("mixeddev0812@gmail.com")));
     else assert.ok(ids(prepared).every((id) => id.startsWith("project-catequest")));
   }
@@ -194,4 +196,30 @@ test("migrated live fixtures retain requested facts within the actual prompt bud
     if (fixture.expect.answerExcludes) assert.ok(!text.includes(fixture.expect.answerExcludes), fixture.message);
     assert.equal(prepared.coveragePossible, true, fixture.message);
   }
+});
+
+test("compact section cards retain quantitative, implementation and project-summary witnesses", () => {
+  const cache = prepare("현재 프로젝트에서 캐싱을 어떻게 개선했어?", { currentTargetId: "project-makertion-db" })
+    .candidateSources.find((card) => card.id === "project-makertion-cache");
+  assert.ok(cache.evidence.includes("+6.4%"));
+  assert.ok(cache.evidence.includes("340.95/s"));
+  assert.ok(cache.evidence.includes("362.80/s"));
+
+  const cost = prepare("Makertion 비용 절감 내용을 설명해줘")
+    .candidateSources.find((card) => card.id === "project-makertion-cost");
+  assert.ok(cost.evidence.includes("1/20"));
+  assert.ok(cost.evidence.includes("NAT Gateway를 제거"));
+
+  const catequest = prepare("CateQuest 프로젝트를 요약해줘");
+  const summaryEvidence = catequest.candidateSources.map((card) => card.evidence).join("\n");
+  for (const witness of ["2025.06 ~ 2025.11", "Spring Boot", "Query Tuning", "EleutherAI/polyglot-ko-1.3b"])
+    assert.ok(summaryEvidence.includes(witness), witness);
+  assert.ok(catequest.candidateSources.every((card) => Buffer.byteLength(card.evidence) <= 600));
+
+  const currentMessage = "이 프로젝트에서 비용은 어떻게 줄였어?";
+  const current = prepare(currentMessage, { currentTargetId: "project-makertion" });
+  const response = { intent: "answer_portfolio", confidence: 0.01,
+    answer: "NAT Gateway를 제거하고 EC2 인스턴스 네트워크를 Public IP 기반으로 변경했습니다. CloudWatch 로그 수집 정책을 수정해 일일 서버 비용을 약 31% 절감했습니다.",
+    sourceIds: ["project-makertion-cost"] };
+  assert.equal(acceptProposal(response, context, current, currentMessage).accepted, true);
 });
