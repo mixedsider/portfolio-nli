@@ -63,7 +63,7 @@ export function summarizeProjectResponse(targetId, context, confidence = 0.86) {
     confidence: clampConfidence(confidence),
     targetId,
     message: `${project.title} 프로젝트를 요약합니다.`,
-    answer: `${project.title}는 ${project.description}입니다. 주요 기술은 ${tags}이며, ${results}`
+    answer: `${project.title}는 ${project.description}입니다. 주요 기술은 ${tags}입니다. ${results}`
   };
 }
 
