@@ -4,31 +4,70 @@ on:
   push:
     branches:
       - main
-    paths:
-      - app.js
-      - index.html
-      - styles.css
-      - nli-history.js
-      - nli-widget.js
-      - tools/nli-gateway.mjs
-      - tools/nli/**
-      - tools/nli-test.mjs
-      - tools/*.mjs
-      - nli/**
-      - data/portfolio.js
-      - .env.example
-      - .github/workflows/deploy-nli-gateway.yml
+      - cd/test
 
 permissions:
   contents: read
 
-concurrency:
-  group: deploy-nli-gateway
-  cancel-in-progress: false
-
 jobs:
-  deploy:
+  main-paths:
     if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      eligible: ${{ steps.paths.outputs.eligible }}
+    steps:
+      - name: Checkout exact push history
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Preserve main deploy path eligibility (fail closed)
+        id: paths
+        env:
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.sha }}
+        run: node tools/nli/deploy-path-filter.mjs
+
+  cd-test-diagnostics:
+    if: github.ref == 'refs/heads/cd/test'
+    name: Offline deployment workflow diagnostics (not live serving)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact diagnostic revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Offline workflow contract tests
+        id: contract
+        run: node --test tools/deploy-nli-gateway.test.mjs
+      - name: Diagnostic scope report
+        if: always()
+        env:
+          CONTRACT_RESULT: ${{ steps.contract.outcome }}
+        run: |
+          {
+            echo '## cd/test offline deployment diagnostics'
+            echo "Contract tests: ${CONTRACT_RESULT}"
+            echo 'Live diagnostics blocked until a separately restricted diagnostic identity is available.'
+            echo 'No production runner, credentials, remote lifecycle or model calls are used by this job.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    needs: main-paths
+    if: github.ref == 'refs/heads/main' && needs.main-paths.outputs.eligible == 'true'
+    concurrency:
+      group: deploy-nli-gateway
+      cancel-in-progress: false
     name: Deploy to internal NLI Gateway
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 20
@@ -271,15 +310,109 @@ jobs:
           const deploymentUid = process.geteuid();
           const managerPath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
           let checkpoint = "initialization";
+          let childFailure = null;
+          let reportPath = null;
+          let groupOpen = false;
+          // SAFE_DIAGNOSTICS_START
+          const stages = new Set(["initialization", "state_read", "restart", "listener", "configuration", "qwen", "lfm", "eval", "restore",
+            "snapshot_pm2_binary", "snapshot_pm2_entry", "snapshot_systemctl_binary", "snapshot_systemd_owner", "snapshot_process_environment",
+            "snapshot_registered_environment", "snapshot_configuration", "snapshot_write", "snapshot_listener_identity", "snapshot_pm2_identity",
+            "snapshot_manager_conflict", "snapshot_environment_drift", "snapshot_pm2_home", "snapshot_manager_missing", "snapshot_allowed_origins", "snapshot_receipt_setting"]);
+          const blockers = new Set(["qwen_unverified", "qwen_verifier_unavailable", "no_compatible_output_mode", "metadata_unavailable_or_incomplete",
+            "verification_inputs_changed", "verification_policy_mismatch", "configured_mode_not_verified", "producer_runtime_payload_mismatch",
+            "policyCaps", "lfmVerified", "qwenVerified", "liveSuccess", "adversarial", "ordinary", "qwenBaseline", "faster", "concurrency1",
+            "concurrency4", "difficultWorkload", "injectedEscalation", "finalProofFreshness", "cleanup"]);
+          const details = new Set(["aborted", "timeout", "busy", "http_error", "invalid_json", "body_limit", "identity", "template", "completion",
+            "identity_changed", "metadata_transport", "receipt_write", "unknown"]);
+          const spawnCodes = new Set(["ENOENT", "EACCES", "EPERM", "ETIMEDOUT", "ENOBUFS", "E2BIG", "ENOEXEC", "ENOMEM"]);
+          function failureCategory(error) {
+            if (error?.code === "ETIMEDOUT") return "timeout";
+            if (["ERR_MODULE_NOT_FOUND", "ERR_MODULE_NOT_FOUND_LEGACY", "ERR_UNKNOWN_FILE_EXTENSION"].includes(error?.code)) return "source";
+            if (["ECONNREFUSED", "ECONNRESET", "ENETUNREACH", "EHOSTUNREACH", "ENOTFOUND"].includes(error?.code)) return "network";
+            if (["ENOENT", "EACCES", "EPERM", "EISDIR"].includes(error?.code)) return "read";
+            if (error instanceof SyntaxError) return "parse";
+            return "unclassified";
+          }
+          function childProjection(child) {
+            return { exit: Number.isSafeInteger(child.status) ? child.status : null,
+              signal: child.signal == null ? null : ["SIGTERM", "SIGKILL", "SIGABRT", "SIGSEGV", "SIGINT", "SIGPIPE"].includes(child.signal) ? child.signal : "unclassified",
+              spawnCode: child.error == null ? null : spawnCodes.has(child.error.code) ? child.error.code : "unclassified" };
+          }
+          function projectRows(section, workload = false) {
+            const rows = section?.results ?? section?.rows;
+            if (!Array.isArray(rows)) return null;
+            const safe = { total: rows.length };
+            if (rows.some((row) => typeof row?.ok === "boolean")) {
+              safe.passed = rows.filter((row) => row?.ok === true).length;
+              safe.failed = rows.filter((row) => row?.ok === false).length;
+            }
+            if (rows.some((row) => Array.isArray(row?.errors))) {
+              safe.errorFree = rows.filter((row) => Array.isArray(row?.errors) && row.errors.length === 0).length;
+              safe.withErrors = rows.filter((row) => Array.isArray(row?.errors) && row.errors.length > 0).length;
+            }
+            for (const kind of ["timeout", "http_error", "invalid_json", "network_error", "body_limit", "aborted"]) {
+              const count = rows.filter((row) => row?.kind === kind).length;
+              if (count) safe[kind] = count;
+            }
+            if (workload) {
+              if (Array.isArray(section.http)) safe.httpSuccess = section.http.filter((row) => row?.status === 200).length;
+              if (typeof section.ok === "boolean") safe.ok = section.ok;
+              if (section.child) safe.child = childProjection({ ...section.child, status: section.child.code });
+              for (const key of ["expectedCount", "concurrency", "repeats", "maxActive"]) {
+                if (Number.isSafeInteger(section[key]) && section[key] >= 0) safe[key] = section[key];
+              }
+              if (typeof section.cleanup?.ok === "boolean") safe.cleanupOk = section.cleanup.ok;
+              if (Array.isArray(section.faults)) safe.faultCount = section.faults.length;
+            }
+            return safe;
+          }
+          function projectReport(report) {
+            const safe = {};
+            if (!report || typeof report !== "object" || Array.isArray(report)) return safe;
+            if (typeof report.status === "string") safe.status = ["live-verified", "activation-blocked"].includes(report.status) ? report.status : "unclassified";
+            for (const key of ["ready", "ok", "verified", "receiptWritten"]) if (typeof report[key] === "boolean") safe[key] = report[key];
+            if (typeof report.detail === "string") safe.detail = details.has(report.detail) ? report.detail : "unclassified";
+            if (Array.isArray(report.blockers)) safe.blockers = [...new Set(report.blockers.slice(0, 64).map((item) => blockers.has(item) ? item : "unclassified"))];
+            for (const key of ["metadataCalls", "inferenceCalls", "caseCount"]) if (Number.isSafeInteger(report[key]) && report[key] >= 0) safe[key] = report[key];
+            const timeout = report.settings?.timeoutMs ?? report.evaluationBinding?.settings?.timeoutMs;
+            if (Number.isSafeInteger(timeout) && timeout >= 0) safe.timeoutMs = timeout;
+            for (const key of ["results", "firstCall", "success", "adversarial", "warm", "baseline", "naturalDifficult", "injected"]) {
+              const section = key === "results" ? report : report[key];
+              const projected = projectRows(section, key !== "results");
+              if (projected) safe[key] = projected;
+            }
+            if (Array.isArray(report.phases)) safe.phases = report.phases.slice(0, 2).map((section) => projectRows(section, true));
+            if (report.gates && typeof report.gates === "object") safe.gates = Object.fromEntries([...blockers]
+              .filter((key) => typeof report.gates[key] === "boolean").map((key) => [key, report.gates[key]]));
+            for (const key of ["lfm", "qwen", "cascade"]) {
+              const bound = report.settings?.[key]?.timeoutMs;
+              if (Number.isSafeInteger(bound) && bound >= 0) safe[key + "TimeoutMs"] = bound;
+            }
+            return safe;
+          }
+          function readReport(path) {
+            if (!path) return { availability: "not_requested" };
+            try { return { availability: "available", ...projectReport(JSON.parse(readFileSync(path, "utf8"))) }; }
+            catch (error) { return { availability: error?.code === "ENOENT" ? "missing" : failureCategory(error) }; }
+          }
+          // SAFE_DIAGNOSTICS_END
           class LifecycleFailure extends Error {
             constructor(reason) { super("lifecycle_failed"); this.reason = reason; }
           }
-          function mark(reason) { checkpoint = reason; }
+          function mark(reason) { checkpoint = stages.has(reason) ? reason : "initialization"; }
+          function stage(reason, path = null, timeoutBoundMs = null) {
+            if (groupOpen) console.log("::endgroup::");
+            mark(reason); reportPath = path;
+            console.log(`::group::NLI lifecycle ${checkpoint}`); groupOpen = true;
+            if (Number.isSafeInteger(timeoutBoundMs) && timeoutBoundMs >= 0) {
+              console.log(`NLI request timeout bound: ${timeoutBoundMs}ms; child timeout bound: 900000ms`);
+            }
+          }
           function fail(reason) { throw new LifecycleFailure(reason); }
           function run(command, args, env) {
             const child = spawnSync(command, args, { env, encoding: "utf8", timeout: 900000, maxBuffer: 16777216 });
             // PM2/child output can contain environment values; never relay it.
-            if (child.error || child.signal || child.status !== 0) fail();
+            if (child.error || child.signal || child.status !== 0) { childFailure = childProjection(child); fail(); }
             return child.stdout;
           }
           function pm2(bin, args, env) { return run(process.execPath, [bin, ...args], env); }
@@ -506,9 +639,11 @@ jobs:
               writeFileSync(snapshotPath, JSON.stringify({ env, rawEnv, manager, receipt, hadReceipt }),
                 { flag: "wx", mode: 0o600 });
             } else {
+              mark("state_read");
               const state = JSON.parse(readFileSync(snapshotPath, "utf8"));
               const env = { ...state.env, GIT_COMMIT_SHA: revision };
               if (action === "restart") {
+                stage("restart");
                 if (!/^[a-f0-9]{40}$/.test(revision)) fail();
                 if (state.manager?.type === "pm2") {
                   const entry = entryFor(state.manager.bin, state.manager.name, env);
@@ -523,6 +658,7 @@ jobs:
                     commandEnv);
                 } else fail();
               } else if (action === "identity" || action === "preflight") {
+                mark("listener");
                 const actualRaw = processEnv(process.env.GATEWAY_PID);
                 let actual = actualRaw;
                 let config;
@@ -540,17 +676,23 @@ jobs:
                   if (!sameApplicationEnv(state.env, actual)) fail();
                 } else fail();
                 if (action === "preflight") {
+                  mark("configuration");
                   config ??= await configFor(actual);
                   if (!config.cascade.qwenEnabled || config.cascade.qwenVerificationFile !== state.receipt) fail();
                   for (const [endpoint, extra] of [["qwen", ["--receipt", state.receipt]], ["lfm", []]]) {
+                    stage(endpoint, dir + "/" + endpoint + "-verify.json", endpoint === "qwen" ? config.model.timeoutMs : config.lfm.timeoutMs);
                     run(process.execPath, ["tools/nli/eval-bound-probe.mjs", "--endpoint", endpoint, "--mode", "verify",
                       "--output", dir + "/" + endpoint + "-verify.json", ...extra], actual);
+                    console.log(`NLI report ${endpoint}: ${JSON.stringify(readReport(reportPath))}`);
                   }
+                  stage("eval", dir + "/live-eval.json", config.cascade.timeoutMs);
                   run(process.execPath, ["tools/nli-cascade-eval.mjs", "--output", dir + "/live-eval.json",
                     "--lfm-verification", dir + "/lfm-verify.json", "--qwen-verification", dir + "/qwen-verify.json"], actual);
                   if (JSON.parse(readFileSync(dir + "/live-eval.json", "utf8")).ready !== true) fail();
+                  console.log(`NLI report eval: ${JSON.stringify(readReport(reportPath))}`);
                 }
               } else if (action === "restore") {
+                mark("restore");
                 if (state.hadReceipt) {
                   const temporary = state.receipt + ".rollback-" + process.env.PREFLIGHT_ID;
                   copyFileSync(dir + "/previous-receipt.json", temporary);
@@ -559,19 +701,28 @@ jobs:
               } else fail();
             }
           } catch (error) {
-            const reason = error instanceof LifecycleFailure && error.reason ? error.reason : checkpoint;
+            const reason = error instanceof LifecycleFailure && stages.has(error.reason) ? error.reason : checkpoint;
             const suffix = action === "snapshot" ? ` (reason=${reason})` : "";
-            console.error(`Gateway lifecycle/preflight failed${suffix}; private host checkpoint retained until cleanup.`);
+            const safeAction = ["snapshot", "restart", "identity", "preflight", "restore"].includes(action) ? action : "unclassified";
+            const category = childFailure ? childFailure.spawnCode === "ETIMEDOUT" ? "timeout" : "child" :
+              error instanceof LifecycleFailure ? "policy" : failureCategory(error);
+            console.error(`Gateway lifecycle/preflight failed${suffix}; action=${safeAction} stage=${reason} category=${category} child=${JSON.stringify(childFailure)} report=${JSON.stringify(readReport(reportPath))}; private host checkpoint retained until cleanup.`);
             process.exitCode = 1;
+          } finally {
+            if (groupOpen) console.log("::endgroup::");
           }
           LIFECYCLE
           GATEWAY_PID="$(nli_listener_pids)" node "${PREFLIGHT_DIR}/lifecycle.mjs" snapshot
+          echo '::group::NLI source checkout and ancestry'
           git fetch --no-tags origin "main:refs/remotes/origin/main"
           git cat-file -e "${DEPLOY_SHA}^{commit}"
           git merge-base --is-ancestor "${DEPLOY_SHA}" origin/main
           git checkout --detach "${DEPLOY_SHA}"
+          echo '::endgroup::'
           node "${PREFLIGHT_DIR}/lifecycle.mjs" restart "${DEPLOY_SHA}"
+          echo '::group::NLI listener identity'
           wait_for_nli_listener_identity
+          echo '::endgroup::'
           GATEWAY_PID="$(nli_listener_pids)" node "${PREFLIGHT_DIR}/lifecycle.mjs" preflight "${DEPLOY_SHA}"
           REMOTE
 
@@ -622,6 +773,7 @@ jobs:
             node tools/nli-test.mjs --live --cases nli/adversarial-test-cases.json --min-pass-rate 1 --timeout-ms 30000
 
       - name: Roll back failed deployment
+        id: rollback
         if: ${{ failure() && steps.previous.outputs.sha != '' }}
         shell: bash
         env:
@@ -750,10 +902,28 @@ jobs:
           # No checkpoint means deploy failed before checkout or lifecycle mutation.
           [ -f "${PREFLIGHT_DIR}/snapshot.json" ] || exit 0
           node "${PREFLIGHT_DIR}/lifecycle.mjs" restore
+          echo '::group::NLI rollback source checkout'
           git checkout --detach "${PREVIOUS_SHA}"
+          echo '::endgroup::'
           node "${PREFLIGHT_DIR}/lifecycle.mjs" restart "${PREVIOUS_SHA}"
+          echo '::group::NLI rollback listener identity'
           wait_for_nli_listener_identity
+          echo '::endgroup::'
           REMOTE
+
+      - name: Deployment and rollback outcome report
+        if: always()
+        env:
+          DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+          ROLLBACK_OUTCOME: ${{ steps.rollback.outcome }}
+          JOB_OUTCOME: ${{ job.status }}
+        run: |
+          {
+            echo '## Production lifecycle outcomes'
+            echo "Job: ${JOB_OUTCOME}; exact revision lifecycle: ${DEPLOY_OUTCOME}; rollback: ${ROLLBACK_OUTCOME}"
+            echo 'The first failed step and its fixed stage diagnostics remain authoritative; rollback does not replace that failure.'
+            echo 'Report availability and safe counters are diagnostics only, not readiness proof.'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Remove private host lifecycle snapshot
         if: ${{ always() && steps.previous.outputs.sha != '' }}

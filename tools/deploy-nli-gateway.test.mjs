@@ -11,6 +11,8 @@ import { extractWorkflowLifecycle } from "./nli/deploy-workflow-extract.mjs";
 import { registerWorkflowLifecycleTests } from "./nli/deploy-workflow-tests.mjs";
 import { registerFirstUpgradeTests } from "./nli/deploy-workflow-upgrade-tests.mjs";
 import { registerWorkflowDiagnosticTests } from "./nli/deploy-workflow-diagnostic-tests.mjs";
+import { registerWorkflowSafetyTests } from "./nli/deploy-workflow-safety-tests.mjs";
+import { registerDeployPathFilterTests } from "./nli/deploy-path-filter-tests.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const workflowPath = resolve(root, ".github/workflows/deploy-nli-gateway.yml");
@@ -94,6 +96,8 @@ test("rollback restores the pre-restart receipt and captured environment with th
 registerWorkflowLifecycleTests(workflow, root);
 registerFirstUpgradeTests(workflow, root);
 registerWorkflowDiagnosticTests(workflow);
+registerWorkflowSafetyTests(workflow, root);
+registerDeployPathFilterTests();
 
 test("deployment preflight covers grounded fixtures and maintained tests without a browser dependency", () => {
   const preflight = extractPreflightScript(workflow);

@@ -24,6 +24,16 @@ export function assertRedacted(result) {
   assert.equal(result.signal, null);
 }
 
+export function assertLifecycleFailure(result, action, stage, category = "policy", exit = null) {
+  const suffix = action === "snapshot" ? ` (reason=${stage})` : "";
+  const child = exit === null ? null : { exit, signal: null, spawnCode: null };
+  const prefix = `Gateway lifecycle/preflight failed${suffix}; action=${action} stage=${stage} category=${category} child=${JSON.stringify(child)} report=`;
+  assert.ok(result.stderr.trim().startsWith(prefix), result.stderr);
+  assert.ok(result.stderr.trim().endsWith("; private host checkpoint retained until cleanup."), result.stderr);
+  const report = JSON.parse(result.stderr.trim().slice(prefix.length, -"; private host checkpoint retained until cleanup.".length));
+  assert.ok(["not_requested", "missing", "available", "parse", "read"].includes(report.availability));
+}
+
 function systemdLifecycle(source, fixture) {
   return source.replaceAll("/proc/", `${fixture.procRoot}/`)
     .replaceAll("/run/user/", `${fixture.runtimeRoot}/`);
@@ -96,8 +106,7 @@ export function registerWorkflowLifecycleTests(workflow, root) {
           await writeFile(join(f.procRoot, String(restarted.pid), "cgroup"), "0::/system.slice/not-the-captured.service\n");
           const driftResult = await invoke("identity");
           assert.equal(driftResult.code, 1, "new PID must remain in the captured unit control group");
-          assert.equal(driftResult.stderr.trim(),
-            "Gateway lifecycle/preflight failed; private host checkpoint retained until cleanup.");
+          assertLifecycleFailure(driftResult, "identity", "listener");
         } finally {
           assert.deepEqual(await f.close(), { listening: false, activeChildren: 0 });
         }
@@ -139,8 +148,7 @@ export function registerWorkflowLifecycleTests(workflow, root) {
           assertRedacted(result);
           assert.equal(result.code, 1);
           assert.equal(result.stdout, "");
-          assert.equal(result.stderr.trim(),
-            `Gateway lifecycle/preflight failed (reason=${scenario.reason}); private host checkpoint retained until cleanup.`);
+          assertLifecycleFailure(result, "snapshot", scenario.reason);
           await assert.rejects(access(snapshotFile), { code: "ENOENT" });
         } finally {
           assert.deepEqual(await f.close(), { listening: false, activeChildren: 0 });
@@ -168,8 +176,7 @@ export function registerWorkflowLifecycleTests(workflow, root) {
         const result = await invoke("identity");
         assert.equal(result.code, 1, "missing captured application environment must fail identity");
         assert.equal(result.stdout, "");
-        assert.equal(result.stderr.trim(),
-          "Gateway lifecycle/preflight failed; private host checkpoint retained until cleanup.");
+        assertLifecycleFailure(result, "identity", "listener");
       } finally {
         assert.deepEqual(await f.close(), { listening: false, activeChildren: 0 });
       }
@@ -213,8 +220,7 @@ export function registerWorkflowLifecycleTests(workflow, root) {
             PATH: `${f.app}:${f.ssh.PATH}`, SYSTEMCTL_BIN: appLocalSystemctl } });
         assertRedacted(result);
         assert.equal(result.code, 1);
-        assert.equal(result.stderr.trim(),
-          "Gateway lifecycle/preflight failed (reason=snapshot_systemctl_binary); private host checkpoint retained until cleanup.");
+        assertLifecycleFailure(result, "snapshot", "snapshot_systemctl_binary");
         await assert.rejects(access(snapshotFile), { code: "ENOENT" });
       } finally {
         assert.deepEqual(await f.close(), { listening: false, activeChildren: 0 });
@@ -301,8 +307,7 @@ export function registerWorkflowLifecycleTests(workflow, root) {
         await chmod(f.managerDirectory, 0o770);
         const result = await invoke("restart");
         assert.equal(result.code, 1);
-        assert.equal(result.stderr.trim(),
-          "Gateway lifecycle/preflight failed; private host checkpoint retained until cleanup.");
+        assertLifecycleFailure(result, "restart", "restart");
         assert.deepEqual(await f.systemdCalls(), callsBefore);
         assert.deepEqual(f.manager.calls, []);
       } finally {
@@ -329,8 +334,7 @@ export function registerWorkflowLifecycleTests(workflow, root) {
         await chmod(f.runtimeDirectory, 0o770);
         const result = await invoke("restart");
         assert.equal(result.code, 1);
-        assert.equal(result.stderr.trim(),
-          "Gateway lifecycle/preflight failed; private host checkpoint retained until cleanup.");
+        assertLifecycleFailure(result, "restart", "restart");
         const restartCallsAfter = (await f.systemdCalls()).filter((call) => call.action === "restart").length;
         assert.equal(restartCallsAfter, restartCallsBefore, "unsafe runtime must fail before systemctl restart");
         assert.deepEqual(f.manager.calls, []);
@@ -350,8 +354,7 @@ export function registerWorkflowLifecycleTests(workflow, root) {
           env: { ...f.ssh, PROCESS_NAME: "fixture", GATEWAY_PID: String(state.pid), SYSTEMCTL_BIN: f.systemctl } });
         assertRedacted(result);
         assert.equal(result.code, 1);
-        assert.equal(result.stderr.trim(),
-          "Gateway lifecycle/preflight failed (reason=snapshot_manager_conflict); private host checkpoint retained until cleanup.");
+        assertLifecycleFailure(result, "snapshot", "snapshot_manager_conflict");
         await assert.rejects(access(snapshotFile), { code: "ENOENT" });
         assert.deepEqual(f.manager.calls, []);
         assert.deepEqual((await f.systemdCalls()).filter((call) => call.action === "restart"), []);
@@ -403,8 +406,7 @@ export function registerWorkflowLifecycleTests(workflow, root) {
           await writeFile(join(f.app, ".env"), Object.entries(dotenv).map(([key, value]) => `${key}=${value}`).join("\n"));
           const result = await invoke("identity");
           assert.equal(result.code, 1, `${drift} effective application key must fail identity`);
-          assert.equal(result.stderr.trim(),
-            "Gateway lifecycle/preflight failed; private host checkpoint retained until cleanup.");
+          assertLifecycleFailure(result, "identity", "listener");
         } finally {
           assert.deepEqual(await f.close(), { listening: false, activeChildren: 0 });
         }
@@ -430,8 +432,7 @@ export function registerWorkflowLifecycleTests(workflow, root) {
         await f.scenario("systemd-restart-fail");
         const failedRestart = await invoke("restart");
         assert.equal(failedRestart.code, 1);
-        assert.equal(failedRestart.stderr.trim(),
-          "Gateway lifecycle/preflight failed; private host checkpoint retained until cleanup.");
+        assertLifecycleFailure(failedRestart, "restart", "restart", "child", 9);
         assert.deepEqual(f.manager.calls, []);
 
         assert.equal((await invoke("restore", f.previousRevision)).code, 0);
@@ -505,8 +506,9 @@ export function registerWorkflowLifecycleTests(workflow, root) {
           assertRedacted(result);
           assert.equal(result.code, expected, `${scenario}/${action}`);
           if (expected === 1 && action !== "snapshot") {
-            assert.equal(result.stderr.trim(),
-              "Gateway lifecycle/preflight failed; private host checkpoint retained until cleanup.");
+            const stage = action === "restart" ? "restart" : action === "identity" ? "listener" : scenario.split("-")[0];
+            const childFailed = scenario.endsWith("-fail");
+            assertLifecycleFailure(result, action, stage, childFailed ? "child" : "policy", childFailed ? 1 : null);
           }
         }
         try {
