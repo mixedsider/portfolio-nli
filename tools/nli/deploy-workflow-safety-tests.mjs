@@ -8,6 +8,56 @@ import { createWorkflowFixture } from "./deploy-workflow-fixture.mjs";
 import { execute } from "./deploy-workflow-tests.mjs";
 
 export function registerWorkflowSafetyTests(workflow, root) {
+  test("long workflow run blocks avoid GitHub expression expansion beyond 21000 characters", () => {
+    const blocks = [...workflow.matchAll(/^        run: \|\n((?:          .*\n|\n)*)/gm)]
+      .map((match) => match[1].replace(/^          /gm, ""));
+    assert.ok(blocks.some((block) => block.length > 21000), "must inspect the oversized deployment script");
+    for (const block of blocks) {
+      if (block.length > 21000) assert.doesNotMatch(block, /\$\{\{/, `oversized run block (${block.length} characters) must use step env`);
+      assert.doesNotMatch(block, /\$\{\{\s*github\.(?:sha|run_id|run_attempt)\b/, "revision and run identity belong in step env");
+    }
+  });
+
+  test("SSH lifecycle steps bind pinned revision and run identity through step env without changing quoted assignments", async () => {
+    const names = ["Deploy exact triggering revision", "Roll back failed deployment", "Remove private host lifecycle snapshot"];
+    for (const name of names) {
+      const start = workflow.indexOf(`      - name: ${name}\n`);
+      assert.ok(start >= 0, name);
+      const end = workflow.indexOf("\n      - name:", start + 1);
+      const step = workflow.slice(start, end < 0 ? undefined : end);
+      const run = step.indexOf("        run: |\n");
+      assert.ok(run > 0, name);
+      const env = step.slice(0, run), script = step.slice(run);
+      assert.match(env, /PREFLIGHT_ID: \$\{\{ github.run_id \}\}-\$\{\{ github.run_attempt \}\}/);
+      assert.match(script, /PREFLIGHT_ID='\$\{PREFLIGHT_ID\}' bash -s" <<'REMOTE'/);
+      assert.match(script, /"\$\{NLI_GATEWAY_USER\}@\$\{NLI_GATEWAY_HOST\}" \\/);
+      if (name === names[0]) {
+        assert.match(env, /DEPLOY_SHA: \$\{\{ github.sha \}\}/);
+        assert.match(script, /DEPLOY_SHA='\$\{DEPLOY_SHA\}' GIT_COMMIT_SHA='\$\{DEPLOY_SHA\}'/);
+        assert.match(script, /git merge-base --is-ancestor "\$\{DEPLOY_SHA\}" origin\/main/);
+        assert.match(script, /git checkout --detach "\$\{DEPLOY_SHA\}"/);
+      } else if (name === names[1]) {
+        assert.match(env, /PREVIOUS_SHA: \$\{\{ steps.previous.outputs.sha \}\}/);
+        assert.match(script, /PREVIOUS_SHA='\$\{PREVIOUS_SHA\}' GIT_COMMIT_SHA='\$\{PREVIOUS_SHA\}'/);
+      }
+      const command = script.slice("        run: |\n".length).replace(/^          /gm, "").split("\nset -euo pipefail")[0];
+      const result = await execute("bash", ["-ceu", `ssh() { printf '%s\\0' "$@"; }\n${command}\nREMOTE\n`], {
+        env: { ...process.env, NLI_GATEWAY_USER: "offline-user", NLI_GATEWAY_HOST: "offline-host", NLI_GATEWAY_SSH_PORT: "22",
+          NLI_GATEWAY_APP_DIR: "/offline/app with spaces", NLI_GATEWAY_PROCESS: "offline-process", NLI_GATEWAY_PORT: "8787",
+          DEPLOY_SHA: "b".repeat(40), PREVIOUS_SHA: "a".repeat(40), PREFLIGHT_ID: "123-2" }
+      });
+      assert.equal(result.code, 0, result.stderr);
+      assert.equal(result.signal, null);
+      const args = result.stdout.split("\0").filter(Boolean);
+      assert.equal(args.at(-2), "offline-user@offline-host", "SSH destination must remain one positional argument");
+      const assignments = "APP_DIR='/offline/app with spaces' " + (name === names[2] ? "" :
+        "PROCESS_NAME='offline-process' NLI_GATEWAY_PORT='8787' " + (name === names[0] ?
+          `DEPLOY_SHA='${"b".repeat(40)}' GIT_COMMIT_SHA='${"b".repeat(40)}' ` :
+          `PREVIOUS_SHA='${"a".repeat(40)}' GIT_COMMIT_SHA='${"a".repeat(40)}' `));
+      assert.equal(args.at(-1), assignments + "PREFLIGHT_ID='123-2' bash -s", "remote assignments must remain one quoted argument");
+    }
+  });
+
   test("every cd/test push runs hosted offline diagnostics, never production", () => {
     const header = workflow.slice(0, workflow.indexOf("jobs:"));
     assert.match(header, /branches:\n      - main\n      - cd\/test\n/);
