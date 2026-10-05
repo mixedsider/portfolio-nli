@@ -13,6 +13,69 @@
 
 이전 전체 평가(당시 설정)에서 944-byte grounded profile을 포함한 projected 요청도 고정 LFM4초/Qwen8초 안에 completion headers를 받지 못했습니다. metadata 접근 성공은 모델 readiness가 아니며 정확한 remote prefill/generation/queue/alias/proxy/network 원인은 미확정입니다. 당시 genuine LFM 채택은0→0, Qwen18개 clean proof/receipt도 없습니다. 당시 한 번씩의 fallback/timeout 관측이나4초 대8초 실패 시간은 accepted-model latency 분포 또는 속도 향상이 아닙니다. 이 문서 수정 때문에 추가 LAN 실행을 하지 않았으며, 승인된 새로운 serving 근거와 모든 strict gate 통과가 필요합니다.
 
+## `cd/test`: offline workflow diagnostics, not live serving
+
+The same `Deploy NLI Gateway` workflow accepts pushes to `main` and `cd/test`.
+There is no workflow-level path filter: **every `cd/test` push, including a
+docs-only push, is eligible**. The `cd-test-diagnostics` job uses a GitHub-hosted
+Ubuntu runner, checks out the exact triggering SHA without persisted checkout
+credentials, and runs `node --test tools/deploy-nli-gateway.test.mjs`. These are
+offline contract tests with local fake PM2/systemd/probe/evaluator fixtures;
+they do not contact production SSH, LAN models or restart production servers.
+The always-run Actions summary reports the contract-test outcome and limitation.
+
+**Live diagnostics are blocked until a separately restricted diagnostic identity
+is available.** Do not supply production SSH secrets or route this branch onto
+the production self-hosted runner. Passing this job proves neither serving
+health, model readiness, fresh no-thinking proof nor successful deployment.
+Push is needed for Actions execution; a local patch alone does not run Actions.
+
+For `main`, a small hosted `main-paths` job checks the complete push
+`before..after` tree diff against the former `push.paths` list in
+`tools/nli/deploy-path-filter.mjs`. Deleted paths and both sides of renames count;
+an initial all-zero `before` uses the triggering revision's tree. Invalid SHAs,
+missing history, timeout, or incomplete diff output fail closed: production is
+skipped, not enabled by default. Docs-only main pushes now create a workflow run
+but cannot deploy. Full history checkout is intentional to avoid API changed-file
+truncation. There is no workflow-level concurrency lock. Only the production
+`deploy` job, after its `needs: main-paths` and positive main-only eligibility
+guard, uses the exact `deploy-nli-gateway` group with `cancel-in-progress: false`.
+Docs-only main runs therefore cannot acquire the production lock or displace an
+eligible pending deployment. Eligible production jobs retain GitHub's normal
+pending replacement semantics: at most one running and one pending job in the
+group; a newer eligible job can replace an older pending job, but does not cancel
+the running job. This is not a FIFO queue or a promise to deploy every revision.
+The main filter and `cd/test` offline diagnostic jobs have no shared concurrency
+lock, so each diagnostic push can execute without replacing intermediate pending
+diagnostic runs. This adds only offline work, not live traffic. Exact revision
+ancestry against remote `origin/main` and receipt/environment rollback rules
+remain unchanged.
+
+### Reading detailed production lifecycle logs safely
+
+Fixed log groups mark source checkout, restart, listener identity, Qwen verification,
+LFM verification and the evaluator. A failure records an allowlisted action/stage,
+category (`policy`, `child`, `source`, `network`, `read`, `parse`, `timeout`, or
+`unclassified`), child exit/signal and allowlisted spawn error code. When a private
+report exists, only known status/blockers/detail tokens, booleans, numeric counters
+and timeout bounds are projected. Missing, unreadable and malformed reports are
+distinguished; reading a report never replaces the original child failure. Unknown
+strings become `unclassified`, not their original value. Request timeout bounds
+are distinct from the unchanged 900000ms lifecycle child wall-time limit.
+
+Raw child stdout/stderr, error messages, environment values, URLs, paths, prompts,
+templates, receipt contents and model identifiers are not included in these
+diagnostics. Reports remain host-local; do not upload raw `.nli/` evidence. The
+Actions outcome summary records deployment and rollback separately; rollback
+success does not turn the original failed deployment into success. None of this
+weakens no-thinking, receipt freshness, readiness gates or timeout/concurrency policy.
+
+Workflow routing is **not** a repository-level credential security boundary:
+the public self-hosted runner still has production credentials and there are no
+protected environments. Restricting runner access and diagnostic identity outside
+this patch is required before treating untrusted branch workflows as safe for live
+diagnostics. No credentials or runner permissions are changed here.
+
 ## 배포 전 확인
 
 배포 전에 로컬에서 다음 명령을 실행합니다.
