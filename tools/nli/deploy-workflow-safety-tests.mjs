@@ -34,7 +34,8 @@ export function registerWorkflowSafetyTests(workflow, root) {
       if (name === names[0]) {
         assert.match(env, /DEPLOY_SHA: \$\{\{ github.sha \}\}/);
         assert.match(script, /DEPLOY_SHA='\$\{DEPLOY_SHA\}' GIT_COMMIT_SHA='\$\{DEPLOY_SHA\}'/);
-        assert.match(script, /git merge-base --is-ancestor "\$\{DEPLOY_SHA\}" origin\/main/);
+        assert.match(env, /DEPLOY_REF: \$\{\{ github.ref \}\}/);
+        assert.match(script, /git merge-base --is-ancestor "\$\{DEPLOY_SHA\}" "refs\/remotes\/origin\/\$\{DEPLOY_BRANCH\}"/);
         assert.match(script, /git checkout --detach "\$\{DEPLOY_SHA\}"/);
       } else if (name === names[1]) {
         assert.match(env, /PREVIOUS_SHA: \$\{\{ steps.previous.outputs.sha \}\}/);
@@ -44,7 +45,7 @@ export function registerWorkflowSafetyTests(workflow, root) {
       const result = await execute("bash", ["-ceu", `ssh() { printf '%s\\0' "$@"; }\n${command}\nREMOTE\n`], {
         env: { ...process.env, NLI_GATEWAY_USER: "offline-user", NLI_GATEWAY_HOST: "offline-host", NLI_GATEWAY_SSH_PORT: "22",
           NLI_GATEWAY_APP_DIR: "/offline/app with spaces", NLI_GATEWAY_PROCESS: "offline-process", NLI_GATEWAY_PORT: "8787",
-          DEPLOY_SHA: "b".repeat(40), PREVIOUS_SHA: "a".repeat(40), PREFLIGHT_ID: "123-2" }
+           DEPLOY_REF: "refs/heads/main", DEPLOY_SHA: "b".repeat(40), PREVIOUS_SHA: "a".repeat(40), PREFLIGHT_ID: "123-2" }
       });
       assert.equal(result.code, 0, result.stderr);
       assert.equal(result.signal, null);
@@ -52,18 +53,18 @@ export function registerWorkflowSafetyTests(workflow, root) {
       assert.equal(args.at(-2), "offline-user@offline-host", "SSH destination must remain one positional argument");
       const assignments = "APP_DIR='/offline/app with spaces' " + (name === names[2] ? "" :
         "PROCESS_NAME='offline-process' NLI_GATEWAY_PORT='8787' " + (name === names[0] ?
-          `DEPLOY_SHA='${"b".repeat(40)}' GIT_COMMIT_SHA='${"b".repeat(40)}' ` :
+          `DEPLOY_SHA='${"b".repeat(40)}' GIT_COMMIT_SHA='${"b".repeat(40)}' DEPLOY_BRANCH='main' ` :
           `PREVIOUS_SHA='${"a".repeat(40)}' GIT_COMMIT_SHA='${"a".repeat(40)}' `));
       assert.equal(args.at(-1), assignments + "PREFLIGHT_ID='123-2' bash -s", "remote assignments must remain one quoted argument");
     }
   });
 
-  test("every cd/test push runs hosted offline diagnostics, never production", () => {
+  test("every cd/test push runs hosted offline diagnostics before the authorized real deploy", () => {
     const header = workflow.slice(0, workflow.indexOf("jobs:"));
     assert.match(header, /branches:\n      - main\n      - cd\/test\n/);
     assert.doesNotMatch(header, /paths(?:-ignore)?:/);
     assert.match(workflow, /main-paths:\n    if: github.ref == 'refs\/heads\/main'\n    runs-on: ubuntu-latest/);
-    assert.match(workflow, /deploy:\n    needs: main-paths\n    if: github.ref == 'refs\/heads\/main' && needs.main-paths.outputs.eligible == 'true'/);
+    assert.match(workflow, /deploy:\n    needs: \[main-paths, cd-test-diagnostics\]\n    if: \$\{\{ always\(\) && !cancelled\(\)/);
     const start = workflow.indexOf("  cd-test-diagnostics:");
     assert.ok(start > 0);
     const diagnostic = workflow.slice(start, workflow.indexOf("\n  deploy:", start));
@@ -71,12 +72,13 @@ export function registerWorkflowSafetyTests(workflow, root) {
     assert.match(diagnostic, /runs-on: ubuntu-latest/);
     assert.match(diagnostic, /uses: actions\/checkout@v4\n        with:\n          ref: \$\{\{ github.sha \}\}\n          persist-credentials: false/);
     assert.doesNotMatch(diagnostic, /secrets\.|self-hosted|--live|--endpoint|ssh /);
-    assert.match(diagnostic, /Live diagnostics blocked/);
+    assert.match(diagnostic, /subsequent REAL deployment from cd\/test/);
+    assert.match(diagnostic, /Every cd\/test push may restart the actual configured Gateway/);
     assert.match(diagnostic, /node --test tools\/deploy-nli-gateway.test.mjs/);
     assert.match(diagnostic, /CONTRACT_RESULT: \$\{\{ steps.contract.outcome \}\}/);
     assert.match(workflow, /DEPLOY_OUTCOME: \$\{\{ steps.deploy.outcome \}\}/);
     assert.match(workflow, /ROLLBACK_OUTCOME: \$\{\{ steps.rollback.outcome \}\}/);
-    assert.match(workflow, /git merge-base --is-ancestor "\$\{DEPLOY_SHA\}" origin\/main/);
+    assert.match(workflow, /git merge-base --is-ancestor "\$\{DEPLOY_SHA\}" "refs\/remotes\/origin\/\$\{DEPLOY_BRANCH\}"/);
   });
 
   test("only eligible production jobs acquire the deploy lock; global, filter and debug jobs have no shared lock", () => {
@@ -86,7 +88,7 @@ export function registerWorkflowSafetyTests(workflow, root) {
     const diagnostic = workflow.slice(workflow.indexOf("  cd-test-diagnostics:"), workflow.indexOf("  deploy:"));
     assert.doesNotMatch(filter + diagnostic, /^\s+concurrency:/m, "each offline diagnostic push must execute without a shared pending slot");
     const deploy = workflow.slice(workflow.indexOf("  deploy:"), workflow.indexOf("    steps:", workflow.indexOf("  deploy:")));
-    assert.match(deploy, /needs: main-paths\n    if: github.ref == 'refs\/heads\/main' && needs.main-paths.outputs.eligible == 'true'/);
+    assert.match(deploy, /needs: \[main-paths, cd-test-diagnostics\]\n    if: \$\{\{ always\(\) && !cancelled\(\)/);
     assert.match(deploy, /    concurrency:\n      group: deploy-nli-gateway\n      cancel-in-progress: false\n/);
     assert.equal((workflow.match(/^\s*concurrency:/gm) ?? []).length, 1, "production job owns the only lock");
   });

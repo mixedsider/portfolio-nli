@@ -58,13 +58,14 @@ jobs:
           {
             echo '## cd/test offline deployment diagnostics'
             echo "Contract tests: ${CONTRACT_RESULT}"
-            echo 'Live diagnostics blocked until a separately restricted diagnostic identity is available.'
+            echo 'Passing this offline job gates a subsequent REAL deployment from cd/test; no main merge is required.'
+            echo 'Every cd/test push may restart the actual configured Gateway and run Qwen/LFM models, receipt verification and rollback.'
             echo 'No production runner, credentials, remote lifecycle or model calls are used by this job.'
           } >> "$GITHUB_STEP_SUMMARY"
 
   deploy:
-    needs: main-paths
-    if: github.ref == 'refs/heads/main' && needs.main-paths.outputs.eligible == 'true'
+    needs: [main-paths, cd-test-diagnostics]
+    if: ${{ always() && !cancelled() && ((github.ref == 'refs/heads/main' && needs.main-paths.result == 'success' && needs.main-paths.outputs.eligible == 'true') || (github.ref == 'refs/heads/cd/test' && needs.cd-test-diagnostics.result == 'success')) }}
     concurrency:
       group: deploy-nli-gateway
       cancel-in-progress: false
@@ -83,6 +84,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Setup Node.js
@@ -93,6 +95,7 @@ jobs:
       - name: Validate required secrets
         shell: bash
         env:
+          DEPLOY_REF: ${{ github.ref }}
           NLI_GATEWAY_USER: ${{ secrets.NLI_GATEWAY_USER }}
           NLI_GATEWAY_SSH_KEY: ${{ secrets.NLI_GATEWAY_SSH_KEY }}
         run: |
@@ -102,6 +105,10 @@ jobs:
               exit 1
             fi
           done
+          if [ "${DEPLOY_REF}" = 'refs/heads/cd/test' ] && [ -z "${NLI_GATEWAY_HOST}" ]; then
+            echo 'NLI_GATEWAY_HOST secret is required for cd/test deployment'
+            exit 1
+          fi
 
       - name: Verify Gateway source before deployment
         shell: bash
@@ -171,8 +178,18 @@ jobs:
         env:
           NLI_GATEWAY_USER: ${{ secrets.NLI_GATEWAY_USER }}
           DEPLOY_SHA: ${{ github.sha }}
+          DEPLOY_REF: ${{ github.ref }}
           PREFLIGHT_ID: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
+          case "${DEPLOY_REF}" in
+            refs/heads/main) DEPLOY_BRANCH=main ;;
+            refs/heads/cd/test) DEPLOY_BRANCH=cd/test ;;
+            *) echo 'Unsupported deployment ref'; exit 1 ;;
+          esac
+          if [[ ! "${DEPLOY_SHA}" =~ ^[a-f0-9]{40}$ ]]; then
+            echo 'Invalid deployment SHA'
+            exit 1
+          fi
           ssh -i ~/.ssh/nli_gateway_key \
             -p "${NLI_GATEWAY_SSH_PORT}" \
             -o BatchMode=yes \
@@ -182,7 +199,7 @@ jobs:
             -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile=~/.ssh/nli_gateway_known_hosts \
             "${NLI_GATEWAY_USER}@${NLI_GATEWAY_HOST}" \
-            "APP_DIR='${NLI_GATEWAY_APP_DIR}' PROCESS_NAME='${NLI_GATEWAY_PROCESS}' NLI_GATEWAY_PORT='${NLI_GATEWAY_PORT}' DEPLOY_SHA='${DEPLOY_SHA}' GIT_COMMIT_SHA='${DEPLOY_SHA}' PREFLIGHT_ID='${PREFLIGHT_ID}' bash -s" <<'REMOTE'
+            "APP_DIR='${NLI_GATEWAY_APP_DIR}' PROCESS_NAME='${NLI_GATEWAY_PROCESS}' NLI_GATEWAY_PORT='${NLI_GATEWAY_PORT}' DEPLOY_SHA='${DEPLOY_SHA}' GIT_COMMIT_SHA='${DEPLOY_SHA}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' PREFLIGHT_ID='${PREFLIGHT_ID}' bash -s" <<'REMOTE'
           set -euo pipefail
           command -v ss >/dev/null 2>&1 || {
             echo "ss is required to verify the NLI Gateway listener"
@@ -715,10 +732,16 @@ jobs:
           }
           LIFECYCLE
           GATEWAY_PID="$(nli_listener_pids)" node "${PREFLIGHT_DIR}/lifecycle.mjs" snapshot
+          # Validate selected source again on the host before fetch/checkout.
+          case "${DEPLOY_BRANCH}" in
+            main|cd/test) ;;
+            *) echo 'Unsupported deployment branch'; exit 1 ;;
+          esac
+          [[ "${DEPLOY_SHA}" =~ ^[a-f0-9]{40}$ ]] || { echo 'Invalid deployment SHA'; exit 1; }
           echo '::group::NLI source checkout and ancestry'
-          git fetch --no-tags origin "main:refs/remotes/origin/main"
+          git fetch --no-tags origin "refs/heads/${DEPLOY_BRANCH}:refs/remotes/origin/${DEPLOY_BRANCH}"
           git cat-file -e "${DEPLOY_SHA}^{commit}"
-          git merge-base --is-ancestor "${DEPLOY_SHA}" origin/main
+          git merge-base --is-ancestor "${DEPLOY_SHA}" "refs/remotes/origin/${DEPLOY_BRANCH}"
           git checkout --detach "${DEPLOY_SHA}"
           echo '::endgroup::'
           node "${PREFLIGHT_DIR}/lifecycle.mjs" restart "${DEPLOY_SHA}"

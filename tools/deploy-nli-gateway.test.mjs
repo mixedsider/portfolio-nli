@@ -13,6 +13,7 @@ import { registerFirstUpgradeTests } from "./nli/deploy-workflow-upgrade-tests.m
 import { registerWorkflowDiagnosticTests } from "./nli/deploy-workflow-diagnostic-tests.mjs";
 import { registerWorkflowSafetyTests } from "./nli/deploy-workflow-safety-tests.mjs";
 import { registerDeployPathFilterTests } from "./nli/deploy-path-filter-tests.mjs";
+import { registerWorkflowBranchTests } from "./nli/deploy-workflow-branch-tests.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const workflowPath = resolve(root, ".github/workflows/deploy-nli-gateway.yml");
@@ -98,6 +99,7 @@ registerFirstUpgradeTests(workflow, root);
 registerWorkflowDiagnosticTests(workflow);
 registerWorkflowSafetyTests(workflow, root);
 registerDeployPathFilterTests();
+registerWorkflowBranchTests(workflow);
 
 test("deployment preflight covers grounded fixtures and maintained tests without a browser dependency", () => {
   const preflight = extractPreflightScript(workflow);
