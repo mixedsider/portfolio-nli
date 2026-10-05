@@ -13,7 +13,7 @@
 
 이전 전체 평가(당시 설정)에서 944-byte grounded profile을 포함한 projected 요청도 고정 LFM4초/Qwen8초 안에 completion headers를 받지 못했습니다. metadata 접근 성공은 모델 readiness가 아니며 정확한 remote prefill/generation/queue/alias/proxy/network 원인은 미확정입니다. 당시 genuine LFM 채택은0→0, Qwen18개 clean proof/receipt도 없습니다. 당시 한 번씩의 fallback/timeout 관측이나4초 대8초 실패 시간은 accepted-model latency 분포 또는 속도 향상이 아닙니다. 이 문서 수정 때문에 추가 LAN 실행을 하지 않았으며, 승인된 새로운 serving 근거와 모든 strict gate 통과가 필요합니다.
 
-## `cd/test`: offline workflow diagnostics, not live serving
+## `cd/test`: offline diagnostics gate an authorized REAL deployment
 
 The same `Deploy NLI Gateway` workflow accepts pushes to `main` and `cd/test`.
 There is no workflow-level path filter: **every `cd/test` push, including a
@@ -22,12 +22,20 @@ Ubuntu runner, checks out the exact triggering SHA without persisted checkout
 credentials, and runs `node --test tools/deploy-nli-gateway.test.mjs`. These are
 offline contract tests with local fake PM2/systemd/probe/evaluator fixtures;
 they do not contact production SSH, LAN models or restart production servers.
-The always-run Actions summary reports the contract-test outcome and limitation.
+The always-run Actions summary reports the contract-test outcome and real deployment warning.
 
-**Live diagnostics are blocked until a separately restricted diagnostic identity
-is available.** Do not supply production SSH secrets or route this branch onto
-the production self-hosted runner. Passing this job proves neither serving
-health, model readiness, fresh no-thinking proof nor successful deployment.
+**The user explicitly authorized actual Gateway deployment from `cd/test`,
+superseding the former offline-only branch restriction. Every `cd/test` push,
+including docs-only pushes, may restart the actual configured Gateway and run
+Qwen/LFM inference, fresh receipt verification, cascade evaluation and live tests,
+with rollback on failure. No merge to `main` is required.** The diagnostic job
+itself remains offline; its success gates the subsequent REAL self-hosted `deploy`
+job. Passing offline tests proves neither serving health, model readiness,
+fresh no-thinking proof nor successful deployment.
+`cd/test` requires a nonempty existing `NLI_GATEWAY_HOST` secret for the migrated
+Gateway address: it must not silently fall back to the old `.90` host. Existing
+strict known-host pinning and SSH key requirements still apply. This patch does
+not set, print or modify secrets, host configuration, model settings or keys.
 Push is needed for Actions execution; a local patch alone does not run Actions.
 
 For `main`, a small hosted `main-paths` job checks the complete push
@@ -38,8 +46,13 @@ missing history, timeout, or incomplete diff output fail closed: production is
 skipped, not enabled by default. Docs-only main pushes now create a workflow run
 but cannot deploy. Full history checkout is intentional to avoid API changed-file
 truncation. There is no workflow-level concurrency lock. Only the production
-`deploy` job, after its `needs: main-paths` and positive main-only eligibility
-guard, uses the exact `deploy-nli-gateway` group with `cancel-in-progress: false`.
+`deploy` job needs both `[main-paths, cd-test-diagnostics]`. Its
+`always() && !cancelled()` guard permits the other branch's prerequisite to be
+skipped, but requires the selected branch's prerequisite to succeed: `main` also
+requires `eligible == 'true'`; `cd/test` requires successful diagnostics.
+Failed/skipped/cancelled selected prerequisites block deployment. Both branches
+use the same exact `deploy-nli-gateway` group with `cancel-in-progress: false`,
+so they cannot deploy to the server in parallel.
 Docs-only main runs therefore cannot acquire the production lock or displace an
 eligible pending deployment. Eligible production jobs retain GitHub's normal
 pending replacement semantics: at most one running and one pending job in the
@@ -47,9 +60,14 @@ group; a newer eligible job can replace an older pending job, but does not cance
 the running job. This is not a FIFO queue or a promise to deploy every revision.
 The main filter and `cd/test` offline diagnostic jobs have no shared concurrency
 lock, so each diagnostic push can execute without replacing intermediate pending
-diagnostic runs. This adds only offline work, not live traffic. Exact revision
-ancestry against remote `origin/main` and receipt/environment rollback rules
-remain unchanged.
+diagnostic runs. Runner checkout is pinned to the event SHA. Before deployment
+SSH, step environment input `github.ref` is mapped by an exact allowlist to
+`main` or `cd/test`; all other refs and malformed SHAs are rejected without
+printing their values. The host repeats the branch/SHA allowlist, fetches exact
+`refs/heads/<selected>:refs/remotes/origin/<selected>` and requires event-SHA
+ancestry against that selected branch before detached checkout of the exact
+event SHA, never the moving tip. Missing branches/commits and unrelated commits
+fail closed. Receipt/environment rollback rules remain unchanged.
 
 ### Reading detailed production lifecycle logs safely
 
@@ -74,7 +92,8 @@ Workflow routing is **not** a repository-level credential security boundary:
 the public self-hosted runner still has production credentials and there are no
 protected environments. Restricting runner access and diagnostic identity outside
 this patch is required before treating untrusted branch workflows as safe for live
-diagnostics. No credentials or runner permissions are changed here.
+deployment. Only trusted, user-authorized `cd/test` pushes should use this route.
+No credentials or runner permissions are changed here.
 
 ## 배포 전 확인
 
@@ -234,14 +253,14 @@ node tools/nli-cascade-eval.mjs --output "$RUN_DIR/live-eval.json" --lfm-verific
 
 ## 3. GitHub Actions로 NLI Gateway 자동 배포
 
-내부망 서버 `192.168.0.90`에 배포하려면 GitHub-hosted runner가 아니라 내부망에 접근 가능한 컴퓨터에 GitHub Actions self-hosted runner가 설치되어 있어야 합니다. 현재 workflow는 runner 라벨 `self-hosted`, `Linux`, `X64`를 대상으로 실행됩니다. 해당 runner에서는 `bash`, `ssh`, `curl` 명령을 사용할 수 있어야 합니다.
+설정된 `NLI_GATEWAY_HOST`에 배포하려면 GitHub-hosted runner가 아니라 내부망에 접근 가능한 컴퓨터에 GitHub Actions self-hosted runner가 설치되어 있어야 합니다. `cd/test`에서는 이전 `192.168.0.90` 기본값 대신 이동한 서버의 명시적 host secret이 필수입니다. 현재 workflow는 runner 라벨 `self-hosted`, `Linux`, `X64`를 대상으로 실행됩니다. 해당 runner에서는 `bash`, `ssh`, `curl` 명령을 사용할 수 있어야 합니다.
 
 배포 흐름:
 
 ```text
 GitHub Actions self-hosted runner
 -> SSH 접속
--> 192.168.0.90 NLI Gateway 서버
+-> NLI_GATEWAY_HOST로 설정된 NLI Gateway 서버
 -> 기존 listener의 검증된 manager descriptor(PM2 등록 또는 정확한 system/user systemd unit), 실제 PID 환경과 기존 receipt 경로를 재시작 전에 private checkpoint
 -> push 이벤트의 정확한 commit checkout
 -> 캡처한 manager descriptor로 PM2 restart (revision stamp만 변경) 또는 정확한 systemd scope/unit restart
@@ -253,7 +272,7 @@ GitHub Actions self-hosted runner
 
 workflow 파일:
 
-**테스트 CI와 배포의 구분:** [테스트 하네스](testing.md)의 `.github/workflows/ci.yml`은 모든 branch push/PR/수동 실행에서 hosted `ubuntu-latest`, Node24, read-only 권한으로 가짜 모델 기반 회귀를 실행합니다. 아래 배포 workflow는 main push에서 self-hosted runner로 **독립 실행**되며 CI 완료를 기다리는 연결이 없습니다. 두 workflow의 명령은 동일하지 않습니다. `Verify portfolio` 성공은 배포 순서 보장, branch protection 설정 또는 실제 모델 readiness가 아니며 아래 자체 preflight·운영 검증·rollback은 그대로 필수입니다. 로컬 commit만으로 Actions가 실행되지 않고 GitHub push 등이 필요합니다. 테스트 CI에는 아래 운영 secrets를 전달하지 않습니다.
+**테스트 CI와 배포의 구분:** [테스트 하네스](testing.md)의 `.github/workflows/ci.yml`은 모든 branch push/PR/수동 실행에서 hosted `ubuntu-latest`, Node24, read-only 권한으로 가짜 모델 기반 회귀를 실행합니다. 아래 배포 workflow는 eligible main push 또는 diagnostics를 통과한 cd/test push에서 self-hosted runner로 **독립 실행**되며 CI 완료를 기다리는 연결이 없습니다. 두 workflow의 명령은 동일하지 않습니다. `Verify portfolio` 성공은 배포 순서 보장, branch protection 설정 또는 실제 모델 readiness가 아니며 아래 자체 preflight·운영 검증·rollback은 그대로 필수입니다. 로컬 commit만으로 Actions가 실행되지 않고 GitHub push 등이 필요합니다. 테스트 CI에는 아래 운영 secrets를 전달하지 않습니다.
 
 ```text
 .github/workflows/deploy-nli-gateway.yml
@@ -266,13 +285,13 @@ GitHub 저장소 `Settings > Secrets and variables > Actions`에 아래 secrets�
 ```text
 NLI_GATEWAY_USER=서버 SSH 사용자명
 NLI_GATEWAY_SSH_KEY=서버 접속용 private key
-NLI_GATEWAY_KNOWN_HOSTS=192.168.0.90 서버의 SSH host public key
+NLI_GATEWAY_KNOWN_HOSTS=설정된 Gateway 서버의 pinned SSH host public key
+NLI_GATEWAY_HOST=이동한 Gateway 서버 주소 (cd/test 필수; main만 기존 기본값 유지)
 ```
 
 선택:
 
 ```text
-NLI_GATEWAY_HOST=192.168.0.90
 NLI_GATEWAY_PORT=8787
 NLI_GATEWAY_SSH_PORT=22
 NLI_GATEWAY_APP_DIR=~/portfolio-nli
@@ -281,16 +300,16 @@ NLI_GATEWAY_PROCESS=portfolio-nli-gateway
 
 서버에는 repository가 이미 clone되어 있어야 하며, `NLI_GATEWAY_APP_DIR`은 해당 repository 경로를 가리켜야 합니다.
 
-`NLI_GATEWAY_KNOWN_HOSTS`는 최초 접속 시점에 host key를 받아들이는 `ssh-keyscan`을 대체하는 필수 pinning 값입니다. 서버에서 아래 명령으로 값을 만들고 GitHub Secret에 그대로 넣습니다.
+`NLI_GATEWAY_KNOWN_HOSTS`는 최초 접속 시점에 host key를 받아들이는 `ssh-keyscan`을 대체하는 필수 pinning 값입니다. 승인된 별도 설정 작업에서 실제 이동한 서버의 public key를 신뢰 가능한 경로로 확인하고 설정된 host/SSH port와 일치하도록 pinning합니다. 아래 `configured-gateway-host`는 실제 설정된 주소로 바꾸는 placeholder이며 이 작업에서는 실행하거나 secret을 수정하지 않습니다.
 
 ```bash
-awk '{ print "192.168.0.90 " $1 " " $2 }' /etc/ssh/ssh_host_ed25519_key.pub
+awk '{ print "configured-gateway-host " $1 " " $2 }' /etc/ssh/ssh_host_ed25519_key.pub
 ```
 
 출력 예시는 아래 형태입니다.
 
 ```text
-192.168.0.90 ssh-ed25519 AAAAC3...
+configured-gateway-host ssh-ed25519 AAAAC3...
 ```
 
 ```bash
@@ -306,7 +325,7 @@ pm2 start tools/nli-gateway.mjs --name portfolio-nli-gateway --update-env
 pm2 save
 ```
 
-배포 workflow는 기존 `main` push/path trigger만 유지합니다. `workflow_dispatch`나 새 secret, model server 설치/설정 변경은 추가하지 않습니다. `main`은 branch protection과 승인된 변경만 병합하도록 설정합니다. **이 작업은 workflow 실행/SSH/재시작/배포를 수행하지 않습니다.** 배포 전 offline 양쪽 test glob과 fake cascade를 실행하며 실패를 무시하지 않습니다. 서버는 이동하는 `main`이 아니라 push의 정확한 commit을 checkout합니다.
+배포 workflow는 기존 `main` path eligibility를 유지하고, 사용자 승인으로 모든 `cd/test` push에 offline diagnostics 후 실제 배포 경로를 추가합니다. `workflow_dispatch`나 새 secret, model server 설치/설정 변경은 추가하지 않습니다. `main`은 branch protection과 승인된 변경만 병합하도록 설정합니다. **이 작업 자체는 commit/push/workflow 실행/SSH/재시작/배포를 수행하지 않습니다.** 이후 cd/test push는 실제 배포·모델 호출을 발생시킬 수 있습니다. 배포 전 offline 양쪽 test glob과 fake cascade를 실행하며 실패를 무시하지 않습니다. 서버는 선택한 branch의 ancestry를 검증한 뒤 이동하는 tip이 아니라 push의 정확한 commit을 checkout합니다. 기존 no-thinking/timeouts/response caps/concurrency/model/readiness 정책 및 receipt rollback은 변경하지 않으며 이 작업에 8→16 환경 mutation은 없습니다.
 
 **PM2 보존 경계:** checkout/restart 전에 기존 `pm2 jlist`를 메모리로만 캡처하고, 단일 online fork 등록의 script/cwd 및 listener PID를 확인합니다. 등록된 사용자 환경 각 값이 기존 `/proc/<pid>/environ`과 일치해야 하며 현재 `.env`의 누락값만 기존 loader 규칙대로 보충합니다. 이렇게 얻은 effective 환경과 **이 시점의 실제 receipt 경로/기존 파일**을 host-local `.nli/preflight-<run_id>-<run_attempt>/snapshot.json` (0600, parent0700)에 checkpoint합니다. PM2_HOME/등록 환경을 검증할 수 없거나 기존 등록이 사라졌다면 fail-closed입니다. 중단된/중복/cluster 등록을 임의로 교체하지 않습니다.
 
