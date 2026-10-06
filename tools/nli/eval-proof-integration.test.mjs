@@ -80,7 +80,10 @@ test("bound producer preflights current runtime parity; mismatched payloads cann
     const inputs = await createEvaluationInputs("lfm", f.config.lfm, f.context);
     const cases = prepareProbeCases(inputs.fixtures, f.context);
     const options = { endpoint: "lfm", mode: "verify", context: f.context, cases, settings: f.config.lfm };
-    const malformed = { ...options, cases: cases.map((item) => ({ ...item, grounded: {} })) };
+    const reportingOnly = { ...options, cases: cases.map((item) => ({ ...item, grounded: {} })) };
+    assert.equal(producerMatchesRuntime(reportingOnly, inputs), true, "reporting view is not generation authority");
+    const malformed = { ...options, cases: cases.map((item) => ({ ...item,
+      prepared: { ...item.prepared, groundedRequest: {} } })) };
     assert.equal(producerMatchesRuntime(malformed, inputs), false);
     let calls = 0;
     const report = await runBoundVerification(malformed, { runProbe: async () => { calls++; throw new Error("must not run"); } });

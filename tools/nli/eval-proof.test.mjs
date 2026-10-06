@@ -138,3 +138,24 @@ test("configured plain mode needs actual schema-unsupported selection, not a rel
   report.results.slice(1, 6).forEach((row) => { row.schemaUnsupported = false; });
   assert.equal(validLfmReport(report, inputs, Date.now()), false);
 });
+
+test("original-schema hashes cannot authorize LFM or Qwen evaluation proofs for the union", async () => {
+  const context = await loadNliContext();
+  const config = createGatewayConfig({});
+  const oldHash = sha256(await readFile(new URL("../../tests/fixtures/model-decision.original.schema.json", import.meta.url)));
+  const lfm = await createEvaluationInputs("lfm", config.lfm, context);
+  const qwen = await createEvaluationInputs("qwen", config.model, context);
+  for (const inputs of [lfm, qwen]) {
+    assert.notEqual(inputs.binding.schemaSha256, oldHash);
+    assert.equal(inputs.runtimeBinding.schemaSha256, inputs.binding.schemaSha256);
+  }
+  const oldLfm = structuredClone(lfmReportFixture(lfm));
+  oldLfm.schemaSha256 = oldHash;
+  oldLfm.evaluationBinding.schemaSha256 = oldHash;
+  assert.equal(validLfmReport(oldLfm, lfm, Date.now()), false);
+  const oldQwen = structuredClone(qwenReportFixture(qwen));
+  oldQwen.receipt.schemaSha256 = oldHash;
+  oldQwen.report.binding.schemaSha256 = oldHash;
+  oldQwen.report.evaluationBinding.schemaSha256 = oldHash;
+  assert.equal(validQwenReport(oldQwen.report, oldQwen.receipt, qwen, Date.now()), false);
+});
