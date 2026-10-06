@@ -49,6 +49,8 @@ test("detailed clients snapshot exact separate settings and schema, no inference
   for (const { path, payload } of received) {
     assert.equal(path, "/v1/chat/completions");
     assert.deepEqual(payload.response_format.json_schema.schema, schema);
+    assert.equal(payload.response_format.json_schema.strict, true);
+    assert.equal(payload.response_format.json_schema.name, "portfolio_nli_model_decision");
     assert.equal(payload.messages[1].content, buildGroundedRequestBlock(grounded));
     assert.equal(payload.reasoning_effort, "none");
     assert.deepEqual(payload.chat_template_kwargs, { enable_thinking: false });

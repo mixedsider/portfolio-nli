@@ -108,7 +108,8 @@ test("detailed adapters require real strict envelopes and recover after every fa
   }
   assert.equal(calls, 12);
   assert.equal(getModelDecisionSchema(), getModelDecisionSchema());
-  assert.ok(Object.isFrozen(getModelDecisionSchema().properties));
+  assert.ok(Object.isFrozen(getModelDecisionSchema().oneOf));
+  assert.ok(getModelDecisionSchema().oneOf.every((branch) => Object.isFrozen(branch) && Object.isFrozen(branch.properties)));
 });
 
 test("parent cancellation settles even a fetch that ignores its signal; late body is cancelled", async () => {

@@ -1,14 +1,10 @@
-import { readFileSync } from "node:fs";
 import { buildGroundedRequestBlock } from "./context.mjs";
+import { getModelDecisionSchema, specializeDecisionSchema, buildPreparedCoverageBlock } from "./decision-schema.mjs";
 import { createModelAdmission } from "./model-admission.mjs";
 import { inspectModelCompletion, modelFailure } from "./model-outcome.mjs";
 import { LFM_TIMEOUT_MS, QWEN_TIMEOUT_MS } from "./timeout-policy.mjs";
 
-let schema;
-export function getModelDecisionSchema() {
-  if (!schema) schema = freezeTree(JSON.parse(readFileSync(new URL("../../nli/model-decision.schema.json", import.meta.url), "utf8")));
-  return schema;
-}
+export { getModelDecisionSchema } from "./decision-schema.mjs";
 
 export function buildLmStudioChatCompletionsUrl(baseUrl) {
   const url = new URL(baseUrl);
@@ -21,17 +17,18 @@ export function buildLmStudioChatCompletionsUrl(baseUrl) {
 
 export function buildDetailedModelPayload(settings, message, context, groundedRequest = {}) {
   if (!["json_schema", "plain"].includes(settings.outputMode)) throw new Error("Invalid model output mode");
+  const decisionSchema = specializeDecisionSchema(getModelDecisionSchema(), groundedRequest);
   const payload = {
     model: settings.name, temperature: 0, max_tokens: settings.maxTokens,
     reasoning_effort: "none", chat_template_kwargs: { enable_thinking: false },
     messages: [
-      { role: "system", content: context.prompt },
+      { role: "system", content: context.prompt + buildPreparedCoverageBlock(groundedRequest) },
       { role: "system", content: buildGroundedRequestBlock(groundedRequest) },
       { role: "user", content: message }
     ]
   };
   if (settings.outputMode === "json_schema") payload.response_format = { type: "json_schema", json_schema: {
-      name: "portfolio_nli_model_decision", strict: true, schema: getModelDecisionSchema()
+      name: "portfolio_nli_model_decision", strict: true, schema: decisionSchema
     } };
   return payload;
 }
