@@ -6,6 +6,7 @@ import { findSkillExperienceMatch } from "./skills.mjs";
 import { hasAny, includesKeyword, normalize } from "./text.mjs";
 import { assistantIdentityWords } from "./routing-vocabulary.mjs";
 import { assistantIdentityResponse } from "./responses.mjs";
+import { registerPreparedDecision } from "./decision-schema.mjs";
 import { mentionSpans, PARTICLES, requestedQuantityCount } from "./obligation-vocabulary.mjs";
 import { boundEvidenceCard, boundedConversation, boundedUtf8String, MAX_GROUNDED_CANDIDATES,
   MAX_GROUNDED_SOURCES } from "./grounded-bounds.mjs";
@@ -33,6 +34,7 @@ export function prepareGroundedRequest(message, context) {
     currentTargetId: grounded.currentTargetId, history: grounded.conversation,
     candidateSources: grounded.candidateSources, targets: grounded.targets, terms: grounded.terms
   };
+  registerPreparedDecision(groundedRequest, { ...obligations, coveragePossible: selection.coveragePossible }, context);
   return deepFreeze({
     obligations: { ...obligations, coveragePossible: selection.coveragePossible },
     ...selection, candidateSources: grounded.candidateSources, groundedRequest, groundedRequestBlock
