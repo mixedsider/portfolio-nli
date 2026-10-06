@@ -22,10 +22,7 @@ export function verificationInputs(settings, context, schemaBytes = readFileSync
   const matrix = [0, 2, 6].flatMap((historyLength, repeat) => {
     const history = Array.from({ length: historyLength }, (_, i) => ({ role: i % 2 ? "assistant" : "user", text: "CateQuest" }));
     return prepareProbeCases(JSON.parse(fixtureBytes).map((item) => ({ ...item, history })), context)
-      .map((item) => ({ item, repeat, payload: buildDetailedModelPayload(snapshot, item.message, context, {
-        candidateSources: item.candidateSources, history: item.grounded.conversation, currentTargetId: item.grounded.currentTargetId,
-        targets: item.grounded.targets, terms: item.grounded.terms
-      }) }));
+      .map((item) => ({ item, repeat, payload: buildDetailedModelPayload(snapshot, item.message, context, item.prepared.groundedRequest) }));
   });
   const url = buildLmStudioChatCompletionsUrl(snapshot.baseUrl);
   const { messages, ...requestSettings } = matrix[0].payload;

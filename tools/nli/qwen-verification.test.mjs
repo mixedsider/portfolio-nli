@@ -12,6 +12,7 @@ import { collectProbeMetadata } from "./probe-metadata.mjs";
 import { createQwenVerifier } from "./qwen-verification.mjs";
 import { runQwenVerification } from "./probe-verification.mjs";
 import { VERIFICATION_POLICY } from "./verification-policy.mjs";
+import { sha256 } from "./qwen-verification-proof.mjs";
 
 const context = await loadNliContext(new URL("../../", import.meta.url).pathname);
 const schemaBytes = await readFile(new URL("../../nli/model-decision.schema.json", import.meta.url), "utf8");
@@ -268,6 +269,23 @@ test("missing, stale, future, malformed, changed receipt and identity fail close
   assert.equal((await f.gate({ context: { ...context, prompt: context.prompt + "changed" } }).verify()).ok, false);
   f.state.path = "/changed";
   assert.equal((await f.gate().verify()).ok, false);
+});
+
+test("original conditional-schema receipt naturally mismatches the union runtime binding", async (t) => {
+  const f = await setup(t);
+  const oldBytes = await readFile(new URL("../../tests/fixtures/model-decision.original.schema.json", import.meta.url), "utf8");
+  await assert.rejects(runQwenVerification({ settings: f.config.model, context,
+    schema: JSON.parse(oldBytes), schemaBytes: oldBytes, receipt: f.receipt }, f.dependencies), /Schema must match production/);
+  assert.equal(f.calls.length, 0, "old-schema producer fails before any dispatch");
+  await f.verify();
+  assert.equal((await f.gate().verify()).ok, true);
+  // Offline parser vector in a test-owned temporary directory, never a production receipt.
+  const receipt = JSON.parse(await readFile(f.receipt, "utf8"));
+  receipt.schemaSha256 = sha256(oldBytes);
+  await writeFile(f.receipt, JSON.stringify(receipt));
+  const before = f.calls.length;
+  assert.equal((await f.gate().verify()).ok, false);
+  assert.equal(f.calls.length, before, "stale schema receipt fails before metadata or inference");
 });
 
 test("metadata deadline, caller abort and shared admission return bounded failure", async (t) => {
