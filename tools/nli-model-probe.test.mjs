@@ -5,7 +5,7 @@ import { readFile, mkdtemp, rm, access } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadNliContext } from "./nli/context.mjs";
-import { createModelClient } from "./nli/model-client.mjs";
+import { createModelClient, buildDetailedModelPayload } from "./nli/model-client.mjs";
 import { prepareProbeCases, buildProbePayload, PROBE_ENDPOINTS } from "./nli/probe-request.mjs";
 import { inspectProbeCompletion, matchesProbeExpectation } from "./nli/probe-result.mjs";
 import { requestProbeJson } from "./nli/probe-http.mjs";
@@ -61,13 +61,17 @@ test("LFM probe caps oversized overrides at 6.5s while preserving smaller bounds
   }
 });
 
-test("fixed real matrix and exact schema share identical bounded messages", () => {
+test("fixed real matrix specializes the runtime schema and shares identical bounded messages", () => {
   assert.equal(cases.length, 6);
   assert.throws(() => prepareProbeCases([], context));
   for (const item of cases) {
     const structured = buildProbePayload(item, context, schema, PROBE_ENDPOINTS.qwen, "json_schema");
     const plain = buildProbePayload(item, context, schema, PROBE_ENDPOINTS.qwen, "plain");
-    assert.deepEqual(structured.response_format.json_schema.schema, schema);
+    const runtime = buildDetailedModelPayload({ ...PROBE_ENDPOINTS.qwen, outputMode: "json_schema" },
+      item.message, context, item.prepared.groundedRequest);
+    assert.deepEqual(structured, runtime);
+    assert.deepEqual(structured.response_format.json_schema.schema.oneOf.map((branch) => branch.properties.intent.const),
+      item.prepared.obligations.expectedIntents);
     assert.deepEqual(structured.messages, plain.messages);
     assert.deepEqual(plain.messages.map((m) => m.role), ["system", "system", "user"]);
     assert.equal(plain.reasoning_effort, "none");

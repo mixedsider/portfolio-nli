@@ -1,4 +1,6 @@
 import { prepareGroundedRequest } from "./evidence-selection.mjs";
+import { buildDetailedModelPayload, getModelDecisionSchema } from "./model-transport.mjs";
+import { isDeepStrictEqual } from "node:util";
 import { LFM_TIMEOUT_MS, QWEN_TIMEOUT_MS } from "./timeout-policy.mjs";
 
 export const PROBE_ENDPOINTS = Object.freeze({
@@ -30,18 +32,7 @@ export function prepareProbeCases(fixtures, context) {
 }
 
 export function buildProbePayload(item, context, schema, settings, outputMode) {
-  if (!["json_schema", "plain"].includes(outputMode)) throw new Error("Invalid output mode");
-  const payload = {
-    model: settings.name, temperature: 0, max_tokens: settings.maxTokens,
-    reasoning_effort: "none", chat_template_kwargs: { enable_thinking: false },
-    messages: [
-      { role: "system", content: context.prompt },
-      { role: "system", content: JSON.stringify(item.grounded) },
-      { role: "user", content: item.message }
-    ]
-  };
-  if (outputMode === "json_schema") payload.response_format = {
-    type: "json_schema", json_schema: { name: "portfolio_nli_model_decision", strict: true, schema }
-  };
-  return payload;
+  if (!isDeepStrictEqual(schema, getModelDecisionSchema())) throw new Error("Schema must match production");
+  const request = item.prepared?.groundedRequest ?? { ...item.grounded, history: item.grounded?.conversation };
+  return buildDetailedModelPayload({ ...settings, outputMode }, item.message, context, request);
 }
