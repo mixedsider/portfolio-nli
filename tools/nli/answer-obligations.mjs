@@ -2,6 +2,7 @@ import { isAnswerSupportedBySelectedEvidence } from "./answer-evidence-support.m
 import { getObligationSourceGroups, obligationCatalog } from "./obligation-sources.mjs";
 import { mentionSpans, normalizeObligationText, PARTICLES, requestedQuantityCount, requestedQuantityUnits } from "./obligation-vocabulary.mjs";
 import { readFractionAtom } from "./fraction-atom.mjs";
+import { extractCalendarMonthRanges } from "./calendar-month-range.mjs";
 
 const ANSWER_SUFFIXES = [...PARTICLES, "에서는", "에서도", "에는", "에선", "도", "로", "으로", "입니다", "이다"];
 
@@ -59,15 +60,7 @@ export function quantitiesSupported(claim, evidence) {
 }
 
 function parseQuantities(value) {
-  const ranges = [];
-  // Only standalone or explicitly temporal YYYY.MM ~ YYYY.MM ranges are dates.
-  // Preserve newlines here: following prose is not a unit, but "2025.11 ms" is.
-  const dated = (typeof value === "string" ? value.normalize("NFKC").toLowerCase().trim() : "").replace(
-    /(?<![\p{L}\p{N}_.,]|[+\p{Pd}−]\s*)\d{4}\.(?:0[1-9]|1[0-2])\s*~\s*\d{4}\.(?:0[1-9]|1[0-2])(?=$|[\r\n;!?。)\]]|[.,](?:\s|$)|[ \t]+기간(?:에|에는|은|동안)?(?=\s|$|[.,;!?。]))/gu,
-    (range) => {
-      ranges.push({ valid: true, number: range.replace(/\s+/gu, ""), unit: "calendar-month-range" });
-      return " ";
-    });
+  const { text: dated, ranges } = extractCalendarMonthRanges(value);
   // Exempt whole technical identifiers, never all digits adjacent to letters/signs.
   const text = normalizeObligationText(dated).replace(
     /(?<![a-z0-9_])(?:p(?:50|90|95|99)|n\+1|1\+n)(?![a-z0-9_%٪‰‱/]|[.+−-]\d)/gu, " ");
