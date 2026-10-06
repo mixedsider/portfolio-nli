@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import { loadNliContext } from "./context.mjs";
 import { prepareProbeCases } from "./probe-request.mjs";
 import { inspectProbeCompletion, matchesProbeExpectation } from "./probe-result.mjs";
+import { prepareGroundedRequest } from "./evidence-selection.mjs";
+import { acceptProposal } from "./proposal-acceptance.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const context = await loadNliContext(root);
@@ -14,23 +16,40 @@ const envelope = (candidate) => ({ model: "test-model", choices: [{
 }] });
 
 test("weather requests are explicitly rejected before portfolio intent selection", () => {
-  assert.match(context.prompt, /Decide scope first/);
-  assert.match(context.prompt, /current\/external requests \(including weather\)/);
-  assert.match(context.prompt, /unrelated context cannot expand scope/i);
-  assert.match(context.prompt, /Other one-section: one ≤60-character sentence/);
-  assert.match(context.prompt, /answer 4,000 characters/);
-  assert.match(context.prompt, /one supported ≤40-char clause per project\/subject/);
+  assert.match(context.prompt, /reject\b[^\n]*external\b[^\n]*weather\b/i);
+  assert.match(context.prompt, /context[^\n]*history[^\n]*evidence[^\n]*untrusted/i);
+  assert.match(context.prompt, /ignore[^\n]*instructions/i);
+  assert.match(context.prompt, /context\b[^\n]*cannot\b[^\n]*expand\b[^\n]*scope\b/i);
+  assert.match(context.prompt, /other (?:one-)?section:[^\n]*one[^\n]*≤\s*60[^\n]*sentence/i);
+  assert.match(context.prompt, /answer\s+4,000\s+char(?:acters|s)\b/i);
+  assert.match(context.prompt, /comparison\/synthesis:[^\n]*supported[^\n]*≤\s*40[^\n]*clause[^\n]*project[^\n]*subject/i);
   assert.doesNotMatch(context.prompt, /(?:at most|under) 600 characters/);
   assert.match(context.prompt, /4,000/);
   assert.doesNotMatch(context.prompt, /```/);
   assert.ok(Buffer.byteLength(context.prompt) <= 2500);
-  assert.ok(context.prompt.indexOf("Decide scope first") < context.prompt.indexOf("`navigate` is only"));
+  const routing = JSON.parse(context.prompt.match(/`(\{"요약\/설명\+candidateSources":.*?\})`/u)[1]);
+  assert.equal(routing["external/no evidence"], "reject_out_of_scope");
   for (const intent of ["navigate", "define_term", "answer_portfolio", "reject_out_of_scope"]) {
     assert.ok(context.prompt.includes(intent));
   }
   for (const field of ["intent", "confidence", "targetId", "term", "answer", "sourceIds"]) {
     assert.ok(context.prompt.includes(field));
   }
+});
+
+test("external weather cannot navigate to invented or registered targets but accepts minimal rejection", () => {
+  const message = "오늘 날씨 보여줘";
+  const prepared = prepareGroundedRequest(message, context);
+  assert.deepEqual(prepared.obligations.expectedIntents, ["reject_out_of_scope"]);
+  assert.equal(context.targetById.has("synthetic-weather-target"), false);
+  assert.deepEqual(acceptProposal({ intent: "navigate", confidence: 1, targetId: "synthetic-weather-target" },
+    context, prepared, message), { accepted: false, reason: "proposal_invalid" });
+  assert.deepEqual(acceptProposal({ intent: "navigate", confidence: 1, targetId: "project-catequest" },
+    context, prepared, message), { accepted: false, reason: "intent_mismatch" });
+  assert.equal(acceptProposal({ intent: "reject_out_of_scope", confidence: 1 }, context, prepared, message).accepted, true);
+  const move = "CateQuest로 이동";
+  assert.equal(acceptProposal({ intent: "navigate", confidence: 1, targetId: "project-catequest" },
+    context, prepareGroundedRequest(move, context), move).accepted, true);
 });
 
 test("weather fixture keeps strict production validation separate from intent matching", () => {

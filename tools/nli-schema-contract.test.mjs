@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { isDeepStrictEqual } from "node:util";
+import { matchesJsonSchema } from "./testing/json-schema.mjs";
 
 import { createGatewayConfig } from "./nli/config.mjs";
 import { createNliServer, loadNliContext } from "./nli-gateway.mjs";
@@ -11,6 +11,49 @@ import { listenForFetch } from "./test-server.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const context = await loadNliContext();
+
+test("prompt declares exactly the four mutually exclusive model fieldsets", async () => {
+  const prompt = await readFile(resolve(root, "nli/system-prompt.md"), "utf8");
+  const fieldsets = Object.fromEntries([...prompt.matchAll(/`(\w+)`: `([\w,]+)`/g)]
+    .map((match) => [match[1], match[2].split(",").sort()]));
+  assert.deepEqual(fieldsets, {
+    reject_out_of_scope: ["confidence", "intent"],
+    navigate: ["confidence", "intent", "targetId"],
+    define_term: ["confidence", "intent", "term"],
+    answer_portfolio: ["answer", "confidence", "intent", "sourceIds"]
+  });
+});
+
+test("prompt routing table prioritizes supported summaries over navigation and refusal", async () => {
+  const prompt = await readFile(resolve(root, "nli/system-prompt.md"), "utf8");
+  const tables = [...prompt.matchAll(/`(\{"요약\/설명\+candidateSources":.*?\})`/g)]
+    .map((match) => JSON.parse(match[1]));
+  assert.deepEqual(tables, [{
+    "요약/설명+candidateSources": "answer_portfolio",
+    "explicit portfolio move+exact targets ID": "navigate",
+    "ordinary definition": "define_term",
+    "external/no evidence": "reject_out_of_scope"
+  }]);
+  assert.deepEqual(Object.values(tables[0]), ["answer_portfolio", "navigate", "define_term", "reject_out_of_scope"]);
+});
+
+test("scope instruction precedes navigation and forbids invented IDs", async () => {
+  const prompt = await readFile(resolve(root, "nli/system-prompt.md"), "utf8");
+  const scope = prompt.match(/scope\s+before\s+action/i);
+  assert.ok(scope);
+  assert.ok(scope.index < prompt.indexOf('"explicit portfolio move+exact targets ID"'));
+  assert.match(prompt, /never\s+invent\s+IDs/i);
+  assert.match(prompt, /reject\b[^\n]*external\b[^\n]*current weather\b/i);
+});
+
+test("overview guidance limits ordinary summaries to one inline label-and-purpose sentence", async () => {
+  const prompt = await readFile(resolve(root, "nli/system-prompt.md"), "utf8");
+  const overview = prompt.match(/Overview:.*?(?= One-section)/u)?.[0];
+  assert.ok(overview);
+  assert.match(overview, /ONE short .* sentence ONLY/u);
+  assert.match(overview, /`<label>: <copied purpose>\.`/u);
+  assert.match(overview, /no heading\/unasked dates\/tech\/implementation\/results/u);
+});
 
 test("NLI schemas remain parseable and reserve answer fields for answer_portfolio", async () => {
   const modelDecisionSchema = await readJson("nli/model-decision.schema.json");
@@ -81,60 +124,4 @@ test("response schema accepts an actual Gateway rejection and rejects malformed 
 
 async function readJson(relativePath) {
   return JSON.parse(await readFile(resolve(root, relativePath), "utf8"));
-}
-
-function matchesJsonSchema(schema, value, root = schema) {
-  if (schema.$ref) return matchesJsonSchema(resolveJsonPointer(root, schema.$ref), value, root);
-  if (schema.allOf && !schema.allOf.every((part) => matchesJsonSchema(part, value, root))) return false;
-  if (schema.anyOf && !schema.anyOf.some((part) => matchesJsonSchema(part, value, root))) return false;
-  if (schema.oneOf && schema.oneOf.filter((part) => matchesJsonSchema(part, value, root)).length !== 1) return false;
-  if (schema.not && matchesJsonSchema(schema.not, value, root)) return false;
-  if (schema.if && matchesJsonSchema(schema.if, value, root)) {
-    if (schema.then && !matchesJsonSchema(schema.then, value, root)) return false;
-  } else if (schema.else && !matchesJsonSchema(schema.else, value, root)) {
-    return false;
-  }
-
-  if (Object.hasOwn(schema, "const") && !isDeepStrictEqual(value, schema.const)) return false;
-  if (schema.enum && !schema.enum.some((entry) => isDeepStrictEqual(value, entry))) return false;
-  if (schema.type && !matchesType(schema.type, value)) return false;
-  if (typeof value === "number" && (value < schema.minimum || value > schema.maximum)) return false;
-  if (typeof value === "string" && (value.length < schema.minLength || value.length > schema.maxLength)) return false;
-  if (typeof value === "string" && schema.pattern && !new RegExp(schema.pattern, "u").test(value)) return false;
-
-  if (Array.isArray(value)) {
-    if (value.length < schema.minItems || value.length > schema.maxItems) return false;
-    if (schema.uniqueItems && new Set(value.map((item) => JSON.stringify(item))).size !== value.length) return false;
-    if (schema.items && !value.every((item) => matchesJsonSchema(schema.items, item, root))) return false;
-  }
-
-  if (!isPlainObject(value)) return true;
-  if (schema.required && !schema.required.every((key) => Object.hasOwn(value, key))) return false;
-  if (schema.additionalProperties === false && Object.keys(value).some((key) => !Object.hasOwn(schema.properties || {}, key))) return false;
-  return Object.entries(schema.properties || {}).every(([key, propertySchema]) => {
-    return !Object.hasOwn(value, key) || matchesJsonSchema(propertySchema, value[key], root);
-  });
-}
-
-function resolveJsonPointer(root, reference) {
-  if (!reference.startsWith("#/")) throw new Error("Unsupported JSON Schema reference: " + reference);
-  return reference
-    .slice(2)
-    .split("/")
-    .reduce((value, key) => value[key.replace(/~1/g, "/").replace(/~0/g, "~")], root);
-}
-
-function matchesType(type, value) {
-  const types = Array.isArray(type) ? type : [type];
-  return types.some((candidate) => {
-    if (candidate === "array") return Array.isArray(value);
-    if (candidate === "object") return isPlainObject(value);
-    if (candidate === "integer") return Number.isInteger(value);
-    if (candidate === "null") return value === null;
-    return typeof value === candidate;
-  });
-}
-
-function isPlainObject(value) {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
