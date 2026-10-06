@@ -1,5 +1,7 @@
 import { tokenizeEvidence } from "./evidence-cards.mjs";
 import { normalize } from "./text.mjs";
+import { categoryTermSupportedByEvidence, hasUnsupportedAliasQualifier, isTechnicalCategoryTerm,
+  technicalAnchorSupportedByEvidence } from "./technical-category-aliases.mjs";
 
 const genericAnswerTerms = new Set([
   "answer",
@@ -30,12 +32,25 @@ export function isAnswerSupportedBySelectedEvidence(answer, evidence) {
   const evidenceText = normalize(evidence);
   const evidenceTokens = new Set(tokenizeEvidence(evidence));
   const claimTermGroups = splitAnswerClaims(answer)
-    .map((claim) => ({ terms: meaningfulTerms(claim), anchors: directMeaningfulTerms(claim).filter(isAnswerAnchor) }))
+    .map((claim) => ({ terms: meaningfulTerms(claim), directTerms: directMeaningfulTerms(claim) }))
     .filter(({ terms }) => terms.length > 0);
 
   return (
     claimTermGroups.length > 0 &&
-    claimTermGroups.every(({ terms, anchors }) => claimSupportedByEvidence(terms, anchors, evidenceText, evidenceTokens))
+    claimTermGroups.every(({ terms, directTerms }) => {
+      const anchors = directTerms.filter(isAnswerAnchor);
+      const directSupport = (term) => termDirectlySupportedByEvidence(term, evidenceText, evidenceTokens);
+      if (claimSupportedByEvidence(terms, anchors, directSupport)) return true;
+      const support = (term) => termSupportedByEvidence(term, evidenceText, evidenceTokens);
+      const aliasAnchors = directTerms.filter((term) => isAnswerAnchor(term) || isTechnicalCategoryTerm(term));
+      // Joined tokenizer terms are not independent technical witnesses. An alias
+      // must not cross the legacy two-anchor threshold around an invented token.
+      if (directTerms.some((term) => /[a-z0-9+#.]/i.test(term) &&
+        !(isTechnicalCategoryTerm(term) ? support(term) : technicalAnchorSupportedByEvidence(term, evidenceText)))) return false;
+      if (aliasAnchors.filter((term) => !support(term)).length > 1) return false;
+      if (hasUnsupportedAliasQualifier(directTerms, support)) return false;
+      return claimSupportedByEvidence(terms, aliasAnchors, support);
+    })
   );
 }
 
@@ -79,21 +94,21 @@ function hasClauseSignal(claim) {
     /[\uAC00-\uD7A3](?:다|요|니다|습니다)[\s.!?。！？,;]*$/u.test(claim);
 }
 
-function claimSupportedByEvidence(terms, anchors, evidenceText, evidenceTokens) {
-  const supportedTerms = terms.filter((term) => termSupportedByEvidence(term, evidenceText, evidenceTokens));
-  const supportedAnchors = anchors.filter((term) => termSupportedByEvidence(term, evidenceText, evidenceTokens));
+function claimSupportedByEvidence(terms, anchors, support) {
+  const supportedTerms = terms.filter(support);
+  const supportedAnchors = anchors.filter(support);
 
-  if (hasUnsupportedAnchorIsland(terms, evidenceText, evidenceTokens)) return false;
+  if (hasUnsupportedAnchorIsland(terms, support)) return false;
   if (isConciseTechnicalClaim(terms, anchors) && supportedAnchors.length < anchors.length) return false;
   if (supportedAnchors.length >= 2) return true;
   if (supportedAnchors.length >= 1 && supportedTerms.length >= 3) return true;
   return anchors.length === 0 && supportedTerms.length >= Math.min(3, terms.length);
 }
 
-function hasUnsupportedAnchorIsland(terms, evidenceText, evidenceTokens) {
+function hasUnsupportedAnchorIsland(terms, support) {
   let unsupportedAnchors = 0;
   for (const term of terms) {
-    if (!isTechnicalAnchor(term) || termSupportedByEvidence(term, evidenceText, evidenceTokens)) {
+    if (!isTechnicalAnchor(term) || support(term)) {
       unsupportedAnchors = 0;
       continue;
     }
@@ -117,6 +132,11 @@ function isConciseTechnicalClaim(terms, anchors) {
 }
 
 function termSupportedByEvidence(term, evidenceText, evidenceTokens) {
+  return termDirectlySupportedByEvidence(term, evidenceText, evidenceTokens) ||
+    categoryTermSupportedByEvidence(term, evidenceText);
+}
+
+function termDirectlySupportedByEvidence(term, evidenceText, evidenceTokens) {
   if (evidenceTokens.has(term)) return true;
   if (/^[a-z0-9+#.]+$/i.test(term)) {
     return new RegExp(`(^|[^a-z0-9+#.])${escapeRegExp(term)}($|[^a-z0-9+#.])`, "i").test(evidenceText);
