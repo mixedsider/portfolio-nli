@@ -4,6 +4,7 @@ import { readNliHistory } from "./http.mjs";
 import { isPromptInjectionAttempt, resolveLocally } from "./router.mjs";
 import { resolveLocalFastPath } from "./local-fast-path.mjs";
 import { prepareGroundedRequest } from "./evidence-selection.mjs";
+import { PreparedDecisionUnavailableError } from "./decision-schema.mjs";
 import { createModelCascade } from "./model-cascade.mjs";
 import { rejectResponse } from "./responses.mjs";
 import { resolveLegacyRequest } from "./legacy-request-resolution.mjs";
@@ -64,7 +65,19 @@ export function createRequestResolver(config, dependencies = {}) {
         }
         const fast = resolveLocalFastPath(rawMessage, scopedContext);
         if (fast) { lifetime.check(); emit({ type: "complete", stage: "fast_path", reason: "exact_command" }); return fast; }
-        const prepared = prepareGroundedRequest(safeMessage, scopedContext);
+        let prepared;
+        try { prepared = prepareGroundedRequest(safeMessage, scopedContext); }
+        catch (error) {
+          if (!(error instanceof PreparedDecisionUnavailableError)) throw error;
+          lifetime.check();
+          if (error.coverageImpossible) {
+            emit({ type: "complete", stage: "clarification", reason: "coverage_impossible" });
+            return rejectResponse("비교하거나 설명할 대상을 더 구체적으로 알려주세요.");
+          }
+          emit({ type: "complete", stage: "upstream_error", reason: "scope_mismatch" });
+          if (options.reportUpstreamFailure) throw new UpstreamUnavailableError();
+          return rejectResponse();
+        }
         lifetime.check();
         cascade ??= createModelCascade(config, { context: baseContext, now, observer: emit,
           lfmClient: observeClient(dependencies.lfmClient, "lfm"),
