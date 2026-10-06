@@ -319,7 +319,7 @@ test("intent definitions, schemas, and fixtures remain aligned", async () => {
     .filter(Boolean)
     .sort();
   assert.deepEqual(responseIntentNames, intentNames);
-  assert.deepEqual([...decisionSchemaFile.properties.intent.enum].sort(), [
+  assert.deepEqual(decisionSchemaFile.oneOf.map((branch) => branch.properties.intent.const).sort(), [
     "answer_portfolio",
     "define_term",
     "navigate",
