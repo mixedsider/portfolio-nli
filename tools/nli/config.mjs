@@ -48,8 +48,8 @@ export function createGatewayConfig(env = process.env) {
       maxConcurrentRequests: readPositiveIntegerEnv(env, "LM_STUDIO_MAX_CONCURRENT_REQUESTS", 4)
     },
     lfm: {
-      baseUrl: env.LFM_BASE_URL || "http://192.168.0.106:1234/v1",
-      name: env.LFM_MODEL || "lfm2.5-2.6b",
+      baseUrl: env.LFM_BASE_URL || "http://192.168.0.57:1234/v1",
+      name: env.LFM_MODEL || "Qwen3.8-27B-UD-Q4_K_M",
       timeoutMs: readPositiveIntegerEnv(env, "LFM_TIMEOUT_MS", LFM_TIMEOUT_MS),
       maxTokens: readPositiveIntegerEnv(env, "LFM_MAX_TOKENS", 512),
       maxResponseBytes: readPositiveIntegerEnv(env, "LFM_MAX_RESPONSE_BYTES", 65_536),

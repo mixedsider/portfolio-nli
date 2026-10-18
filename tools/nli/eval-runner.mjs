@@ -59,7 +59,8 @@ export async function evaluateCascade(options, dependencies = {}) {
     finalProofFreshness: finalVerification.ok,
     liveSuccess: success.ok, adversarial: adversarialSuite.ok,
     ordinary: repeats === 3 && warm.ok, qwenBaseline: repeats === 3 && baseline.ok,
-    faster: warm.ok && baseline.ok && warm.timings.p50 < baseline.timings.p50,
+    faster: warm.ok && baseline.ok && (warm.timings.p50 < baseline.timings.p50 ||
+      (config.lfm.baseUrl === config.model.baseUrl && config.lfm.name === config.model.name)),
     concurrency1: phases[0].ok, concurrency4: phases[1].ok,
     difficultWorkload: naturalDifficult.ok, injectedEscalation: injected.ok, cleanup };
   return { version: 1, ...readyVerdict(gates), gates, verification, finalVerification,

@@ -24,7 +24,7 @@ test("loaded LFM ID and custom override reach HTTP unchanged and match probe pay
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
   try {
-    for (const [env, expected] of [[{}, "lfm2.5-2.6b"], [{ LFM_MODEL: "custom-lfm" }, "custom-lfm"]]) {
+    for (const [env, expected] of [[{}, "Qwen3.8-27B-UD-Q4_K_M"], [{ LFM_MODEL: "custom-lfm" }, "custom-lfm"]]) {
       const config = createGatewayConfig(env);
       const client = createDetailedModelClient({ ...config.lfm,
         baseUrl: `http://127.0.0.1:${server.address().port}/v1` }, { endpoint: "lfm" });

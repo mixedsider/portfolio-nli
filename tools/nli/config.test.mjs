@@ -69,7 +69,7 @@ test("independent LFM, Qwen and cascade defaults match the amended settings", ()
     maxResponseBytes: 65536, maxConcurrentRequests: 4
   });
   assert.deepEqual(config.lfm, {
-    baseUrl: "http://192.168.0.106:1234/v1", name: "lfm2.5-2.6b",
+    baseUrl: "http://192.168.0.57:1234/v1", name: "Qwen3.8-27B-UD-Q4_K_M",
     timeoutMs: 6500, maxTokens: 512, maxResponseBytes: 65536,
     maxConcurrentRequests: 4, outputMode: "json_schema"
   });

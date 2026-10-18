@@ -12,13 +12,23 @@ export async function collectProbeMetadata(endpoint, settings, payload, dependen
   const options = { timeoutMs, maxResponseBytes: settings.maxResponseBytes };
   const describe = ({ ok, kind, status, bytes, elapsedMs }) => ({ ok, kind, status, bytes, elapsedMs });
   if (endpoint === "lfm") {
-    const response = await request(`${origin}/api/v0/models`, options);
-    const models = response.data?.data;
-    const loaded = Array.isArray(models) && models.some((model) => model.state === "loaded" &&
+    let response = await request(`${origin}/api/v0/models`, options);
+    if (!response.ok && response.status === 404) response = await request(`${origin}/v1/models`, options);
+    const rawModels = response.data?.data;
+    const models = Array.isArray(rawModels) ? rawModels.map((model) => model && typeof model === "object" &&
+      model.state === undefined && model.meta && typeof model.meta === "object" ? {
+        id: model.id, state: "loaded", quantization: String(model.meta.ftype || "GGUF"),
+        loadedContextLength: model.meta.n_ctx, maxContextLength: Math.max(model.meta.n_ctx_train || 0, model.meta.n_ctx || 0)
+      } : { id: model?.id, state: model?.state, quantization: model?.quantization,
+        loadedContextLength: model?.loaded_context_length, maxContextLength: model?.max_context_length }) : [];
+    const identitySource = Array.isArray(rawModels) ? rawModels.map((model) => {
+      if (!model || typeof model !== "object" || !Object.hasOwn(model, "created")) return model;
+      const { created, ...stable } = model;
+      return stable;
+    }) : rawModels;
+    const loaded = models.some((model) => model.state === "loaded" &&
       [settings.name, settings.name.split("@")[0]].includes(model.id));
-    return { ...describe(response), ok: response.ok && loaded, identitySha256: response.ok ? probeSha256(models) : null,
-      models: Array.isArray(models) ? models.map((model) => ({ id: model.id, state: model.state,
-        quantization: model.quantization, loadedContextLength: model.loaded_context_length, maxContextLength: model.max_context_length })) : [] };
+    return { ...describe(response), ok: response.ok && loaded, identitySha256: response.ok ? probeSha256(identitySource) : null, models };
   }
   const props = await request(`${origin}/props`, options);
   const rendered = await request(`${origin}/apply-template`, { ...options, payload: {
