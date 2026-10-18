@@ -57,11 +57,11 @@ test("ordered subject pattern prevents omitted comparison labels without weakeni
   const schema = payload.response_format.json_schema.schema;
   const coverage = JSON.parse(buildPreparedCoverageBlock(prepared.groundedRequest).split("\nTrusted coverage: ")[1].split("\n")[0]);
   const [first, second] = coverage.requiredSubjects.map((entry) => entry.label);
-  const clauses = [`Bookking ${first}: HTTPS 응답 지연을 200ms에서 30ms로 줄였습니다.`,
-    `CateQuest ${second}: DTO Projection과 JPQL 조인으로 DB 접근을 54회에서 1회로 줄였습니다.`];
+  const clauses = [`CateQuest ${first}: DTO Projection과 JPQL 조인으로 DB 접근을 54회에서 1회로 줄였습니다.`,
+    `Bookking ${second}: HTTPS 응답 지연을 200ms에서 30ms로 줄였습니다.`];
   const candidate = { intent: "answer_portfolio", confidence: 1, answer: clauses.join(" "),
     sourceIds: prepared.candidateSources.map((card) => card.id) };
-  const omitted = { ...candidate, answer: candidate.answer.replace(second, "DB 조회") };
+  const omitted = { ...candidate, answer: candidate.answer.replace(first, "DB 조회") };
   const oldSchema = structuredClone(schema);
   delete oldSchema.oneOf[0].properties.answer.pattern;
   assert.equal(matchesJsonSchema(oldSchema, omitted), true, "pre-pattern generation permitted omitted labels");
@@ -72,7 +72,7 @@ test("ordered subject pattern prevents omitted comparison labels without weakeni
   assert.equal(matchesJsonSchema(schema, { ...candidate, answer: [...clauses].reverse().join(" ") }), false);
   assert.equal(matchesJsonSchema(schema, { ...candidate, answer: clauses.join("\n") }), false);
   for (const answer of [`${first}; ${second}`, `Fake${first}Alias Fake${second}Alias`,
-    `CateQuest ${first}: HTTPS 응답 지연을 200ms에서 30ms로 줄였습니다. Bookking ${second}: DB 접근을 54회에서 1회로 줄였습니다.`]) {
+    `Bookking ${first}: DTO Projection과 JPQL 조인으로 DB 접근을 54회에서 1회로 줄였습니다. CateQuest ${second}: HTTPS 응답 지연을 200ms에서 30ms로 줄였습니다.`]) {
     const invalid = { ...candidate, answer };
     assert.equal(matchesJsonSchema(schema, invalid), true, "pattern is not evidence entailment");
     assert.equal(acceptProposal(invalid, context, prepared, comparison).accepted, false, answer);

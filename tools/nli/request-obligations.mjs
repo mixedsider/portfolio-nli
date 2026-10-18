@@ -46,7 +46,10 @@ export function analyzeRequestObligations(message, context = {}, evidenceIndex =
   const glossaryMatches = matches.filter((match) => match.type === "glossary");
   const glossaryCollisions = ambiguousMatches(glossaryMatches);
   const subjects = unique(glossaryMatches.filter((match) => !glossaryCollisions.includes(match.id)).map((match) => match.id));
-  const requiredSubjectIds = unique([...scopeIds.filter((id) => catalog.targets.some((target) => target.id === id && target.type === "section") && !explicit.some((match) => match.id === id && hasGlossaryPeer(match))), ...subjects]);
+  const sectionScopeIds = new Set(scopeIds.filter((id) => catalog.targets.some((target) => target.id === id && target.type === "section") && !explicit.some((match) => match.id === id && hasGlossaryPeer(match))));
+  const subjectIds = new Set(subjects);
+  const orderedMatches = [...matches].sort((left, right) => left.start - right.start);
+  const requiredSubjectIds = unique([...orderedMatches.map((match) => match.id).filter((id) => sectionScopeIds.has(id) || subjectIds.has(id)), ...sectionScopeIds, ...subjects]);
   const scopedTargets = scopeIds.length ? catalog.targets.filter((target) => scopeIds.some((id) => target.id === id || (catalog.parents.get(id) === id && catalog.parents.get(target.id) === id))) : catalog.targets;
   const allowedSourceIds = scopedTargets.map((target) => target.id);
   const ambiguousTargetIds = unique(collisions.filter((id) => allowedSourceIds.includes(id)));
