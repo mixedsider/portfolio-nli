@@ -37,13 +37,13 @@ test("deployment checkpoints the verified process before a non-destructive envir
   const listenerCheckIndex = deployScript.indexOf("\nwait_for_nli_listener_identity\n");
   assert.ok(snapshotIndex >= 0 && checkoutIndex > snapshotIndex);
   assert.ok(restartIndex > checkoutIndex && listenerCheckIndex > restartIndex);
-  assert.ok(deployScript.indexOf('lifecycle.mjs" preflight "${DEPLOY_SHA}"') > listenerCheckIndex);
+  assert.doesNotMatch(deployScript, /lifecycle\.mjs"\s+preflight/);
   assert.doesNotMatch(deployScript, /pm2 delete/);
   const lifecycle = extractWorkflowLifecycle(workflow);
   assert.match(lifecycle, /manager = \{ type: "pm2", bin, name, existed: true \}/);
   assert.match(lifecycle, /manager = systemdManagerFor\(pid, systemctlBin\)/);
   assert.match(lifecycle, /if \(systemdManagers\.length\) fail\("snapshot_manager_conflict"\)/);
-  assert.match(lifecycle, /JSON\.stringify\(\{ env, rawEnv, manager, receipt, hadReceipt \}\)/);
+  assert.match(lifecycle, /JSON\.stringify\(\{ env, rawEnv, manager \}\)/);
   assert.match(lifecycle, /\["restart", state\.manager\.name, "--update-env"\]/);
   assert.match(lifecycle, /const env = \{ \.\.\.state\.env, GIT_COMMIT_SHA: revision \}/);
   assert.match(lifecycle, /sameApplicationEnv\(state\.rawEnv, actualRaw\)/);
@@ -55,7 +55,9 @@ test("deployment checkpoints the verified process before a non-destructive envir
   assert.match(lifecycle, /info\.uid === 0 && Boolean\(info\.mode & 0o1000\)/);
   assert.match(lifecycle, /const env = \{ PATH: managerPath, LANG: "C", LC_ALL: "C" \}/);
   assert.doesNotMatch(lifecycle, /systemdCommandEnv|managerCommandEnv\([^)]*state\.env|managerCommandEnv\([^)]*rawEnv/);
-  assert.match(lifecycle, /tools\/nli\/eval-bound-probe\.mjs/);
+  assert.doesNotMatch(lifecycle, /tools\/nli\/eval-bound-probe\.mjs/);
+  assert.doesNotMatch(lifecycle, /tools\/nli-cascade-eval\.mjs/);
+  assert.doesNotMatch(lifecycle, /qwen-no-thinking\.json/);
   assert.doesNotMatch(lifecycle, /tools\/nli-model-probe\.mjs/);
   assert.match(lifecycle, /validSystemdManager\(state\.manager, process\.env\.GATEWAY_PID\)/);
   assert.match(lifecycle,
@@ -66,7 +68,7 @@ test("deployment checkpoints the verified process before a non-destructive envir
   assert.doesNotMatch(lifecycle, /state\.name \+ "\.service"|if \(state\.bin\)/);
 });
 
-test("rollback restores the pre-restart receipt and captured environment with the previous revision", () => {
+test("rollback restores the captured environment with the previous revision", () => {
   const rollbackStart = workflow.indexOf("      - name: Roll back failed deployment");
   const rollbackScriptStart = workflow.indexOf("          set -euo pipefail", rollbackStart);
   const rollbackScriptEnd = workflow.indexOf("\n          REMOTE", rollbackScriptStart);
@@ -86,10 +88,9 @@ test("rollback restores the pre-restart receipt and captured environment with th
   assert.doesNotMatch(rollbackScript, /command -v pm2[^\n]*snapshot\.json/);
   assert.match(rollbackScript, /snapshot\.json" \] \|\| exit 0/);
   assert.doesNotMatch(rollbackScript, /pm2 delete/);
-  const restoreIndex = rollbackScript.indexOf('lifecycle.mjs" restore');
   const checkoutIndex = rollbackScript.indexOf('git checkout --detach "${PREVIOUS_SHA}"');
   const restartIndex = rollbackScript.indexOf('lifecycle.mjs" restart "${PREVIOUS_SHA}"');
-  assert.ok(restoreIndex >= 0 && checkoutIndex > restoreIndex && restartIndex > checkoutIndex);
+  assert.ok(checkoutIndex >= 0 && restartIndex > checkoutIndex);
   assert.ok(rollbackScript.indexOf("\nwait_for_nli_listener_identity", restartIndex) > restartIndex);
   assert.match(workflow, /name: Remove private host lifecycle snapshot\n\s+if: \$\{\{ always\(\) && steps\.previous\.outputs\.sha != '' \}\}/);
 });

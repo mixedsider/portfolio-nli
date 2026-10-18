@@ -59,7 +59,7 @@ jobs:
             echo '## cd/test offline deployment diagnostics'
             echo "Contract tests: ${CONTRACT_RESULT}"
             echo 'Passing this offline job gates a subsequent REAL deployment from cd/test; no main merge is required.'
-            echo 'Every cd/test push may restart the actual configured Gateway and run Qwen/LFM models, receipt verification and rollback.'
+            echo 'Every cd/test push may restart the actual configured Gateway and run live functional/adversarial tests and rollback.'
             echo 'No production runner, credentials, remote lifecycle or model calls are used by this job.'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -333,10 +333,10 @@ jobs:
           let reportPath = null;
           let groupOpen = false;
           // SAFE_DIAGNOSTICS_START
-          const stages = new Set(["initialization", "state_read", "restart", "listener", "configuration", "qwen", "lfm", "eval", "restore",
+          const stages = new Set(["initialization", "state_read", "restart", "listener",
             "snapshot_pm2_binary", "snapshot_pm2_entry", "snapshot_systemctl_binary", "snapshot_systemd_owner", "snapshot_process_environment",
             "snapshot_registered_environment", "snapshot_configuration", "snapshot_write", "snapshot_listener_identity", "snapshot_pm2_identity",
-            "snapshot_manager_conflict", "snapshot_environment_drift", "snapshot_pm2_home", "snapshot_manager_missing", "snapshot_allowed_origins", "snapshot_receipt_setting"]);
+            "snapshot_manager_conflict", "snapshot_environment_drift", "snapshot_pm2_home", "snapshot_manager_missing", "snapshot_allowed_origins"]);
           const blockers = new Set(["qwen_unverified", "qwen_verifier_unavailable", "no_compatible_output_mode", "metadata_unavailable_or_incomplete",
             "verification_inputs_changed", "verification_policy_mismatch", "configured_mode_not_verified", "producer_runtime_payload_mismatch",
             "policyCaps", "lfmVerified", "qwenVerified", "liveSuccess", "adversarial", "ordinary", "qwenBaseline", "faster", "concurrency1",
@@ -648,14 +648,8 @@ jobs:
               mark("snapshot_configuration");
               const config = await configFor(env);
               if (!config.allowedOrigins.size || config.allowedOrigins.has("*")) fail("snapshot_allowed_origins");
-              const receiptSetting = config.cascade?.qwenVerificationFile ??
-                (env.NLI_QWEN_VERIFICATION_FILE || ".nli/qwen-no-thinking.json");
-              if (typeof receiptSetting !== "string" || !receiptSetting.trim()) fail("snapshot_receipt_setting");
-              const receipt = resolve(app, receiptSetting);
-              const hadReceipt = existsSync(receipt);
               mark("snapshot_write");
-              if (hadReceipt) copyFileSync(receipt, dir + "/previous-receipt.json");
-              writeFileSync(snapshotPath, JSON.stringify({ env, rawEnv, manager, receipt, hadReceipt }),
+              writeFileSync(snapshotPath, JSON.stringify({ env, rawEnv, manager }),
                 { flag: "wx", mode: 0o600 });
             } else {
               mark("state_read");
@@ -676,7 +670,7 @@ jobs:
                   run(state.manager.bin, systemdArgs(state.manager.scope, ["restart", state.manager.unit]),
                     commandEnv);
                 } else fail();
-              } else if (action === "identity" || action === "preflight") {
+              } else if (action === "identity") {
                 mark("listener");
                 const actualRaw = processEnv(process.env.GATEWAY_PID);
                 let actual = actualRaw;
@@ -694,35 +688,12 @@ jobs:
                   config = await configFor(actual);
                   if (!sameApplicationEnv(state.env, actual)) fail();
                 } else fail();
-                if (action === "preflight") {
-                  mark("configuration");
-                  config ??= await configFor(actual);
-                  if (!config.cascade.qwenEnabled || config.cascade.qwenVerificationFile !== state.receipt) fail();
-                  for (const [endpoint, extra] of [["qwen", ["--receipt", state.receipt]], ["lfm", []]]) {
-                    stage(endpoint, dir + "/" + endpoint + "-verify.json", endpoint === "qwen" ? config.model.timeoutMs : config.lfm.timeoutMs);
-                    run(process.execPath, ["tools/nli/eval-bound-probe.mjs", "--endpoint", endpoint, "--mode", "verify",
-                      "--output", dir + "/" + endpoint + "-verify.json", ...extra], actual);
-                    console.log(`NLI report ${endpoint}: ${JSON.stringify(readReport(reportPath))}`);
-                  }
-                  stage("eval", dir + "/live-eval.json", config.cascade.timeoutMs);
-                  run(process.execPath, ["tools/nli-cascade-eval.mjs", "--output", dir + "/live-eval.json",
-                    "--lfm-verification", dir + "/lfm-verify.json", "--qwen-verification", dir + "/qwen-verify.json"], actual);
-                  if (JSON.parse(readFileSync(dir + "/live-eval.json", "utf8")).ready !== true) fail();
-                  console.log(`NLI report eval: ${JSON.stringify(readReport(reportPath))}`);
-                }
-              } else if (action === "restore") {
-                mark("restore");
-                if (state.hadReceipt) {
-                  const temporary = state.receipt + ".rollback-" + process.env.PREFLIGHT_ID;
-                  copyFileSync(dir + "/previous-receipt.json", temporary);
-                  renameSync(temporary, state.receipt);
-                } else rmSync(state.receipt, { force: true });
               } else fail();
             }
           } catch (error) {
             const reason = error instanceof LifecycleFailure && stages.has(error.reason) ? error.reason : checkpoint;
             const suffix = action === "snapshot" ? ` (reason=${reason})` : "";
-            const safeAction = ["snapshot", "restart", "identity", "preflight", "restore"].includes(action) ? action : "unclassified";
+            const safeAction = ["snapshot", "restart", "identity"].includes(action) ? action : "unclassified";
             const category = childFailure ? childFailure.spawnCode === "ETIMEDOUT" ? "timeout" : "child" :
               error instanceof LifecycleFailure ? "policy" : failureCategory(error);
             console.error(`Gateway lifecycle/preflight failed${suffix}; action=${safeAction} stage=${reason} category=${category} child=${JSON.stringify(childFailure)} report=${JSON.stringify(readReport(reportPath))}; private host checkpoint retained until cleanup.`);
@@ -748,7 +719,6 @@ jobs:
           echo '::group::NLI listener identity'
           wait_for_nli_listener_identity
           echo '::endgroup::'
-          GATEWAY_PID="$(nli_listener_pids)" node "${PREFLIGHT_DIR}/lifecycle.mjs" preflight "${DEPLOY_SHA}"
           REMOTE
 
       - name: Process health and revision check (not model readiness)
@@ -927,7 +897,6 @@ jobs:
           PREFLIGHT_DIR="${APP_DIR}/.nli/preflight-${PREFLIGHT_ID}"
           # No checkpoint means deploy failed before checkout or lifecycle mutation.
           [ -f "${PREFLIGHT_DIR}/snapshot.json" ] || exit 0
-          node "${PREFLIGHT_DIR}/lifecycle.mjs" restore
           echo '::group::NLI rollback source checkout'
           git checkout --detach "${PREVIOUS_SHA}"
           echo '::endgroup::'
@@ -970,8 +939,7 @@ jobs:
             "APP_DIR='${NLI_GATEWAY_APP_DIR}' PREFLIGHT_ID='${PREFLIGHT_ID}' bash -s" <<'REMOTE'
           set -euo pipefail
           APP_DIR="${APP_DIR/#\~/$HOME}"
-          rm -f "${APP_DIR}/.nli/preflight-${PREFLIGHT_ID}/snapshot.json" \
-            "${APP_DIR}/.nli/preflight-${PREFLIGHT_ID}/previous-receipt.json"
+          rm -f "${APP_DIR}/.nli/preflight-${PREFLIGHT_ID}/snapshot.json"
           REMOTE
 
       - name: Remove deployment SSH material

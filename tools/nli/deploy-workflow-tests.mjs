@@ -51,10 +51,10 @@ function expectedManagerEnv(fixture, scope) {
 export function registerWorkflowLifecycleTests(workflow, root) {
   const lifecycle = extractWorkflowLifecycle(workflow);
   const cleanup = extractWorkflowRemote(workflow, "Remove private host lifecycle snapshot");
-  for (const scope of ["system", "user"]) for (const hadReceipt of [false, true]) {
-    test(`PM2-empty listener preserves its verified ${scope} systemd unit with receipt=${hadReceipt}`,
+  for (const scope of ["system", "user"]) {
+    test(`PM2-empty listener preserves its verified ${scope} systemd unit`,
       { skip: process.platform !== "linux" }, async () => {
-        const f = await createSystemdWorkflowFixture(root, scope, { hadReceipt });
+        const f = await createSystemdWorkflowFixture(root, scope);
         const helper = join(f.directory, "lifecycle.mjs");
         const target = "b".repeat(40);
         const invoke = async (action, revision = target) => {
@@ -76,7 +76,6 @@ export function registerWorkflowLifecycleTests(workflow, root) {
             busAddress: `unix:path=${f.runtimeDirectory}/bus` });
           assert.deepEqual(snapshot.manager, expectedManager);
           assert.equal(snapshot.name, undefined, "systemd ownership must not be inferred from PROCESS_NAME");
-          assert.equal(snapshot.receipt, f.receipt);
           assert.equal(snapshot.rawEnv.NLI_DOTENV_ONLY, undefined);
           assert.equal(snapshot.env.NLI_DOTENV_ONLY, f.dotenv.NLI_DOTENV_ONLY);
 
@@ -84,14 +83,6 @@ export function registerWorkflowLifecycleTests(workflow, root) {
           assert.equal(restartResult.code, 0, restartResult.stderr);
           const identityResult = await invoke("identity");
           assert.equal(identityResult.code, 0, identityResult.stderr);
-          const preflightResult = await invoke("preflight");
-          assert.equal(preflightResult.code, 0, preflightResult.stderr);
-          assert.deepEqual(await f.producerCalls(), ["qwen", "lfm", "eval"]);
-          assert.equal(await readFile(f.receipt, "utf8"), "new-private-stub-receipt");
-          const restoreResult = await invoke("restore", f.previousRevision);
-          assert.equal(restoreResult.code, 0, restoreResult.stderr);
-          if (hadReceipt) assert.equal(await readFile(f.receipt, "utf8"), f.receiptBytes);
-          else await assert.rejects(access(f.receipt), { code: "ENOENT" });
           const rollbackRestartResult = await invoke("restart", f.previousRevision);
           assert.equal(rollbackRestartResult.code, 0, rollbackRestartResult.stderr);
           const rollbackIdentityResult = await invoke("identity", f.previousRevision);
@@ -412,9 +403,9 @@ export function registerWorkflowLifecycleTests(workflow, root) {
         }
       });
   }
-  test("systemd restart failure rolls back receipt and the exact captured manager without fallback",
+  test("systemd restart failure rolls back the exact captured manager without fallback",
     { skip: process.platform !== "linux" }, async () => {
-      const f = await createSystemdWorkflowFixture(root, "system", { hadReceipt: true });
+      const f = await createSystemdWorkflowFixture(root, "system");
       const helper = join(f.directory, "lifecycle.mjs");
       const target = "b".repeat(40);
       const invoke = async (action, revision = target) => {
@@ -428,15 +419,12 @@ export function registerWorkflowLifecycleTests(workflow, root) {
       try {
         await writeFile(helper, systemdLifecycle(lifecycle, f));
         assert.equal((await invoke("snapshot")).code, 0);
-        await writeFile(f.receipt, "candidate-systemd-receipt", { mode: 0o600 });
         await f.scenario("systemd-restart-fail");
         const failedRestart = await invoke("restart");
         assert.equal(failedRestart.code, 1);
         assertLifecycleFailure(failedRestart, "restart", "restart", "child", 9);
         assert.deepEqual(f.manager.calls, []);
 
-        assert.equal((await invoke("restore", f.previousRevision)).code, 0);
-        assert.equal(await readFile(f.receipt, "utf8"), f.receiptBytes);
         await f.scenario("success");
         assert.equal((await invoke("restart", f.previousRevision)).code, 0);
         assert.equal((await invoke("identity", f.previousRevision)).code, 0);
@@ -492,12 +480,12 @@ export function registerWorkflowLifecycleTests(workflow, root) {
         await assert.rejects(access(f.app), { code: "ENOENT" });
       }
     });
-  const scenarios = ["success", "before-restart", "restart-fail", "qwen-fail", "lfm-fail", "eval-fail", "eval-false", "receipt-drift"];
-  for (const bootstrap of [false, true]) for (const hadReceipt of [false, true]) for (const scenario of scenarios) {
+  const scenarios = ["success", "before-restart", "restart-fail"];
+  for (const bootstrap of [false, true]) for (const scenario of scenarios) {
     const registration = bootstrap ? "cold PM2 bootstrap accepts daemon banner" : "registered PM2 lifecycle";
-    test(`${registration}: receipt=${hadReceipt} ${scenario}`,
+    test(`${registration}: ${scenario}`,
       { skip: process.platform !== "linux", timeout: 60000 }, async () => {
-        const f = await createWorkflowFixture(root, bootstrap, hadReceipt);
+        const f = await createWorkflowFixture(root, bootstrap, false);
         const helper = join(f.directory, "lifecycle.mjs");
         const target = "b".repeat(40);
         async function invoke(action, revision = target, expected = 0) {
@@ -521,7 +509,6 @@ export function registerWorkflowLifecycleTests(workflow, root) {
           const snapshot = JSON.parse(await readFile(snapshotFile, "utf8"));
           const original = bootstrap ? f.ssh : f.service;
           for (const key of Object.keys(f.service)) assert.equal(snapshot.env[key], original[key], key);
-          assert.equal(snapshot.receipt, f.receipt);
           assert.equal(snapshot.env.DOTENV_ONLY, "dotenv-value");
           if (!bootstrap) assert.equal(snapshot.env.SSH_ONLY, undefined);
           assert.equal((await stat(f.directory)).mode & 0o777, 0o700);
@@ -532,25 +519,12 @@ export function registerWorkflowLifecycleTests(workflow, root) {
             if (scenario !== "restart-fail") {
               assert.deepEqual((await f.manager.state()).pm2_env.env, { ...snapshot.env, GIT_COMMIT_SHA: target });
               await invoke("identity");
-              if (scenario === "receipt-drift") {
-                const state = await f.manager.state();
-                state.pm2_env.env.NLI_QWEN_VERIFICATION_FILE = join(f.app, ".nli/wrong.json");
-                await f.manager.setState(state);
-                await invoke("identity", target, 1);
-              } else await invoke("preflight", target, scenario === "success" ? 0 : 1);
             }
           }
           const restart = bootstrap ? "start" : "restart";
           assert.deepEqual(f.manager.calls, scenario === "before-restart" ? [] :
             scenario === "restart-fail" ? [restart] : [restart, "save"]);
-          assert.deepEqual(await f.producerCalls(), ["before-restart", "restart-fail", "receipt-drift"].includes(scenario) ? [] :
-            scenario === "qwen-fail" ? ["qwen"] : scenario === "lfm-fail" ? ["qwen", "lfm"] : ["qwen", "lfm", "eval"]);
           await f.scenario("success");
-          await invoke("restore");
-          if (hadReceipt) assert.equal(await readFile(f.receipt, "utf8"), "private-old-receipt");
-          else await assert.rejects(access(f.receipt), { code: "ENOENT" });
-          assert.equal(await readFile(f.dotenv.NLI_QWEN_VERIFICATION_FILE, "utf8"), "untouched-dotenv-receipt");
-          if (!bootstrap) assert.equal(await readFile(f.ssh.NLI_QWEN_VERIFICATION_FILE, "utf8"), "untouched-ssh-receipt");
           await invoke("restart", f.previousRevision);
           assert.deepEqual((await f.manager.state()).pm2_env.env, { ...snapshot.env, GIT_COMMIT_SHA: f.previousRevision });
           await invoke("identity", f.previousRevision);
@@ -558,7 +532,6 @@ export function registerWorkflowLifecycleTests(workflow, root) {
           assertRedacted(cleaned);
           assert.equal(cleaned.code, 0);
           await assert.rejects(access(snapshotFile), { code: "ENOENT" });
-          await assert.rejects(access(join(f.directory, "previous-receipt.json")), { code: "ENOENT" });
         } finally {
           assert.deepEqual(await f.close(), { listening: false, activeChildren: 0 });
           await assert.rejects(access(f.app), { code: "ENOENT" });
