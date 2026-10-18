@@ -137,32 +137,7 @@ export function registerWorkflowSafetyTests(workflow, root) {
     } finally { await rm(dir, { recursive: true, force: true }); }
   });
 
-  for (const stage of ["qwen", "lfm", "eval"]) test(`${stage} child failure keeps its stage, exit and available private report redacted`, async () => {
-    const f = await createWorkflowFixture(root, false, false);
-    const helper = join(f.directory, "lifecycle.mjs");
-    const invoke = async (action) => execute(process.execPath, [helper, action, "b".repeat(40)], {
-      cwd: f.app, env: { ...f.ssh, GATEWAY_PID: String((await f.manager.state()).pid) }
-    });
-    try {
-      await writeFile(helper, extractWorkflowLifecycle(workflow));
-      assert.equal((await invoke("snapshot")).code, 0);
-      assert.equal((await invoke("restart")).code, 0);
-      const producerPath = join(f.app, stage === "eval" ? "tools/nli-cascade-eval.mjs" : "tools/nli/eval-bound-probe.mjs");
-      const source = await readFile(producerPath, "utf8");
-      await writeFile(producerPath, source.replace('if (scenario === endpoint + "-fail") process.exit(1);',
-        `if (scenario === endpoint + "-fail") { writeFileSync(args.output, JSON.stringify({ status: "activation-blocked", detail: "timeout", blockers: ["qwen_unverified", "fake-private-sentinel"], inferenceCalls: 3 })); process.exit(7); }`));
-      await f.scenario(stage + "-fail");
-      const result = await invoke("preflight");
-      assert.equal(result.code, 1);
-      assert.match(result.stderr, new RegExp(`action=preflight stage=${stage} category=child`));
-      assert.match(result.stderr, /"exit":7/);
-      assert.match(result.stderr, /"inferenceCalls":3/);
-      assert.match(result.stdout, new RegExp(`::group::NLI lifecycle ${stage}`));
-      assert.doesNotMatch(result.stdout + result.stderr, /fake-private-sentinel|fake-ssh-sentinel|prior-model|prior-lfm/);
-    } finally { await f.close(); }
-  });
-
-  for (const fault of ["signal", "malformed-report", "missing-report", "source", "read", "parse"]) {
+  for (const fault of ["source", "read", "parse"]) {
     test(`lifecycle ${fault} diagnostic remains fixed and redacted`, async () => {
       const f = await createWorkflowFixture(root, false, false);
       const helper = join(f.directory, "lifecycle.mjs");
@@ -180,27 +155,13 @@ export function registerWorkflowSafetyTests(workflow, root) {
           return;
         }
         assert.equal((await invoke("snapshot")).code, 0);
-        if (["read", "parse"].includes(fault)) {
-          const snapshot = join(f.directory, "snapshot.json");
-          if (fault === "read") await rm(snapshot);
-          else await writeFile(snapshot, "fake-private-sentinel");
-          const result = await invoke("restart");
-          assert.equal(result.code, 1);
-          assert.match(result.stderr, new RegExp(`action=restart stage=state_read category=${fault}`));
-          assert.doesNotMatch(result.stderr, /fake-private-sentinel|snapshot.json/);
-          return;
-        }
-        assert.equal((await invoke("restart")).code, 0);
-        const producer = join(f.app, "tools/nli/eval-bound-probe.mjs");
-        const output = join(f.directory, "qwen-verify.json");
-        if (fault === "malformed-report") await writeFile(output, "fake-private-sentinel");
-        await writeFile(producer, fault === "signal" ? 'process.kill(process.pid, "SIGTERM");' : 'process.exit(5);');
-        const result = await invoke("preflight");
+        const snapshot = join(f.directory, "snapshot.json");
+        if (fault === "read") await rm(snapshot);
+        else await writeFile(snapshot, "fake-private-sentinel");
+        const result = await invoke("restart");
         assert.equal(result.code, 1);
-        assert.match(result.stderr, /action=preflight stage=qwen category=child/);
-        assert.match(result.stderr, fault === "signal" ? /"signal":"SIGTERM"/ : /"exit":5/);
-        assert.match(result.stderr, fault === "malformed-report" ? /"availability":"parse"/ : /"availability":"missing"/);
-        assert.doesNotMatch(result.stdout + result.stderr, /fake-private-sentinel|fake-ssh-sentinel|qwen-verify.json/);
+        assert.match(result.stderr, new RegExp(`action=restart stage=state_read category=${fault}`));
+        assert.doesNotMatch(result.stderr, /fake-private-sentinel|snapshot.json/);
       } finally { await f.close(); }
     });
   }

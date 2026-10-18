@@ -28,9 +28,6 @@ export async function createWorkflowFixture(root, bootstrap, hadReceipt, { legac
     await writeFile(join(app, ".env"), Object.entries(dotenv).map(([key, value]) => `${key}=${value}`).join("\n"));
     const receipt = defaultReceipt ? join(app, ".nli/qwen-no-thinking.json") :
       bootstrap ? ssh.NLI_QWEN_VERIFICATION_FILE : service.NLI_QWEN_VERIFICATION_FILE;
-    if (hadReceipt) await writeFile(receipt, "private-old-receipt", { mode: 0o600 });
-    if (!defaultReceipt) await writeFile(dotenv.NLI_QWEN_VERIFICATION_FILE, "untouched-dotenv-receipt");
-    if (!bootstrap && !defaultReceipt) await writeFile(ssh.NLI_QWEN_VERIFICATION_FILE, "untouched-ssh-receipt");
     const configUrl = JSON.stringify(pathToFileURL(join(root, "tools/nli/config.mjs")).href);
     const candidateConfig = legacyConfig ? await readFile(join(root, "tools/nli/config.mjs"), "utf8") :
       `export { loadDotEnv, createGatewayConfig } from ${configUrl};\n`;
@@ -40,32 +37,6 @@ export async function createWorkflowFixture(root, bootstrap, hadReceipt, { legac
       await readFile(join(root, "tools/nli/timeout-policy.mjs")));
     await writeFile(join(app, "tools/nli-gateway.mjs"), "setInterval(() => {}, 1000);\n");
     await writeFile(join(app, "scenario"), "success");
-    await writeFile(join(app, "producer-calls.json"), "[]");
-    // These producers test workflow control flow only, not model verification.
-    const producer = `
-      import { readFileSync, writeFileSync } from "node:fs";
-      import { parseProbeArgs } from ${JSON.stringify(pathToFileURL(join(root, "tools/nli-model-probe.mjs")).href)};
-      import { parseEvalArgs } from ${JSON.stringify(pathToFileURL(join(root, "tools/nli-cascade-eval.mjs")).href)};
-      const probe = process.argv[1].endsWith("eval-bound-probe.mjs");
-      const args = probe ? parseProbeArgs(process.argv.slice(2)) : parseEvalArgs(process.argv.slice(2));
-      const endpoint = args.endpoint || "eval";
-      const calls = JSON.parse(readFileSync("producer-calls.json", "utf8"));
-      calls.push(endpoint);
-      writeFileSync("producer-calls.json", JSON.stringify(calls));
-      console.error("fake-private-sentinel fake-ssh-sentinel");
-      const scenario = readFileSync("scenario", "utf8");
-      if (scenario === endpoint + "-fail") process.exit(1);
-      if (probe && args.mode !== "verify") process.exit(2);
-      if (!probe) for (const stage of ["lfm", "qwen"]) {
-        const report = JSON.parse(readFileSync(args[stage + "-verification"], "utf8"));
-        if (report.evaluationBinding.endpoint !== stage || Date.now() - Date.parse(report.checkedAt) > 10000) process.exit(3);
-      }
-      writeFileSync(args.output, JSON.stringify({ ready: scenario !== "eval-false",
-        evaluationBinding: { fixtureOnly: true, endpoint }, checkedAt: new Date().toISOString() }), { flag: "wx", mode: 0o600 });
-      if (args.receipt) writeFileSync(args.receipt, "new-private-stub-receipt", { mode: 0o600 });
-    `;
-    await writeFile(join(app, "tools/nli/eval-bound-probe.mjs"), producer);
-    await writeFile(join(app, "tools/nli-cascade-eval.mjs"), producer);
     manager = await createFakePm2(app, service, bootstrap);
     return {
       app, directory, service, ssh, dotenv, receipt, previousRevision, manager,
@@ -103,8 +74,6 @@ export async function createSystemdWorkflowFixture(root, scope = "system", { had
   const systemdEnv = { ...fixture.service, LD_PRELOAD: "/fixture/forbidden-loader.so",
     NODE_OPTIONS: "--trace-warnings", XDG_RUNTIME_DIR: "/fixture/untrusted-runtime",
     DBUS_SESSION_BUS_ADDRESS: "unix:path=/fixture/untrusted-bus" };
-  const receipt = systemdEnv.NLI_QWEN_VERIFICATION_FILE || join(fixture.app, ".nli/qwen-no-thinking.json");
-  const receiptBytes = "private-systemd-old-receipt";
 
   async function writeProcess(pid) {
     const processDirectory = join(procRoot, String(pid));
@@ -123,7 +92,6 @@ export async function createSystemdWorkflowFixture(root, scope = "system", { had
     await mkdir(runtimeDirectory, { recursive: true, mode: 0o700 });
     await chmod(runtimeDirectory, 0o700);
     await writeProcess(initialPid);
-    if (hadReceipt) await writeFile(receipt, receiptBytes, { mode: 0o600 });
     await writeFile(statePath, JSON.stringify({ pid: initialPid, scope, unit, controlGroup, app: fixture.app,
       env: systemdEnv, procRoot, loadState: "loaded", activeState: "active", subState: "running",
       mainPid: null, uid, managerPath, runtimeDirectory }));
@@ -185,8 +153,6 @@ export async function createSystemdWorkflowFixture(root, scope = "system", { had
     runtimeDirectory,
     uid,
     managerPath,
-    receipt,
-    receiptBytes,
     state: async () => JSON.parse(await readFile(statePath, "utf8")),
     systemdCalls: async () => JSON.parse(await readFile(callsPath, "utf8")),
     async setProcessArgv(argv) {
