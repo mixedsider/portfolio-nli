@@ -52,9 +52,18 @@ export function createFakeResolver(testCase, context, events = []) {
   let time = 0;
   const counts = { lfmCalls: 0, qwenCalls: 0 };
   const client = (stage) => async () => {
-    const spec = testCase.models[stage];
+    let spec = testCase.models?.[stage] ?? testCase.models?.lfm;
+    if (stage === "qwen") {
+      if (testCase.models?.qwen?.completion || testCase.models?.qwen?.response) {
+        spec = testCase.models.qwen;
+      } else if (testCase.models?.lfm?.response) {
+        spec = testCase.models.lfm;
+      }
+    }
+
     // A busy/aborted adapter represents a pre-dispatch failure, not an inference.
-    const dispatchCount = ["busy", "aborted"].includes(spec.failure) ? 0 : 1;
+    const dispatchCount = ["busy", "aborted"].includes(spec?.failure) ? 0 : 1;
+
     counts[`${stage}Calls`] += dispatchCount;
     time += spec.elapsedMs ?? 0;
     const outcome = spec.failure ? modelFailure(spec.failure, {}) : inspectModelCompletion(spec.completion ?? {

@@ -2,10 +2,10 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { readNliHistory } from "./http.mjs";
 import { isPromptInjectionAttempt, resolveLocally } from "./router.mjs";
-import { resolveLocalFastPath } from "./local-fast-path.mjs";
 import { prepareGroundedRequest } from "./evidence-selection.mjs";
 import { PreparedDecisionUnavailableError } from "./decision-schema.mjs";
-import { createModelCascade } from "./model-cascade.mjs";
+import { createDetailedModelClient } from "./model-client.mjs";
+import { acceptTransportProposal, isCompatibleLocalFallback } from "./proposal-acceptance.mjs";
 import { rejectResponse } from "./responses.mjs";
 import { resolveLegacyRequest } from "./legacy-request-resolution.mjs";
 import { createRequestDeadline, UpstreamUnavailableError } from "./request-deadline.mjs";
@@ -13,7 +13,7 @@ import { createRequestDeadline, UpstreamUnavailableError } from "./request-deadl
 export function createRequestResolver(config, dependencies = {}) {
   const { context, now = () => performance.now(), observer = () => {} } = dependencies;
   const requests = new AsyncLocalStorage();
-  let cascade;
+  let defaultClient;
   const emit = (event) => {
     try { observer(Object.freeze({ ...event, requestId: requests.getStore() })); }
     catch { /* Trusted diagnostics must not affect service. */ }
@@ -63,8 +63,6 @@ export function createRequestResolver(config, dependencies = {}) {
           emit({ type: "complete", stage: "legacy", reason: "test_seam" });
           return result;
         }
-        const fast = resolveLocalFastPath(rawMessage, scopedContext);
-        if (fast) { lifetime.check(); emit({ type: "complete", stage: "fast_path", reason: "exact_command" }); return fast; }
         let prepared;
         try { prepared = prepareGroundedRequest(safeMessage, scopedContext); }
         catch (error) {
@@ -79,17 +77,56 @@ export function createRequestResolver(config, dependencies = {}) {
           return rejectResponse();
         }
         lifetime.check();
-        cascade ??= createModelCascade(config, { context: baseContext, now, observer: emit,
-          lfmClient: observeClient(dependencies.lfmClient, "lfm"),
-          qwenClient: observeClient(dependencies.qwenClient, "qwen"), verifier: dependencies.verifier });
         const local = resolveLocally(safeMessage, scopedContext);
-        const result = await cascade.resolve({ originalMessage: safeMessage, scopedContext, prepared,
-          signal: lifetime.signal, deadlineAt: lifetime.deadlineAt,
-          localFallback: local.confidence > 0 ? local : undefined });
+        const localFallback = local.confidence > 0 ? local : undefined;
+        const fallback = (reason) => {
+          if (["busy", "aborted"].includes(reason)) {
+            emit({ type: "complete", stage: "upstream_error", reason });
+            if (options.reportUpstreamFailure) throw new UpstreamUnavailableError();
+            return rejectResponse();
+          }
+          if (!prepared.coveragePossible || prepared.obligations.kind === "ambiguity" || prepared.obligations.ambiguousTargetIds.length > 1) {
+            emit({ type: "complete", stage: "clarification", reason: !prepared.coveragePossible ? "coverage_impossible" : "ambiguous_request" });
+            return rejectResponse("비교하거나 설명할 대상을 더 구체적으로 알려주세요.");
+          }
+          if (localFallback && isCompatibleLocalFallback(localFallback, scopedContext, prepared, safeMessage)) {
+            emit({ type: "complete", stage: "local_fallback", reason });
+            return localFallback;
+          }
+          emit({ type: "complete", stage: "upstream_error", reason });
+          if (options.reportUpstreamFailure) throw new UpstreamUnavailableError();
+          return rejectResponse();
+        };
+
+        const qwenEnabled = config.cascade?.qwenEnabled !== false;
+        const stage = qwenEnabled ? "qwen" : "lfm";
+        const modelSettings = qwenEnabled ? config.model : (config.lfm ?? config.model);
+        const rawClient = (qwenEnabled ? (dependencies.qwenClient ?? dependencies.lfmClient) : dependencies.lfmClient) ??
+          (defaultClient ??= createDetailedModelClient(modelSettings, { endpoint: stage, now }));
+        const client = observeClient(rawClient, stage);
+        emit({ type: "attempt", stage, reason: "eligible" });
+        const outcome = await client(safeMessage, scopedContext, prepared.groundedRequest, {
+          signal: lifetime.signal,
+          deadlineAt: lifetime.deadlineAt,
+          budgetMs: lifetime.deadlineAt - now()
+        });
+        const workDeadline = lifetime.deadlineAt - 1000;
+        if (lifetime.signal.aborted || now() >= workDeadline) {
+          throw new UpstreamUnavailableError();
+        }
         lifetime.check();
-        if (result.response) return result.response;
-        if (options.reportUpstreamFailure) throw new UpstreamUnavailableError();
-        return rejectResponse();
+        if (outcome?.tag === "failure") {
+          return fallback(outcome.kind || "failure");
+        }
+
+        const accepted = acceptTransportProposal(outcome, scopedContext, prepared, safeMessage);
+        if (accepted.accepted) {
+          emit({ type: "complete", stage, reason: "accepted" });
+          return accepted.response;
+        }
+
+        return fallback(accepted.reason || "proposal_invalid");
+
       } finally { lifetime.dispose(); }
     });
   };

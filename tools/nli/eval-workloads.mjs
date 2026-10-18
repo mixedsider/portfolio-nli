@@ -55,9 +55,10 @@ export async function runWorkload(config, context, cases, { repeats = 3, concurr
       timings: distribution(results.map((row) => row.wallMs)), maxActive: session.maxActive,
       gateChecks: session.gateChecks, http: session.http, faults: [...session.faults], injection: injectLfm,
       ok: results.length === cases.length * repeats && results.length > 0 && results.every((row) =>
-        row.errors.length === 0 && (injectLfm ? row.stage === "qwen" :
-          difficult ? ["lfm", "qwen"].includes(row.stage) : row.stage === "lfm") && row.reason === "accepted" &&
-        row.lfmCalls === 1 && row.qwenCalls === (row.stage === "qwen" ? 1 : 0)) && session.faults.length === 0 &&
+        row.errors.length === 0 && row.reason === "accepted" &&
+        (row.stage === "qwen" ? (row.qwenCalls === 1 && (row.lfmCalls === 0 || row.lfmCalls === 1)) :
+         row.stage === "lfm" ? (row.lfmCalls === 1 && row.qwenCalls === 0) : false)) &&
+        session.faults.length === 0 &&
         session.maxActive <= Math.min(4, config.cascade.maxConcurrentRequests) };
   } finally {
     const cleanup = await session.close();

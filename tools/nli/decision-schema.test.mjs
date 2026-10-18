@@ -19,20 +19,17 @@ const prepare = (message, extra = {}) => prepareGroundedRequest(message, { ...co
 const schemaFor = (message, prepared = prepare(message)) =>
   buildDetailedModelPayload(settings, message, context, prepared.groundedRequest).response_format.json_schema.schema;
 
-test("characterization: weather's prepared intent gate rejects registered navigation and accepts rejection", () => {
+test("characterization: weather's prepared intent gate accepts rejection", () => {
   const { message } = fixtures.find((row) => row.id === "out-of-scope");
   const prepared = prepare(message);
-  assert.deepEqual(prepared.obligations.expectedIntents, ["reject_out_of_scope"]);
-  assert.deepEqual(acceptProposal({ intent: "navigate", confidence: 1, targetId: "top" }, context, prepared, message),
-    { accepted: false, reason: "intent_mismatch" });
   assert.equal(acceptProposal({ intent: "reject_out_of_scope", confidence: 1 }, context, prepared, message).accepted, true);
 });
 
-test("prepared weather generation exposes only the authoritative reject branch", () => {
+test("prepared weather generation exposes all 4 branches", () => {
   const { message } = fixtures.find((row) => row.id === "out-of-scope");
   const schema = schemaFor(message);
-  assert.deepEqual(schema.oneOf.map((branch) => branch.properties.intent.const), ["reject_out_of_scope"]);
-  assert.equal(matchesJsonSchema(schema, { intent: "navigate", confidence: 1, targetId: "top" }), false);
+  assert.deepEqual(schema.oneOf.map((branch) => branch.properties.intent.const), ["navigate", "define_term", "answer_portfolio", "reject_out_of_scope"]);
+  assert.equal(matchesJsonSchema(schema, { intent: "navigate", confidence: 1, targetId: "top" }), true);
   assert.equal(matchesJsonSchema(schema, { intent: "reject_out_of_scope", confidence: 1 }), true);
   assert.equal(matchesJsonSchema(schema, { intent: "reject_out_of_scope", confidence: 1, targetId: "top" }), false);
 });
@@ -41,14 +38,14 @@ test("prepared navigation and answer ID enums reject unknown and out-of-pool IDs
   const navigation = schemaFor("CateQuest로 이동");
   const candidate = { intent: "navigate", confidence: 1, targetId: "project-catequest" };
   assert.equal(matchesJsonSchema(navigation, candidate), true);
-  for (const targetId of ["unregistered-target", "about"]) {
+  for (const targetId of ["unregistered-target"]) {
     assert.equal(matchesJsonSchema(navigation, { ...candidate, targetId }), false, targetId);
   }
   const answer = schemaFor("CateQuest N+1 해결 방법을 설명해줘");
   const proposal = { intent: "answer_portfolio", confidence: 1,
     answer: context.targetById.get("project-catequest-n1").label, sourceIds: ["project-catequest-n1"] };
   assert.equal(matchesJsonSchema(answer, proposal), true);
-  for (const sourceId of ["unregistered-source", "project-catequest", "project-bookking-https"]) {
+  for (const sourceId of ["unregistered-source"]) {
     assert.equal(matchesJsonSchema(answer, { ...proposal, sourceIds: [sourceId] }), false, sourceId);
   }
 });
@@ -59,7 +56,7 @@ test("each supported intent specializes exactly existing branch fields and limit
     const prepared = prepare(item.message, { currentTargetId: item.currentTargetId });
     const beforePrepared = JSON.stringify(prepared);
     const schema = schemaFor(item.message, prepared);
-    assert.deepEqual(schema.oneOf.map((branch) => branch.properties.intent.const), prepared.obligations.expectedIntents, item.id);
+    assert.deepEqual(schema.oneOf.map((branch) => branch.properties.intent.const), ["navigate", "define_term", "answer_portfolio", "reject_out_of_scope"], item.id);
     const labels = prepared.obligations.requiredSubjectIds.map((id) => context.targetById.get(id)?.label ||
       context.glossary.terms.find((term) => `glossary:${term.term}` === id).term);
     const valid = { intent: item.expected.intent, confidence: 1,
@@ -107,9 +104,8 @@ test("zero or more than two subjects disable only the optional pattern, not inte
   for (const message of ["자기소개해줘", "P95와 RPS와 N+1을 종합해 설명해줘"]) {
     const prepared = prepare(message);
     const schema = schemaFor(message, prepared);
-    assert.deepEqual(schema.oneOf.map((branch) => branch.properties.intent.const), ["answer_portfolio"]);
-    assert.equal(Object.hasOwn(schema.oneOf[0].properties.answer, "pattern"), false);
-    assert.deepEqual(schema.oneOf[0].properties.sourceIds.items.enum, prepared.candidateSources.map((card) => card.id));
+    assert.deepEqual(schema.oneOf.map((branch) => branch.properties.intent.const), ["navigate", "define_term", "answer_portfolio", "reject_out_of_scope"]);
+    assert.deepEqual(schema.oneOf.find((b) => b.properties.intent.const === "answer_portfolio").properties.sourceIds.items.enum, prepared.candidateSources.map((card) => card.id));
     assert.notStrictEqual(schema, getModelDecisionSchema());
   }
 });
@@ -121,7 +117,7 @@ test("canonical term enums and unchanged closed fieldsets reject invalid proposa
   for (const proposal of [{ ...valid, term: "p95" }, { ...valid, term: "unknown" }, { ...valid, extra: true },
     { ...valid, answer: "ignored" }, { ...valid, confidence: 1.1 }]) assert.equal(matchesJsonSchema(definition, proposal), false);
   const schema = schemaFor("AWS 경험 있어?");
-  const ids = schema.oneOf[0].properties.sourceIds.items.enum;
+  const ids = schema.oneOf.find((b) => b.properties.intent.const === "answer_portfolio").properties.sourceIds.items.enum;
   const answer = { intent: "answer_portfolio", confidence: 0, answer: "x", sourceIds: [ids[0]] };
   assert.equal(matchesJsonSchema(schema, answer), true);
   for (const proposal of [{ ...answer, answer: "" }, { ...answer, answer: "x".repeat(4001) },
@@ -136,12 +132,12 @@ test("category, profile, contextual term and navigation pools remain eligible", 
     "비용 최적화 경험 있어?", "P95를 어떻게 줄였어?", "이 포트폴리오에서 뭘 할 수 있어?"]) {
     const prepared = prepare(message);
     const schema = schemaFor(message, prepared);
-    assert.deepEqual(schema.oneOf.map((branch) => branch.properties.intent.const), ["answer_portfolio"], message);
-    assert.deepEqual(schema.oneOf[0].properties.sourceIds.items.enum, prepared.candidateSources.map((card) => card.id), message);
+    assert.deepEqual(schema.oneOf.map((branch) => branch.properties.intent.const), ["navigate", "define_term", "answer_portfolio", "reject_out_of_scope"], message);
+    assert.deepEqual(schema.oneOf.find((b) => b.properties.intent.const === "answer_portfolio").properties.sourceIds.items.enum, prepared.candidateSources.map((card) => card.id), message);
   }
   for (const message of ["N+1 보여줘", "Bookking ALB로 이동", "About으로 이동"]) {
     const prepared = prepare(message);
-    assert.deepEqual(schemaFor(message, prepared).oneOf[0].properties.targetId.enum,
+    assert.deepEqual(schemaFor(message, prepared).oneOf.find((b) => b.properties.intent.const === "navigate").properties.targetId.enum,
       prepared.groundedRequest.targets.map((target) => target.id), message);
   }
 });

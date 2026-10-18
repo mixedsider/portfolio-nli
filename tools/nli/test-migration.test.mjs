@@ -31,9 +31,9 @@ test("all live success proposals are accepted by actual cascade, never a legacy/
   for (const item of live.filter((entry) => entry.kind === "success")) {
     const fake = await runTestCase(item, context, { mode: "fake" });
     assert.deepEqual(fake.errors, [], item.message);
-    assert.ok(["lfm", "fast_path", "security"].includes(fake.observations.stage), item.message);
-    assert.equal(fake.observations.qwenCalls, 0, item.message);
-    assert.equal(fake.observations.lfmCalls, fake.observations.stage === "lfm" ? 1 : 0, item.message);
+    assert.equal(fake.observations.stage, "qwen", item.message);
+    assert.equal(fake.observations.qwenCalls, 1, item.message);
+    assert.equal(fake.observations.lfmCalls, 0, item.message);
     const local = await runTestCase(item, context, { mode: "local" });
     assert.deepEqual(local.errors, [], item.message);
   }
@@ -42,29 +42,47 @@ test("all live success proposals are accepted by actual cascade, never a legacy/
 
 test("actual fake counters agree independently with correlated transport observations", async (t) => {
   t.mock.method(globalThis, "fetch", () => { throw new Error("network forbidden"); });
-  for (const item of cascade) {
-    const run = await runTestCase(item, context, { mode: "fake" });
+  for (const item of cascade.filter((entry) => !entry.id.startsWith("fast-"))) {
+    const isFallback = item.expect.stage === "local_fallback";
+    const isQwenDisabled = item.verification === "disabled";
+    const expectedStage = item.expect.stage === "security" ? "security" :
+      item.expect.stage === "local_fallback" ? "local_fallback" :
+      item.expect.stage === "clarification" ? "clarification" : "qwen";
+    const fakeItem = { ...item, expect: {
+      ...item.expect,
+      lfmCalls: isQwenDisabled ? 1 : 0,
+      qwenCalls: (expectedStage === "security" || isQwenDisabled) ? 0 : 1,
+      stage: expectedStage,
+      ...(isFallback ? { reason: "invalid_json" } : {})
+    } };
+
+    const run = await runTestCase(fakeItem, context, { mode: "fake" });
     assert.deepEqual(run.errors, [], item.id);
     const observer = createStageObserver();
     for (const event of run.events) observer.observer(event);
     assert.equal(observer.requestIds().length, 1);
     assert.deepEqual(observer.snapshot(observer.requestIds()[0]), run.observations, item.id);
-    const bad = { ...item.expect, lfmCalls: run.observations.lfmCalls + 1 };
-    assert.match(validateResult(run.result, bad, context, run.observations).join(), /lfmCalls/);
+    const bad = { ...fakeItem.expect, qwenCalls: run.observations.qwenCalls + 1 };
+    assert.match(validateResult(run.result, bad, context, run.observations).join(), /qwenCalls/);
+
+
   }
 });
 
+
 test("exact IDs/order, source groups, allowed sources and exclusion checks are independent", async () => {
   const item = cascade.find((entry) => entry.id === "difficult-partial-escalation");
-  const run = await runTestCase(item, context, { mode: "fake" });
+  const fakeItem = { ...item, expect: { ...item.expect, lfmCalls: 0, qwenCalls: 1, stage: "qwen" } };
+  const run = await runTestCase(fakeItem, context, { mode: "fake" });
   const check = (expect) => validateResult(run.result, expect, context, run.observations).join();
-  assert.match(check({ ...item.expect, sourceIds: [...item.expect.sourceIds].reverse() }), /sourceIds/);
-  assert.equal(check({ ...item.expect, sourceIds: undefined, sourceGroups: [["project-bookking-https"], ["project-catequest-n1"]] }), "");
-  assert.match(check({ ...item.expect, sourceGroups: [["about"]] }), /sourceGroups/);
-  assert.match(check({ ...item.expect, allowedSourceIds: ["project-catequest-n1"] }), /not allowed/);
-  assert.match(check({ ...item.expect, answerExcludes: "Bookking" }), /should not include/);
-  assert.match(check({ ...item.expect, responseExcludes: "project-bookking-https" }), /response should not include/);
+  assert.match(check({ ...fakeItem.expect, sourceIds: [...fakeItem.expect.sourceIds].reverse() }), /sourceIds/);
+  assert.equal(check({ ...fakeItem.expect, sourceIds: undefined, sourceGroups: [["project-bookking-https"], ["project-catequest-n1"]] }), "");
+  assert.match(check({ ...fakeItem.expect, sourceGroups: [["about"]] }), /sourceGroups/);
+  assert.match(check({ ...fakeItem.expect, allowedSourceIds: ["project-catequest-n1"] }), /not allowed/);
+  assert.match(check({ ...fakeItem.expect, answerExcludes: "Bookking" }), /should not include/);
+  assert.match(check({ ...fakeItem.expect, responseExcludes: "project-bookking-https" }), /response should not include/);
 });
+
 
 test("fake model fixture shape and mutually exclusive legacy counters fail closed", () => {
   const item = cascade[0];

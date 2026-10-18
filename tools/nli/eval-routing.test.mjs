@@ -12,7 +12,8 @@ test("original 26-case P95 HTTP503 proxy repro preserves semantic pass but fails
       let body = "";
       for await (const chunk of req) body += chunk;
       if (JSON.parse(body).messages.at(-1).content.includes("P95")) { res.writeHead(503); res.end(); return; }
-      const response = await fetch(`${f.config.lfm.baseUrl}/chat/completions`, {
+      const targetUrl = f.config.model?.baseUrl || f.config.lfm.baseUrl;
+      const response = await fetch(`${targetUrl}/chat/completions`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body, signal: AbortSignal.timeout(2000)
       });
       res.writeHead(response.status, { "Content-Type": "application/json" });
@@ -21,7 +22,8 @@ test("original 26-case P95 HTTP503 proxy repro preserves semantic pass but fails
   });
   try {
     await new Promise((resolve) => proxy.listen(0, "127.0.0.1", resolve));
-    const config = { ...f.config, lfm: { ...f.config.lfm, baseUrl: `http://127.0.0.1:${proxy.address().port}/v1` } };
+    const proxyUrl = `http://127.0.0.1:${proxy.address().port}/v1`;
+    const config = { ...f.config, lfm: { ...f.config.lfm, baseUrl: proxyUrl }, model: { ...f.config.model, baseUrl: proxyUrl } };
     const result = await runFixtureSuite(config, f.context, f.cases.filter((row) => row.kind === "success"),
       "nli/live-test-cases.json", "success");
     assert.equal(result.child.code, 0);
@@ -45,9 +47,9 @@ test("classification preserves exact fast/security paths but never assumes missi
     const rows = cases.map((item) => ({ fixtureId: item.id, ...expectedRouting(item, f.context)[0] }));
     assert.equal(rows[0].stage, "fast_path");
     assert.equal(rows[1].stage, "security");
-    assert.equal(rows[2].stage, "lfm");
+    assert.equal(rows[2].stage, "qwen");
     assert.equal(assessRouting(cases, rows, f.context).ok, true);
-    for (const patch of [{ stage: "local_fallback" }, { lfmCalls: undefined }, { qwenCalls: 1 }, { reason: "eligible" }]) {
+    for (const patch of [{ stage: "local_fallback" }, { lfmCalls: 1 }, { qwenCalls: 0 }, { reason: "eligible" }]) {
       assert.equal(assessRouting(cases, [...rows.slice(0, 2), { ...rows[2], ...patch }], f.context).ok, false);
     }
     assert.equal(assessRouting(cases, [rows[0], rows[1], rows[1]], f.context).ok, false);

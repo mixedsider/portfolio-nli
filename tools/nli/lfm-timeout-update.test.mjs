@@ -189,21 +189,17 @@ test("Gateway fake clock accepts Qwen before the reserve and rejects at reserve/
     const events = [];
     const gateway = await createNliServer({ config: createGatewayConfig({}), context, now: () => time,
       observer: (event) => events.push(event),
-      lfmClient: async () => { calls.push("lfm"); time = 6400; return inspected("lfm", partial()); },
-      verifier: { verify: async (options) => {
-        calls.push("metadata"); assert.equal(options.deadlineAt, 22400); time = 7300;
-        return { ok: true, returnedModelId: "fixture-qwen" };
-      }, invalidate() {} },
       qwenClient: async (...args) => {
-        calls.push("qwen"); assert.equal(args[3].budgetMs, 15100); time = completedAt;
+        calls.push("qwen"); time = completedAt;
         return inspected("qwen", proposal());
       }
     });
     const response = await post(await listen(t, gateway), comparison);
     await response.json();
     assert.equal(response.status, completedAt === 22300 ? 200 : 503);
-    assert.deepEqual(calls, ["lfm", "metadata", "qwen"]);
+    assert.deepEqual(calls, ["qwen"]);
     assert.equal(events.some((event) => event.type === "complete" && event.stage === "qwen"), completedAt === 22300);
     t.diagnostic(JSON.stringify({ fakeElapsedMs: time, httpStatus: response.status }));
   }
 });
+

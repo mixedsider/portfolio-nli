@@ -55,9 +55,13 @@ export function checkAnswerObligations(answer, sourceIds, context, prepared, ori
 
 export function quantitiesSupported(claim, evidence) {
   const available = parseQuantities(evidence);
+  const COUNT_UNITS = new Set(["회", "개", "번", "건", "차", "명", "가지", "곳"]);
+  const KOREAN_UNITS = new Set(["회", "개", "번", "건", "차", "명", "가지", "곳", "대", "장", "분", "초", "시간", "일", "주", "개월", "달", "년", "배", "원", "달러", "점", "퍼센트", "프로"]);
   return parseQuantities(claim).every(({ valid, number, unit }) => valid && available.some((quantity) =>
-    quantity.valid && quantity.number === number && (!unit || quantity.unit === unit)));
+    quantity.valid && quantity.number === number && (!unit || quantity.unit === unit || (quantity.unit === "" && COUNT_UNITS.has(unit)))));
 }
+
+const KOREAN_UNITS = new Set(["회", "개", "번", "건", "차", "명", "가지", "곳", "대", "장", "분", "초", "시간", "일", "주", "개월", "달", "년", "배", "원", "달러", "점", "퍼센트", "프로"]);
 
 function parseQuantities(value) {
   const { text: dated, ranges } = extractCalendarMonthRanges(value);
@@ -81,6 +85,9 @@ function parseQuantities(value) {
     starts.lastIndex = scalar.lastIndex;
     let number = match[1].replace(/\s+/gu, "");
     let unit = (match[2] || "").replace(/\s+/gu, "").replace(/(?:에서|부터|까지|으로|로|의|은|는|을|를)$/u, "");
+    if (/^[가-힣]+$/u.test(unit) && !KOREAN_UNITS.has(unit)) {
+      unit = "";
+    }
     // A single sentence/list delimiter is punctuation, not a decimal/group separator.
     if (/[.,]$/u.test(number) && /^(?:\s|$)/u.test(text.slice(match.index + match[1].length))) {
       number = number.slice(0, -1);
