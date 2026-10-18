@@ -34,28 +34,29 @@ export function prepareGroundedRequest(message, context) {
     currentTargetId: grounded.currentTargetId, history: grounded.conversation,
     candidateSources: grounded.candidateSources, targets: grounded.targets, terms: grounded.terms
   };
-  registerPreparedDecision(groundedRequest, { ...obligations, coveragePossible: selection.coveragePossible }, context);
+  const allIntents = Object.freeze(["navigate", "define_term", "answer_portfolio", "reject_out_of_scope"]);
+  registerPreparedDecision(groundedRequest, { ...obligations, expectedIntents: allIntents, coveragePossible: selection.coveragePossible }, context);
   return deepFreeze({
-    obligations: { ...obligations, coveragePossible: selection.coveragePossible },
+    obligations: { ...obligations, expectedIntents: allIntents, coveragePossible: selection.coveragePossible },
     ...selection, candidateSources: grounded.candidateSources, groundedRequest, groundedRequestBlock
   });
 }
 
+const CORE_CARD_IDS = Object.freeze([
+  "top",
+  "projects",
+  "metrics",
+  "about",
+  "project-makertion",
+  "project-catequest",
+  "project-bookking",
+  "project-ott"
+]);
+
 function projectCandidateSources(selection, obligations, context, message) {
   const candidates = selection.candidateSources;
-  if (obligations.expectedIntents.length !== 1 || obligations.ambiguousTargetIds.length) return candidates;
-  const [intent] = obligations.expectedIntents;
-  if (intent === "navigate" || intent === "reject_out_of_scope") return [];
   const byId = new Map(candidates.map((card) => [card.id, card]));
   const reserved = selection.reservedSourceIds.map((id) => byId.get(id)).filter(Boolean);
-  if (intent === "define_term") {
-    const definition = context.glossary?.terms?.find((term) =>
-      obligations.requiredSubjectIds.includes(`glossary:${term.term}`));
-    if (!definition) return reserved.slice(0, 1);
-    const evidence = `${definition.term}\n${definition.answer}`;
-    return reserved.slice(0, 1).map((card) => ({ ...card,
-      evidence: boundedUtf8String(evidence, MAX_PROJECT_SUMMARY_EVIDENCE_BYTES) }));
-  }
   const groups = getObligationSourceGroups(obligations, context);
   const explicitSection = groups.some((group) => obligations.requiredSubjectIds.includes(group.id) &&
     group.sourceIds.length === 1 && context.targetById.get(group.sourceIds[0])?.type === "section");
@@ -86,33 +87,18 @@ function projectCandidateSources(selection, obligations, context, message) {
 
 function requestedIdentifierEvidence(message, evidence, context) {
   const projects = new Set((context.portfolio?.projects || []).map((project) => normalize(project?.title || "")));
+  const targetAliases = new Set((context.routes?.targets || []).flatMap((t) => [t.label, ...(t.aliases || [])]).map(normalize));
   const identifiers = [...new Set((message.match(/[A-Za-z][A-Za-z0-9_$@./<>+-]{2,}/g) || [])
-    .filter((identifier) => !projects.has(normalize(identifier))))];
+    .filter((identifier) => !projects.has(normalize(identifier)) && !targetAliases.has(normalize(identifier))))];
   if (!identifiers.length) return "";
   return evidence.split("\n").filter((line) => identifiers.some((identifier) =>
     line.toLowerCase().includes(identifier.toLowerCase()))).join("\n");
 }
 
-function projectRequestRegistry(context, obligations, candidateSources, selectedCandidates, message) {
-  const targets = context.routes.targets;
-  const terms = context.glossary.terms;
-  const requiredTerms = terms.filter((term) => obligations.requiredSubjectIds.includes(`glossary:${term.term}`))
-    .map(({ term }) => ({ term }));
-  const [intent] = obligations.expectedIntents;
-  const resolved = obligations.expectedIntents.length === 1 && !obligations.ambiguousTargetIds.length;
-  if (!resolved) return { targets, terms };
-  if (intent === "reject_out_of_scope") return { targets: [], terms: [] };
-  if (intent === "navigate") {
-    const targetId = resolvedNavigationTargetId(context, obligations, selectedCandidates, message);
-    const target = targets.find((entry) => entry.id === targetId);
-    return { targets: target ? [compactTarget(target)] : [], terms: [] };
-  }
-  if (intent === "define_term") return { targets: [], terms: requiredTerms };
-  if (["comparison", "synthesis"].includes(obligations.kind)) return { targets: [], terms: requiredTerms };
-  const ids = new Set(candidateSources.map((card) => card.id));
+function projectRequestRegistry(context) {
   return {
-    targets: targets.filter((target) => ids.has(target.id)).map(compactTarget),
-    terms: requiredTerms
+    targets: context.routes.targets,
+    terms: context.glossary.terms
   };
 }
 

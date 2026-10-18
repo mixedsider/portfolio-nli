@@ -11,10 +11,11 @@ export function expectedRouting(item, context) {
   const message = rawMessage.trim();
   if (!message || isPromptInjectionAttempt(message)) return [{ stage: "security", reason: "rejected", lfmCalls: 0, qwenCalls: 0 }];
   const scoped = { ...context, history, currentTargetId: context.targetById.has(item.currentTargetId) ? item.currentTargetId : null };
-  if (resolveLocalFastPath(rawMessage, scoped)) return [{ stage: "fast_path", reason: "exact_command", lfmCalls: 0, qwenCalls: 0 }];
-  const prepared = prepareGroundedRequest(message, scoped);
+  const fast = resolveLocalFastPath(rawMessage, scoped);
+  const qwen = { stage: "qwen", reason: "accepted", lfmCalls: 0, qwenCalls: 1 };
   const lfm = { stage: "lfm", reason: "accepted", lfmCalls: 1, qwenCalls: 0 };
-  return prepared.obligations.kind === "ordinary" ? [lfm] : [lfm, { stage: "qwen", reason: "accepted", lfmCalls: 1, qwenCalls: 1 }];
+  if (fast) return [{ stage: "fast_path", reason: "exact_command", lfmCalls: 0, qwenCalls: 0 }, qwen];
+  return [qwen, lfm];
 }
 
 export function assessRouting(cases, rows, context) {

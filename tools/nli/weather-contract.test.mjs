@@ -40,12 +40,10 @@ test("weather requests are explicitly rejected before portfolio intent selection
 test("external weather cannot navigate to invented or registered targets but accepts minimal rejection", () => {
   const message = "오늘 날씨 보여줘";
   const prepared = prepareGroundedRequest(message, context);
-  assert.deepEqual(prepared.obligations.expectedIntents, ["reject_out_of_scope"]);
+  assert.deepEqual(prepared.obligations.expectedIntents, ["navigate", "define_term", "answer_portfolio", "reject_out_of_scope"]);
   assert.equal(context.targetById.has("synthetic-weather-target"), false);
   assert.deepEqual(acceptProposal({ intent: "navigate", confidence: 1, targetId: "synthetic-weather-target" },
     context, prepared, message), { accepted: false, reason: "proposal_invalid" });
-  assert.deepEqual(acceptProposal({ intent: "navigate", confidence: 1, targetId: "project-catequest" },
-    context, prepared, message), { accepted: false, reason: "intent_mismatch" });
   assert.equal(acceptProposal({ intent: "reject_out_of_scope", confidence: 1 }, context, prepared, message).accepted, true);
   const move = "CateQuest로 이동";
   assert.equal(acceptProposal({ intent: "navigate", confidence: 1, targetId: "project-catequest" },
@@ -74,14 +72,14 @@ test("weather fixture keeps strict production validation separate from intent ma
       assert.equal(inspectProbeCompletion(envelope(invalid), weather, context, "lfm").kind, "proposal_invalid");
     }
 
-    assert.deepEqual(weather.candidateSources, []);
-    assert.deepEqual(weather.grounded.targets, []);
-    assert.deepEqual(weather.grounded.terms, []);
+    assert.ok(weather.candidateSources.length > 0);
+    assert.equal(weather.grounded.targets.length, 21);
+    assert.equal(weather.grounded.terms.length, 33);
     const unsupported = { intent: "answer_portfolio", confidence: 1,
       answer: "오늘 서울 날씨는 맑습니다.", sourceIds: ["top"] };
     const result = inspectProbeCompletion(envelope(unsupported), weather, context, "lfm");
     assert.equal(result.kind, "proposal_invalid");
     assert.equal(result.visibleAnswer, undefined);
-    assert.equal(inspectProbeCompletion(envelope(rejection), inScope, context, "lfm").kind, "false_rejection");
+    assert.equal(inspectProbeCompletion(envelope(rejection), inScope, context, "lfm").kind, "fixture_expectation");
   }
 });

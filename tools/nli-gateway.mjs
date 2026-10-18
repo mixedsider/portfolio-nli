@@ -146,6 +146,8 @@ function resolveGatewayRevision(rootDir) {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const server = await createNliServer();
   server.listen(defaultConfig.port, defaultConfig.host, () => {
-    console.log(`NLI gateway listening at http://${defaultConfig.host}:${defaultConfig.port}`);
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : defaultConfig.port;
+    console.log(`NLI gateway listening at http://${defaultConfig.host}:${port}`);
   });
 }

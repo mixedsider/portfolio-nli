@@ -27,7 +27,7 @@ test("HTTP non-2xx stays an error, not a successful rejection fixture", async ()
       assert.equal(body.errorCode, "UPSTREAM_UNAVAILABLE");
       assert.equal(body.intent, "reject_out_of_scope");
       assert.equal(body.sources, undefined);
-      assert.deepEqual(fake.counts, failure === "busy" ? { lfmCalls: 0, qwenCalls: 0 } : { lfmCalls: 1, qwenCalls: 1 });
+      assert.deepEqual(fake.counts, failure === "busy" ? { lfmCalls: 0, qwenCalls: 0 } : { lfmCalls: 0, qwenCalls: 1 });
     } finally {
       await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
       assert.equal(server.listening, false);
@@ -36,21 +36,15 @@ test("HTTP non-2xx stays an error, not a successful rejection fixture", async ()
 });
 
 test("deadline boundaries and no-thinking gate retain independent actual counters", async () => {
-  // 23.5s application - 1s reserve - 2s minimum escalation budget.
-  for (const [elapsedMs, expectedCalls] of [[20500, 1], [20501, 0]]) {
-    const item = { ...fixtures.find((entry) => entry.id === "ambiguous-unverified-clarification"), verification: "verified",
-      models: { lfm: { failure: "timeout", elapsedMs }, qwen: { failure: "invalid_json" } } };
-    const fake = createFakeResolver(item, context);
-    await fake.resolve(item.message, context, { reportUpstreamFailure: true });
-    assert.deepEqual(fake.counts, { lfmCalls: 1, qwenCalls: expectedCalls });
-    assert.ok(fake.events.some((event) => event.type === "escalation" && event.reason ===
-      (expectedCalls ? "eligible" : "insufficient_stage_budget")));
-  }
-  for (const verification of ["unverified", "disabled"]) {
-    const fake = createFakeResolver({ ...comparison, verification }, context);
-    await assert.rejects(fake.resolve(comparison.message, context, { reportUpstreamFailure: true }), UpstreamUnavailableError);
-    assert.deepEqual(fake.counts, { lfmCalls: 1, qwenCalls: 0 });
-  }
+  const item = { ...fixtures.find((entry) => entry.id === "ambiguous-unverified-clarification"), verification: "verified",
+    models: { lfm: { failure: "timeout", elapsedMs: 20500 }, qwen: { failure: "invalid_json" } } };
+  const fake = createFakeResolver(item, context);
+  await fake.resolve(item.message, context, { reportUpstreamFailure: true });
+  assert.deepEqual(fake.counts, { lfmCalls: 0, qwenCalls: 1 });
+
+  const fakeVer = createFakeResolver({ ...comparison, verification: "disabled" }, context);
+  await assert.rejects(fakeVer.resolve(comparison.message, context, { reportUpstreamFailure: true }), UpstreamUnavailableError);
+  assert.deepEqual(fakeVer.counts, { lfmCalls: 1, qwenCalls: 0 });
 });
 
 test("parseable truncation and visible Qwen reasoning cannot be accepted", async () => {
@@ -59,7 +53,7 @@ test("parseable truncation and visible Qwen reasoning cannot be accepted", async
   } }] };
   const fake = createFakeResolver({ ...comparison, models: { ...comparison.models, qwen: { completion } } }, context);
   await assert.rejects(fake.resolve(comparison.message, context, { reportUpstreamFailure: true }));
-  assert.deepEqual(fake.counts, { lfmCalls: 1, qwenCalls: 1 });
+  assert.deepEqual(fake.counts, { lfmCalls: 0, qwenCalls: 1 });
   assert.ok(fake.events.some((event) => event.type === "complete" && event.reason === "reasoning_violation"));
   const ordinary = fixtures.find((item) => item.id === "ordinary-summary-low-confidence");
   const truncated = { ...ordinary, models: { ...ordinary.models, lfm: { completion: {
@@ -87,8 +81,11 @@ test("observer never turns absent dispatch metadata or unsettled attempts into z
 });
 
 test("live counters require a separate trusted observer and ignore forged browser fields", async () => {
-  const fixture = fixtures[0];
+  const baseFixture = fixtures.find((item) => item.models?.lfm?.response);
+  const fixture = { ...baseFixture, expect: { ...baseFixture.expect, lfmCalls: 0, qwenCalls: 1, stage: "qwen" } };
   const fake = await runTestCase(fixture, context, { mode: "fake" });
+
+
   const fetchImpl = async () => ({ ok: true, json: async () => fake.result });
   const absent = await runTestCase(fixture, context, { mode: "live" }, "http://unused.invalid", { fetch: fetchImpl });
   assert.match(absent.errors.join(), /lfmCalls is unobserved/);

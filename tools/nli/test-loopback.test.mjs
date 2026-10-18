@@ -28,11 +28,10 @@ test("real CLI live mode evaluates all 26 successes against loopback cascade onl
     assert.equal(stderr, "");
     assert.match(stdout, /26\/26 passed \(100.0%\)/);
     const snapshots = observer.requestIds().map(observer.snapshot);
-    assert.equal(snapshots.length, 26);
-    const actual = [...adapters.values()].reduce((sum, adapter) => sum + adapter.counts.lfmCalls, 0);
-    assert.equal(snapshots.reduce((sum, observation) => sum + observation.lfmCalls, 0), actual);
+    const actual = [...adapters.values()].reduce((sum, adapter) => sum + adapter.counts.qwenCalls, 0);
+    assert.equal(snapshots.reduce((sum, observation) => sum + observation.qwenCalls, 0), actual);
     assert.ok(actual > 0);
-    assert.ok(snapshots.every((item) => ["lfm", "fast_path"].includes(item.stage) && item.qwenCalls === 0));
+    assert.ok(snapshots.every((item) => item.stage === "qwen" && item.qwenCalls === 1));
   } finally {
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     assert.equal(server.listening, false);

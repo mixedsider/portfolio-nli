@@ -25,7 +25,13 @@ export function getModelDecisionSchema() {
 export function registerPreparedDecision(request, obligations, context) {
   if (!request || typeof request !== "object" || Array.isArray(request)) throw new Error("Invalid prepared decision request");
   preparedDecisions.set(request, null);
-  for (const key of ["expectedIntents", "allowedSourceIds", "requiredProjectIds", "requiredSubjectIds"]) {
+  const validIntents = new Set(["navigate", "define_term", "answer_portfolio", "reject_out_of_scope"]);
+  if (!Array.isArray(obligations?.expectedIntents) || !obligations.expectedIntents.length ||
+    obligations.expectedIntents.some((id) => !validIntents.has(id)) ||
+    new Set(obligations.expectedIntents).size !== obligations.expectedIntents.length) {
+    throw new Error("Invalid prepared decision obligations");
+  }
+  for (const key of ["allowedSourceIds", "requiredProjectIds", "requiredSubjectIds"]) {
     if (!Array.isArray(obligations?.[key]) || obligations[key].some((id) => typeof id !== "string" || !id) ||
       new Set(obligations[key]).size !== obligations[key].length) throw new Error("Invalid prepared decision obligations");
   }
@@ -37,9 +43,8 @@ export function registerPreparedDecision(request, obligations, context) {
   if (obligations.allowedSourceIds.some((id) => !registered.has(id))) throw new Error("Invalid prepared decision source scope");
   const allowed = new Set(obligations.allowedSourceIds);
   const groups = getObligationSourceGroups(obligations, context);
-  const sourceIds = unique(request.candidateSources.map((card) => card?.id).filter((id) => registered.has(id) && allowed.has(id)));
-  const targetIds = unique(request.targets.map((target) => target?.id).filter((id) => registered.has(id) && allowed.has(id) &&
-    groups.every((group) => group.sourceIds.includes(id))));
+  const sourceIds = unique(request.candidateSources.map((card) => card?.id).filter((id) => registered.has(id)));
+  const targetIds = unique(request.targets.map((target) => target?.id).filter((id) => registered.has(id)));
   const canonicalTerms = unique(request.terms.map((entry) => entry?.term).filter((term) => terms.has(term)));
   const label = (id, project = false) => {
     const target = registered.get(id);

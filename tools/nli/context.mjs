@@ -117,6 +117,7 @@ function boundedTargets(value) {
       type: boundedString(target.type, 64)
     };
     if (Object.hasOwn(target, "aliases")) bounded.aliases = boundedAliases(target.aliases);
+    if (Object.hasOwn(target, "description")) bounded.description = boundedString(target.description, 512);
     targets.push(bounded);
     if (targets.length === MAX_GROUNDED_TARGETS) break;
   }
