@@ -98,6 +98,10 @@ export function createRequestResolver(config, dependencies = {}) {
           return rejectResponse();
         };
 
+        const workDeadline = lifetime.deadlineAt - 1000;
+        if (lifetime.signal.aborted || now() >= workDeadline) {
+          throw new UpstreamUnavailableError();
+        }
         const qwenEnabled = config.cascade?.qwenEnabled !== false;
         const stage = qwenEnabled ? "qwen" : "lfm";
         const modelSettings = qwenEnabled ? config.model : (config.lfm ?? config.model);
@@ -110,7 +114,6 @@ export function createRequestResolver(config, dependencies = {}) {
           deadlineAt: lifetime.deadlineAt,
           budgetMs: lifetime.deadlineAt - now()
         });
-        const workDeadline = lifetime.deadlineAt - 1000;
         if (lifetime.signal.aborted || now() >= workDeadline) {
           throw new UpstreamUnavailableError();
         }

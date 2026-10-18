@@ -159,7 +159,7 @@ export function selectEvidenceCandidates(index, request, obligations, context) {
   // Identity questions need semantic vocabulary, not overlap with their answer.
   // Select evidence only: never create a local response or widen resolved scope.
   const identity = obligations.scopeSource === "none" &&
-    hasAny(normalize(request.message), assistantIdentityWords);
+    hasAny(normalize(request.message), [...assistantIdentityWords, "도움말", "사용법"]);
   const identityCards = identity ? cards.filter((card) => card.id === "top" &&
     card.evidence.includes(assistantIdentityResponse().answer)) : [];
   const rankedEvidence = identity && !groups.length && !skill ? [] : rankEvidenceCandidates(relevant, {
