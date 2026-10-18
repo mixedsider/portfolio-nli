@@ -173,9 +173,12 @@ function groupGlossary(value, targetIds) {
 
 function appendProfile(partsByTargetId, profile, targetIds) {
   if (!isRecord(profile) || !targetIds.has("about")) return;
-  appendEvidence(partsByTargetId, "about", "포트폴리오 프로필 / 연락처", profile.name, profile.englishName,
+  const roleHeadline = profile.name && profile.role && profile.headline
+    ? `${profile.name}은 ${stringValue(profile.headline).replace(/백엔드 개발자$/u, profile.role)}입니다.`
+    : [profile.role, profile.headline];
+  appendEvidence(partsByTargetId, "about", "포트폴리오 프로필 / 연락처 / 교육 이력을 소개하고 안내합니다.", profile.name, profile.englishName,
     asArray(profile.contacts).filter(isRecord).map((contact) => joinEvidence(contact.label, contact.value)),
-    profile.role, profile.headline, profile.summary);
+    roleHeadline, profile.summary);
 }
 
 function appendMetricsPage(partsByTargetId, metrics, targetIds) {

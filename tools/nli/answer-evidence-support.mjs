@@ -73,7 +73,7 @@ function splitWeakClaimBoundaries(claim) {
     const left = claim.slice(startIndex, boundaryIndex);
     const right = claim.slice(nextIndex);
 
-    if (shouldSplitJoinedClaim(left, right)) {
+    if (shouldSplitJoinedClaim(left, right, match[0])) {
       pieces.push(left);
       startIndex = nextIndex;
     }
@@ -83,10 +83,17 @@ function splitWeakClaimBoundaries(claim) {
   return pieces;
 }
 
-function shouldSplitJoinedClaim(left, right) {
+function shouldSplitJoinedClaim(left, right, delimiter = "") {
   const leftTerms = meaningfulTerms(left);
   const rightTerms = meaningfulTerms(right);
+  if (delimiter.startsWith(",") || delimiter.startsWith("，")) {
+    if (/[\uAC00-\uD7A3]/u.test(left) && !hasKoreanLeftClauseBoundary(left)) return false;
+  }
   return leftTerms.length >= 3 && rightTerms.length >= 4 && hasClauseSignal(right);
+}
+
+function hasKoreanLeftClauseBoundary(claim) {
+  return /[\uAC00-\uD7A3](?:다|요|니다|습니다|고|며|면서|지만|는데|니|아서|어서|으나|므로|자)[\s.!?。！？,;]*$/u.test(claim);
 }
 
 function hasClauseSignal(claim) {

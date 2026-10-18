@@ -167,7 +167,8 @@ export function selectEvidenceCandidates(index, request, obligations, context) {
     ? findSkillExperienceMatch(request.message, context) : null;
   const skill = match && mentionSpans(request.message, [{ names: match.matchedKeys }]).length ? match : null;
   const keys = skill?.entryKeys || skill?.matchedKeys || [];
-  const relevant = keys.length ? cards.filter((card) => ["project", "section"].includes(card.type) &&
+  const allowedSkillTypes = skill && !skill.entryKeys ? ["section"] : ["project", "section"];
+  const relevant = keys.length ? cards.filter((card) => allowedSkillTypes.includes(card.type) &&
     keys.some((key) => includesKeyword(normalize(card.evidence), key))) : cards;
   // Identity questions need semantic vocabulary, not overlap with their answer.
   // Select evidence only: never create a local response or widen resolved scope.

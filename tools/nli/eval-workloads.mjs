@@ -31,21 +31,24 @@ export async function runWorkload(config, context, cases, { repeats = 3, concurr
   const results = [];
   const consumed = new Set();
   let report;
-  async function run(item, repeat) {
+  async function requestItem(item) {
     const start = performance.now();
     const checked = await runTestCase(item, context, { mode: "live", timeoutMs: EVALUATION_HTTP_TIMEOUT_MS }, `${session.url}/api/nli`);
-    await session.settle();
-    const row = session.rows().find((entry) => entry.fixtureId === item.id && !consumed.has(entry.requestId));
-    if (row) consumed.add(row.requestId);
-    const errors = [...checked.errors];
-    if (!row || !observed(row)) errors.push("unobserved_request");
-    if (checked.result && row) errors.push(...validateResult(checked.result, expectationFor(item, "live"), context, row));
-    results.push({ fixtureId: item.id, repeat, wallMs: performance.now() - start, errors, ...row });
+    return { item, checked, wallMs: performance.now() - start };
   }
   try {
     for (let repeat = 0; repeat < repeats; repeat++) {
       for (let index = 0; index < cases.length; index += concurrency) {
-        await Promise.all(cases.slice(index, index + concurrency).map((item) => run(item, repeat)));
+        const batch = await Promise.all(cases.slice(index, index + concurrency).map((item) => requestItem(item)));
+        await session.settle();
+        for (const { item, checked, wallMs } of batch) {
+          const row = session.rows().find((entry) => entry.fixtureId === item.id && !consumed.has(entry.requestId));
+          if (row) consumed.add(row.requestId);
+          const errors = [...checked.errors];
+          if (!row || !observed(row)) errors.push("unobserved_request");
+          if (checked.result && row) errors.push(...validateResult(checked.result, expectationFor(item, "live"), context, row));
+          results.push({ fixtureId: item.id, repeat, wallMs, errors, ...row });
+        }
       }
     }
     report = { results, concurrency, repeats, expectedCount: cases.length * repeats,
