@@ -39,47 +39,47 @@ test("serves actual portfolio assets while hiding private files", async (t) => {
   }
 });
 
-test("exact help bypasses both models when sent with the allowed origin", async (t) => {
+test("exact help routes through single-LLM Qwen when sent with the allowed origin", async (t) => {
   // Given an isolated healthy instance.
   const app = await startTestApp(); t.after(app.close);
-  // When an exact local command arrives.
+  // When a help command arrives.
   const response = await post(app, { message: "도움말" });
-  // Then the actual upstream counters remain zero.
+  // Then the single Qwen stage handles it.
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("access-control-allow-origin"), app.staticUrl);
-  assert.equal((await response.json()).intent, "list_capabilities");
-  assert.deepEqual(await app.stats(), { lfm: 0, qwen: 0 });
+  assert.equal((await response.json()).intent, "answer_portfolio");
+  assert.deepEqual(await app.stats(), { lfm: 0, qwen: 1 });
 });
 
-test("profile uses one LFM completion with real portfolio sources", async (t) => {
+test("profile uses one Qwen completion with real portfolio sources", async (t) => {
   // Given a valid current target and completed conversation history.
   const app = await startTestApp(); t.after(app.close);
   // When a profile request reaches the real resolver.
   const response = await post(app, { message: "자기소개해줘", currentTargetId: "project-catequest",
     history: [{ role: "user", text: "도움말" }, { role: "assistant", text: "포트폴리오를 안내합니다." }] });
   const body = await response.json();
-  // Then LFM is adopted and the Gateway owns the source labels.
+  // Then Qwen is adopted and the Gateway owns the source labels.
   assert.equal(response.status, 200);
   assert.equal(body.intent, "answer_portfolio");
   assert.deepEqual(body.sources.map((source) => source.id), ["about"]);
   assert.ok(body.sources.every((source) => typeof source.label === "string" && source.label.length > 0));
   assert.match(body.answer, /Backend & Infra Developer/);
-  assert.deepEqual(await app.stats(), { lfm: 1, qwen: 0 });
+  assert.deepEqual(await app.stats(), { lfm: 0, qwen: 1 });
 });
 
-test("complex comparison escalates through real receipt verification to Qwen", async (t) => {
-  // Given incomplete LFM only for the complex comparison scenario.
+test("complex comparison resolves directly through Qwen", async (t) => {
+  // Given the complex comparison scenario.
   const app = await startTestApp({ scenario: "escalation" }); t.after(app.close);
   // When both projects are requested.
   const response = await post(app, { message: "CateQuest와 Bookking의 성능 개선을 비교해줘",
     currentTargetId: "project-makertion-db", history: [] });
   const body = await response.json();
-  // Then both projects are grounded and exactly one real HTTP call reached each model.
+  // Then both projects are grounded and one real HTTP call reached Qwen.
   assert.equal(response.status, 200);
   assert.equal(body.intent, "answer_portfolio");
   assert.deepEqual(body.sources.map((source) => source.id).sort(), ["project-bookking-https", "project-catequest-n1"]);
   assert.match(body.answer, /Bookking/);
-  assert.deepEqual(await app.stats(), { lfm: 1, qwen: 1 });
+  assert.deepEqual(await app.stats(), { lfm: 0, qwen: 1 });
 });
 
 for (const [name, body, headers, status, code] of [
@@ -113,7 +113,7 @@ test("returns 429 when the isolated request limit is consumed", async (t) => {
   assert.equal(response.status, 429);
   assert.equal(response.headers.get("retry-after"), "60");
   assert.equal((await response.json()).errorCode, "RATE_LIMITED");
-  assert.deepEqual(await app.stats(), { lfm: 0, qwen: 0 });
+  assert.deepEqual(await app.stats(), { lfm: 0, qwen: 1 });
 });
 
 test("returns 503 when upstream fails and no compatible trusted fallback exists", async (t) => {
@@ -124,7 +124,7 @@ test("returns 503 when upstream fails and no compatible trusted fallback exists"
   // Then the production resolver emits its public unavailable contract.
   assert.equal(response.status, 503);
   assert.equal((await response.json()).errorCode, "UPSTREAM_UNAVAILABLE");
-  assert.deepEqual(await app.stats(), { lfm: 1, qwen: 0 });
+  assert.deepEqual(await app.stats(), { lfm: 0, qwen: 1 });
 });
 
 test("survives client cancellation and closes listeners", async () => {
@@ -138,7 +138,7 @@ test("survives client cancellation and closes listeners", async () => {
     // When the client cancels, the service still handles a new request.
     pending.destroy();
     assert.equal((await post(app, { message: "도움말" })).status, 200);
-    assert.deepEqual(await app.stats(), { lfm: 0, qwen: 0 });
+    assert.deepEqual(await app.stats(), { lfm: 0, qwen: 1 });
   } finally { pending.destroy(); await app.close(); }
   // Then close resolves only after the listeners are gone.
   await assert.rejects(fetch(`${app.gatewayUrl}/api/nli/health`));

@@ -83,7 +83,7 @@ function latestPost(forwarded, staticOrigin) {
   return request;
 }
 
-test("E2E: exact help takes the real gateway local path without model calls", async ({ browser }) => {
+test("E2E: exact help routes through single-LLM Qwen", async ({ browser }) => {
   await withApp(browser, { scenario: "healthy", viewport: desktop }, async ({ app, page, forwarded, staticOrigin }) => {
     await page.goto(app.staticUrl, { waitUntil: "load" });
     await openWidget(page);
@@ -92,11 +92,11 @@ test("E2E: exact help takes the real gateway local path without model calls", as
     const request = latestPost(forwarded, staticOrigin);
     await expect(reply).toContainText("저는 이 포트폴리오 안에서 전체 요약");
     expect(request).toMatchObject({ status: 200, body: { message: "도움말" } });
-    expect(await app.stats()).toEqual({ lfm: 0, qwen: 0 });
+    expect(await app.stats()).toEqual({ lfm: 0, qwen: 1 });
   });
 });
 
-test("E2E: profile uses LFM, exposes a real source button, and navigates", async ({ browser }) => {
+test("E2E: profile uses Qwen, exposes a real source button, and navigates", async ({ browser }) => {
   await withApp(browser, { scenario: "healthy", viewport: desktop }, async ({ app, page, forwarded, staticOrigin }) => {
     await page.goto(app.staticUrl, { waitUntil: "load" });
     await openWidget(page);
@@ -109,11 +109,11 @@ test("E2E: profile uses LFM, exposes a real source button, and navigates", async
     await source.click();
     await expect(page.locator("#about")).toBeInViewport();
     expect(request).toMatchObject({ status: 200, body: { message: "자기소개해줘" } });
-    expect(await app.stats()).toEqual({ lfm: 1, qwen: 0 });
+    expect(await app.stats()).toEqual({ lfm: 0, qwen: 1 });
   });
 });
 
-test("E2E: comparison follows the fixture proof through LFM and Qwen", async ({ browser }) => {
+test("E2E: comparison resolves directly through Qwen", async ({ browser }) => {
   await withApp(browser, { scenario: "escalation", viewport: desktop }, async ({ app, page, forwarded, staticOrigin }) => {
     await page.goto(app.staticUrl, { waitUntil: "load" });
     await openWidget(page);
@@ -124,7 +124,7 @@ test("E2E: comparison follows the fixture proof through LFM and Qwen", async ({ 
     await expect(reply).toContainText("200ms에서 30ms");
     await expect(page.locator(".nli-message-sources button")).toHaveCount(2);
     expect(request).toMatchObject({ status: 200, body: { message: "CateQuest와 Bookking의 성능 개선을 비교해줘" } });
-    expect(await app.stats()).toEqual({ lfm: 1, qwen: 1 });
+    expect(await app.stats()).toEqual({ lfm: 0, qwen: 1 });
   });
 });
 
@@ -139,7 +139,7 @@ test("E2E: real upstream 503 reports an error and re-enables the form", async ({
     await expect(page.locator("[data-nli-input]")).toBeEnabled();
     await expect(page.locator("[data-nli-submit]")).toBeEnabled();
     expect(request).toMatchObject({ status: 503, body: { message: "포트폴리오 정보의 색상은?" } });
-    expect(await app.stats()).toEqual({ lfm: 1, qwen: 0 });
+    expect(await app.stats()).toEqual({ lfm: 0, qwen: 1 });
   });
 });
 
@@ -176,7 +176,7 @@ test("E2E: mobile history is bounded, includes the current target, and persists"
     expect(request.body.history).toHaveLength(6);
     expect(request.body.history.every((entry) => ["user", "assistant"].includes(entry.role) && typeof entry.text === "string")).toBe(true);
     expect(Math.max(...request.body.history.map((entry) => Buffer.byteLength(entry.text)))).toBeLessThanOrEqual(480);
-    expect(await app.stats()).toEqual({ lfm: 0, qwen: 0 });
+    expect(await app.stats()).toEqual({ lfm: 0, qwen: 7 });
 
     await page.reload({ waitUntil: "load" });
     await openWidget(page);

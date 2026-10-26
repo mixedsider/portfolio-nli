@@ -44,6 +44,8 @@ export async function evalFixture({ tempRoot = tmpdir(), lfmPartial = false } = 
           const message = payload.messages[2].content;
           const candidate = !state.runtime ? probeCandidate(payload) : message === comparison ?
             (endpoint === "lfm" && lfmPartial ? partial() : proposal()) :
+            message === "도움말" ?
+            { intent: "answer_portfolio", confidence: 1, answer: "저는 이 포트폴리오 안에서 전체 요약, 목차, 연락처, 주요 성과, 기술별 경험을 안내하고, 프로젝트나 섹션으로 이동하거나 특정 프로젝트와 내부 사례를 요약할 수 있습니다.", sourceIds: ["top"] } :
             cases.find((item) => item.message === message)?.models?.lfm.response ?? { intent: "reject_out_of_scope", confidence: 1 };
           response = envelope(candidate, `fixture-${endpoint}`, endpoint === "qwen" && state.reasoning ?
             { reasoning_content: "NEVER_PERSIST_HIDDEN" } : {});
