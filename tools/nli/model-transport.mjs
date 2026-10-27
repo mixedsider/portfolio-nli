@@ -33,7 +33,7 @@ export function sanitizeSchemaForGemini(node) {
 }
 
 export function adaptPayloadForGemini(payload) {
-  const { chat_template_kwargs: _ignored, ...rest } = payload;
+  const { chat_template_kwargs: _ignoredKwargs, reasoning_effort: _ignoredReasoning, ...rest } = payload;
   if (rest.response_format?.type === "json_schema" && rest.response_format.json_schema?.schema) {
     return {
       ...rest,

@@ -22,9 +22,11 @@ async function requestModel(message, context, config, groundedRequest) {
     model: config.model.name,
     temperature: 0,
     max_tokens: config.model.maxTokens,
-    reasoning_effort: config.model.reasoningEffort || "none",
     // llama.cpp의 Qwen 채팅 템플릿은 이 옵션이 있어야 추론 토큰 생성을 끈다.
-    ...(hasApiKey ? {} : { chat_template_kwargs: { enable_thinking: false } }),
+    ...(hasApiKey ? {} : {
+      reasoning_effort: config.model.reasoningEffort || "none",
+      chat_template_kwargs: { enable_thinking: false }
+    }),
     messages: [
       { role: "system", content: context.prompt },
       { role: "system", content: buildGroundedRequestBlock(groundedRequest) },
