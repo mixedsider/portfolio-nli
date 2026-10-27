@@ -13,7 +13,12 @@ export function obligationCatalog(context) {
       if (parent) parents.set(target.id, parent.id);
     }
   }
-  const entries = targets.map((target) => ({ id: target.id, type: target.type, names: [target.label, ...(target.aliases || [])] }));
+  const entries = targets.map((target) => {
+    const names = [target.label, ...(target.aliases || [])];
+    const cleanLabel = typeof target.label === "string" ? target.label.replace(/[!?]+$/u, "").trim() : "";
+    if (cleanLabel && !names.includes(cleanLabel)) names.push(cleanLabel);
+    return { id: target.id, type: target.type, names };
+  });
   const terms = context?.glossary?.terms || [];
   for (const term of terms) entries.push({ id: `glossary:${term.term}`, type: "glossary", names: [term.term, ...(term.aliases || [])] });
   return { targets, parents, entries, terms };

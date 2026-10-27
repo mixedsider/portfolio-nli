@@ -25,8 +25,9 @@ export async function loadDotEnv(root, env = process.env) {
 export function createGatewayConfig(env = process.env) {
   const defaultBaseUrl = "https://generativelanguage.googleapis.com/v1beta/openai";
   const defaultModel = "gemini-3.5-flash-lite";
-  const modelApiKey = readApiKey(env.GEMINI_API_KEY ?? env.LM_STUDIO_API_KEY);
-  const lfmApiKey = readApiKey(env.LFM_API_KEY ?? env.GEMINI_API_KEY);
+  const geminiApiKey = readApiKey(env.GEMINI_API_KEY);
+  const modelApiKey = geminiApiKey || readApiKey(env.LM_STUDIO_API_KEY);
+  const lfmApiKey = readApiKey(env.LFM_API_KEY) || (env.LFM_BASE_URL ? "" : geminiApiKey);
   return {
     host: env.NLI_HOST || "127.0.0.1",
     port: readPort(env.NLI_PORT, 8787),

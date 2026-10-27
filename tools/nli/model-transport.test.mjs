@@ -243,6 +243,9 @@ test("Gemini OpenAI endpoint resolves path, sends Bearer token and sanitizes sch
   assert.equal(captured.auth, "Bearer gem-key");
   assert.equal(Object.hasOwn(captured.body, "chat_template_kwargs"), false);
   assert.equal(Object.hasOwn(captured.body, "reasoning_effort"), false);
+  assert.equal(captured.body.messages.length, 2);
+  assert.equal(captured.body.messages[0].role, "system");
   assert.equal(Array.isArray(captured.body.response_format.json_schema.schema.anyOf), true);
+  assert.equal(captured.body.response_format.json_schema.schema.anyOf[0].properties.intent.enum[0], "answer_portfolio");
   assert.equal(Object.hasOwn(captured.body.response_format.json_schema.schema, "oneOf"), false);
 });

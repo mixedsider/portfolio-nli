@@ -26,7 +26,15 @@ export function sanitizeSchemaForGemini(node) {
   for (const [key, value] of Object.entries(node)) {
     if (["$schema", "title", "uniqueItems", "minLength", "maxLength", "pattern"].includes(key)) continue;
     if (key === "const") { result.enum = [value]; continue; }
-    if (key === "oneOf") { result.anyOf = Array.isArray(value) ? value.map(sanitizeSchemaForGemini) : value; continue; }
+    if (key === "oneOf") {
+      const branches = Array.isArray(value) ? value.map(sanitizeSchemaForGemini) : value;
+      if (Array.isArray(branches)) {
+        const order = { answer_portfolio: 0, define_term: 1, navigate: 2, reject_out_of_scope: 3 };
+        branches.sort((a, b) => (order[a?.properties?.intent?.enum?.[0]] ?? 99) - (order[b?.properties?.intent?.enum?.[0]] ?? 99));
+      }
+      result.anyOf = branches;
+      continue;
+    }
     result[key] = sanitizeSchemaForGemini(value);
   }
   return result;
@@ -34,19 +42,27 @@ export function sanitizeSchemaForGemini(node) {
 
 export function adaptPayloadForGemini(payload) {
   const { chat_template_kwargs: _ignoredKwargs, reasoning_effort: _ignoredReasoning, ...rest } = payload;
-  if (rest.response_format?.type === "json_schema" && rest.response_format.json_schema?.schema) {
+  const messages = Array.isArray(rest.messages) && rest.messages.length === 3 &&
+    rest.messages[0]?.role === "system" && rest.messages[1]?.role === "system"
+    ? [
+        { role: "system", content: `${rest.messages[0].content}\n\n${rest.messages[1].content}` },
+        rest.messages[2]
+      ]
+    : rest.messages;
+  const base = { ...rest, messages };
+  if (base.response_format?.type === "json_schema" && base.response_format.json_schema?.schema) {
     return {
-      ...rest,
+      ...base,
       response_format: {
-        ...rest.response_format,
+        ...base.response_format,
         json_schema: {
-          ...rest.response_format.json_schema,
-          schema: sanitizeSchemaForGemini(rest.response_format.json_schema.schema)
+          ...base.response_format.json_schema,
+          schema: sanitizeSchemaForGemini(base.response_format.json_schema.schema)
         }
       }
     };
   }
-  return rest;
+  return base;
 }
 
 export function buildDetailedModelPayload(settings, message, context, groundedRequest = {}) {
@@ -115,7 +131,8 @@ export function createDetailedModelClient(settings, {
       check();
       const rawPayload = buildDetailedModelPayload(snapshot, message, context, groundedRequest);
       const hasApiKey = typeof snapshot.apiKey === "string" && snapshot.apiKey.trim().length > 0;
-      const body = JSON.stringify(hasApiKey ? adaptPayloadForGemini(rawPayload) : rawPayload);
+      const isGemini = hasApiKey && url.endsWith("/openai/chat/completions");
+      const body = JSON.stringify(isGemini ? adaptPayloadForGemini(rawPayload) : rawPayload);
       const headers = { "Content-Type": "application/json", ...(hasApiKey ? { Authorization: `Bearer ${snapshot.apiKey.trim()}` } : {}) };
       check();
       metadata.dispatchCount = 1;
