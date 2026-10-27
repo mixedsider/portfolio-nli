@@ -23,6 +23,11 @@ export async function loadDotEnv(root, env = process.env) {
 }
 
 export function createGatewayConfig(env = process.env) {
+  const defaultBaseUrl = "https://generativelanguage.googleapis.com/v1beta/openai";
+  const defaultModel = "gemini-3.5-flash-lite";
+  const geminiApiKey = readApiKey(env.GEMINI_API_KEY);
+  const modelApiKey = geminiApiKey || readApiKey(env.LM_STUDIO_API_KEY);
+  const lfmApiKey = readApiKey(env.LFM_API_KEY) || (env.LFM_BASE_URL ? "" : geminiApiKey);
   return {
     host: env.NLI_HOST || "127.0.0.1",
     port: readPort(env.NLI_PORT, 8787),
@@ -36,8 +41,9 @@ export function createGatewayConfig(env = process.env) {
     trustProxy: env.NLI_TRUST_PROXY === "true",
     releaseRevision: env.GIT_COMMIT_SHA || null,
     model: {
-      baseUrl: env.LM_STUDIO_BASE_URL || "http://192.168.0.57:1234/v1",
-      name: env.LM_STUDIO_MODEL || "Qwen3.8-27B-UD-Q4_K_M",
+      baseUrl: env.GEMINI_BASE_URL || env.LM_STUDIO_BASE_URL || defaultBaseUrl,
+      name: env.GEMINI_MODEL || env.LM_STUDIO_MODEL || defaultModel,
+      ...(modelApiKey ? { apiKey: modelApiKey } : {}),
       timeoutMs: readPositiveIntegerEnv(env, "LM_STUDIO_TIMEOUT_MS", QWEN_TIMEOUT_MS),
       maxTokens: readPositiveIntegerEnv(env, "LM_STUDIO_MAX_TOKENS", 768),
       reasoningEffort: "none",
@@ -48,8 +54,9 @@ export function createGatewayConfig(env = process.env) {
       maxConcurrentRequests: readPositiveIntegerEnv(env, "LM_STUDIO_MAX_CONCURRENT_REQUESTS", 4)
     },
     lfm: {
-      baseUrl: env.LFM_BASE_URL || "http://192.168.0.57:1234/v1",
-      name: env.LFM_MODEL || "Qwen3.8-27B-UD-Q4_K_M",
+      baseUrl: env.LFM_BASE_URL || env.GEMINI_BASE_URL || defaultBaseUrl,
+      name: env.LFM_MODEL || env.GEMINI_MODEL || defaultModel,
+      ...(lfmApiKey ? { apiKey: lfmApiKey } : {}),
       timeoutMs: readPositiveIntegerEnv(env, "LFM_TIMEOUT_MS", LFM_TIMEOUT_MS),
       maxTokens: readPositiveIntegerEnv(env, "LFM_MAX_TOKENS", 512),
       maxResponseBytes: readPositiveIntegerEnv(env, "LFM_MAX_RESPONSE_BYTES", 65_536),
@@ -65,6 +72,11 @@ export function createGatewayConfig(env = process.env) {
       qwenVerificationFile: resolve(workspaceRoot, env.NLI_QWEN_VERIFICATION_FILE || ".nli/qwen-no-thinking.json")
     }
   };
+}
+
+function readApiKey(value) {
+  if (typeof value !== "string") return "";
+  return value.trim();
 }
 
 function readChoiceEnv(env, name, choices, defaultValue) {

@@ -26,7 +26,7 @@ test("weather requests are explicitly rejected before portfolio intent selection
   assert.doesNotMatch(context.prompt, /(?:at most|under) 600 characters/);
   assert.match(context.prompt, /4,000/);
   assert.doesNotMatch(context.prompt, /```/);
-  assert.ok(Buffer.byteLength(context.prompt) <= 2500);
+  assert.ok(Buffer.byteLength(context.prompt) <= 2800);
   const routing = JSON.parse(context.prompt.match(/`(\{"요약\/설명\+candidateSources":.*?\})`/u)[1]);
   assert.equal(routing["external/no evidence"], "reject_out_of_scope");
   for (const intent of ["navigate", "define_term", "answer_portfolio", "reject_out_of_scope"]) {

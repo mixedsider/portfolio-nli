@@ -229,3 +229,23 @@ test("plain and schema modes enforce identical failures without retry or fallbac
     assert.equal(calls, cases.length);
   }
 });
+
+test("Gemini OpenAI endpoint resolves path, sends Bearer token and sanitizes schema", async () => {
+  let captured;
+  const client = createDetailedModelClient({ ...createGatewayConfig({ GEMINI_API_KEY: "gem-key" }).model }, {
+    endpoint: "qwen", fetchImpl: async (url, options) => {
+      captured = { url, auth: options.headers.Authorization, body: JSON.parse(options.body) };
+      return new Response(JSON.stringify(envelope));
+    }
+  });
+  assert.equal((await client("input", context)).tag, "success");
+  assert.equal(captured.url, "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions");
+  assert.equal(captured.auth, "Bearer gem-key");
+  assert.equal(Object.hasOwn(captured.body, "chat_template_kwargs"), false);
+  assert.equal(Object.hasOwn(captured.body, "reasoning_effort"), false);
+  assert.equal(captured.body.messages.length, 2);
+  assert.equal(captured.body.messages[0].role, "system");
+  assert.equal(Array.isArray(captured.body.response_format.json_schema.schema.anyOf), true);
+  assert.equal(captured.body.response_format.json_schema.schema.anyOf[0].properties.intent.enum[0], "answer_portfolio");
+  assert.equal(Object.hasOwn(captured.body.response_format.json_schema.schema, "oneOf"), false);
+});

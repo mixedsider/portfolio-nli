@@ -84,7 +84,11 @@ function responseObligations(response, context, prepared, originalMessage) {
   }
   if (response.intent === "answer_portfolio") {
     const selected = prepared.candidateSources.filter((card) => response.sources.some((s) => s.id === card.id));
-    const evidence = selected.map((card) => card.evidence).join("\n");
+    const projectCardCount = selected.filter((card) => context.targetById.get(card.id)?.type === "project").length;
+    const evidence = [
+      ...selected.map((card) => card.evidence),
+      ...(projectCardCount > 1 ? [`${projectCardCount}개`] : [])
+    ].join("\n");
     if (evidence && !quantitiesSupported(response.answer, evidence)) return "quantity_unsupported";
     if (requestedQuantityCount(originalMessage) > 0 || obligations.kind === "comparison") {
       const ids = response.sources.map((source) => source.id);

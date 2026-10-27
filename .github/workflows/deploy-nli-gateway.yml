@@ -579,7 +579,7 @@ jobs:
             return managers[0];
           }
           function applicationEnv(env) {
-            return Object.fromEntries(Object.entries(env).filter(([key]) => /^(NLI_|LFM_|LM_STUDIO_)/.test(key)));
+            return Object.fromEntries(Object.entries(env).filter(([key]) => /^(NLI_|LFM_|LM_STUDIO_|GEMINI_)/.test(key)));
           }
           function sameApplicationEnv(expected, actual) {
             const expectedApplication = applicationEnv(expected);

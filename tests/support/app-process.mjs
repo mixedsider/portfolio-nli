@@ -18,7 +18,7 @@ export async function startTestApp({ scenario = "healthy" } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "portfolio-test-app-"));
   // Keep NODE_OPTIONS (including the harness egress guard), remove operator model configuration.
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
-    !/^(NLI_|LFM_|LM_STUDIO_|TEST_APP_)/.test(key)));
+    !/^(NLI_|LFM_|LM_STUDIO_|GEMINI_|TEST_APP_)/.test(key)));
   const startup = launchAppChild(fileURLToPath(new URL("./app-server.mjs", import.meta.url)), {
     env: { ...env, TEST_APP_SCENARIO: scenario, TEST_APP_DIRECTORY: directory }
   });

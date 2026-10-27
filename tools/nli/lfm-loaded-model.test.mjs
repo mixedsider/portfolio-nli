@@ -24,7 +24,7 @@ test("loaded LFM ID and custom override reach HTTP unchanged and match probe pay
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
   try {
-    for (const [env, expected] of [[{}, "Qwen3.8-27B-UD-Q4_K_M"], [{ LFM_MODEL: "custom-lfm" }, "custom-lfm"]]) {
+    for (const [env, expected] of [[{}, "gemini-3.5-flash-lite"], [{ LFM_MODEL: "custom-lfm" }, "custom-lfm"]]) {
       const config = createGatewayConfig(env);
       const client = createDetailedModelClient({ ...config.lfm,
         baseUrl: `http://127.0.0.1:${server.address().port}/v1` }, { endpoint: "lfm" });
@@ -42,7 +42,7 @@ test("loaded LFM ID and custom override reach HTTP unchanged and match probe pay
       assert.equal(captured.body.reasoning_effort, "none");
       assert.deepEqual(captured.body.chat_template_kwargs, { enable_thinking: false });
       assert.equal(config.lfm.timeoutMs, 6500);
-      assert.equal(config.model.name, "Qwen3.8-27B-UD-Q4_K_M");
+      assert.equal(config.model.name, "gemini-3.5-flash-lite");
       assert.equal(PROBE_ENDPOINTS.qwen.name, config.model.name);
       assert.deepEqual([config.model.timeoutMs, config.model.maxTokens, config.cascade.timeoutMs,
         config.requestTimeoutMs], [16000, 768, 23500, 15000]);

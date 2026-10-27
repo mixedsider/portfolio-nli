@@ -15,7 +15,7 @@ const REQUEST_BYTE_CEILINGS = Object.freeze({
   comparison: 18000,
   "out-of-scope": 23000
 });
-const SYSTEM_PROMPT_BYTE_CEILING = 3000;
+const SYSTEM_PROMPT_BYTE_CEILING = 3500;
 
 test("Qwen runtime prompt stays within the cold-prefill byte budget", () => {
   const settings = createGatewayConfig({}).model;

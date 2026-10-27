@@ -70,8 +70,9 @@ node tools/nli-gateway.mjs
 
 - `NLI_HOST`: `127.0.0.1`
 - `NLI_PORT`: `8787`
-- `LM_STUDIO_BASE_URL`: `http://192.168.0.57:1234/v1`
-- `LM_STUDIO_MODEL`: `Qwen3.8-27B-UD-Q4_K_M`
+- `LM_STUDIO_BASE_URL`: `https://generativelanguage.googleapis.com/v1beta/openai`
+- `LM_STUDIO_MODEL`: `gemini-3.5-flash-lite`
+- `GEMINI_API_KEY`: Google Gemini API 키 (`.env`에 비공개 설정)
 - `reasoning_effort`: Gateway 고정값 `none` (환경 변수 없음; 모델 또는 LM Studio 버전을 변경하면 direct strict JSON probe를 다시 실행)
 - `LM_STUDIO_TIMEOUT_MS`: `16000` (운영 환경에서 더 작은 값으로 override 가능)
 - `NLI_MAX_REQUEST_BYTES`: `16384`
