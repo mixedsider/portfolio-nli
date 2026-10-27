@@ -172,8 +172,9 @@ NLI Gateway는 Node.js 서버입니다. LM Studio가 떠 있는 같은 네트워
 ```text
 NLI_HOST=0.0.0.0
 NLI_PORT=8787
-LM_STUDIO_BASE_URL=http://192.168.0.57:1234/v1
-LM_STUDIO_MODEL=Qwen3.8-27B-UD-Q4_K_M
+LM_STUDIO_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
+LM_STUDIO_MODEL=gemini-3.5-flash-lite
+GEMINI_API_KEY=your-gemini-api-key
 LM_STUDIO_TIMEOUT_MS=16000
 NLI_MAX_REQUEST_BYTES=16384
 NLI_MAX_MESSAGE_LENGTH=500

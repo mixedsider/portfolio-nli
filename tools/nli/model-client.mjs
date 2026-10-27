@@ -2,7 +2,7 @@ import { buildGroundedRequestBlock } from "./context.mjs";
 import { buildLmStudioChatCompletionsUrl } from "./model-transport.mjs";
 
 export { buildLmStudioChatCompletionsUrl, createDetailedModelClient, buildDetailedModelPayload,
-  getModelDecisionSchema } from "./model-transport.mjs";
+  getModelDecisionSchema, adaptPayloadForGemini, sanitizeSchemaForGemini } from "./model-transport.mjs";
 
 // Explicit legacy proposal-only seam: intentionally tolerates old fake envelopes.
 // Configured cascade callers must use createDetailedModelClient instead.
@@ -17,24 +17,26 @@ export function createModelClient(config) {
 async function requestModel(message, context, config, groundedRequest) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.model.timeoutMs);
+  const hasApiKey = typeof config.model.apiKey === "string" && config.model.apiKey.trim().length > 0;
   const payload = {
     model: config.model.name,
     temperature: 0,
     max_tokens: config.model.maxTokens,
     reasoning_effort: config.model.reasoningEffort || "none",
     // llama.cpp의 Qwen 채팅 템플릿은 이 옵션이 있어야 추론 토큰 생성을 끈다.
-    chat_template_kwargs: { enable_thinking: false },
+    ...(hasApiKey ? {} : { chat_template_kwargs: { enable_thinking: false } }),
     messages: [
       { role: "system", content: context.prompt },
       { role: "system", content: buildGroundedRequestBlock(groundedRequest) },
       { role: "user", content: message }
     ]
   };
+  const headers = { "Content-Type": "application/json", ...(hasApiKey ? { Authorization: `Bearer ${config.model.apiKey.trim()}` } : {}) };
 
   try {
     const response = await fetch(buildLmStudioChatCompletionsUrl(config.model.baseUrl), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(payload),
       signal: controller.signal,
       redirect: "error"

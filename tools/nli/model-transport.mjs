@@ -11,8 +11,42 @@ export function buildLmStudioChatCompletionsUrl(baseUrl) {
   if (!["http:", "https:"].includes(url.protocol)) throw new Error("LM Studio URL must use HTTP or HTTPS");
   if (url.username || url.password || url.search || url.hash) throw new Error("LM Studio URL must not include credentials, query, or fragment");
   const path = url.pathname.replace(/\/$/, "");
-  url.pathname = path.endsWith("/v1") ? `${path}/chat/completions` : `${path}/v1/chat/completions`;
+  url.pathname = path.endsWith("/chat/completions")
+    ? path
+    : path.endsWith("/v1") || path.endsWith("/openai")
+      ? `${path}/chat/completions`
+      : `${path}/v1/chat/completions`;
   return url.toString();
+}
+
+export function sanitizeSchemaForGemini(node) {
+  if (Array.isArray(node)) return node.map(sanitizeSchemaForGemini);
+  if (!node || typeof node !== "object") return node;
+  const result = {};
+  for (const [key, value] of Object.entries(node)) {
+    if (["$schema", "title", "uniqueItems", "minLength", "maxLength", "pattern"].includes(key)) continue;
+    if (key === "const") { result.enum = [value]; continue; }
+    if (key === "oneOf") { result.anyOf = Array.isArray(value) ? value.map(sanitizeSchemaForGemini) : value; continue; }
+    result[key] = sanitizeSchemaForGemini(value);
+  }
+  return result;
+}
+
+export function adaptPayloadForGemini(payload) {
+  const { chat_template_kwargs: _ignored, ...rest } = payload;
+  if (rest.response_format?.type === "json_schema" && rest.response_format.json_schema?.schema) {
+    return {
+      ...rest,
+      response_format: {
+        ...rest.response_format,
+        json_schema: {
+          ...rest.response_format.json_schema,
+          schema: sanitizeSchemaForGemini(rest.response_format.json_schema.schema)
+        }
+      }
+    };
+  }
+  return rest;
 }
 
 export function buildDetailedModelPayload(settings, message, context, groundedRequest = {}) {
@@ -79,10 +113,13 @@ export function createDetailedModelClient(settings, {
       signal?.addEventListener("abort", parentAbort, { once: true });
       timer = setTimer(() => abort("timeout"), Math.min(effectiveBudget, 2_147_483_647));
       check();
-      const body = JSON.stringify(buildDetailedModelPayload(snapshot, message, context, groundedRequest));
+      const rawPayload = buildDetailedModelPayload(snapshot, message, context, groundedRequest);
+      const hasApiKey = typeof snapshot.apiKey === "string" && snapshot.apiKey.trim().length > 0;
+      const body = JSON.stringify(hasApiKey ? adaptPayloadForGemini(rawPayload) : rawPayload);
+      const headers = { "Content-Type": "application/json", ...(hasApiKey ? { Authorization: `Bearer ${snapshot.apiKey.trim()}` } : {}) };
       check();
       metadata.dispatchCount = 1;
-      const pending = Promise.resolve(fetchImpl(url, { method: "POST", headers: { "Content-Type": "application/json" },
+      const pending = Promise.resolve(fetchImpl(url, { method: "POST", headers,
         body, signal: controller.signal, redirect: "error" }));
       // An injected fetch may ignore AbortSignal: discard/cancel even its late response.
       pending.then((late) => { if (controller.signal.aborted) cancelBody(late.body); }, () => {});

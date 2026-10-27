@@ -8,19 +8,22 @@ import { fileURLToPath } from "node:url";
 
 import { createGatewayConfig, loadDotEnv } from "./config.mjs";
 
-test("배포된 Qwen 모델이 기본값이고 환경 모델 설정이 이를 재정의한다", () => {
+test("배포된 Gemini 모델이 기본값이고 환경 모델 설정이 이를 재정의한다", () => {
   const defaults = createGatewayConfig({});
   const override = createGatewayConfig({
     LM_STUDIO_BASE_URL: "http://127.0.0.1:1234/v1",
-    LM_STUDIO_MODEL: "local-test-model"
+    LM_STUDIO_MODEL: "local-test-model",
+    GEMINI_API_KEY: "test-gemini-key"
   });
 
-  assert.equal(defaults.model.baseUrl, "http://192.168.0.57:1234/v1");
-  assert.equal(defaults.model.name, "Qwen3.8-27B-UD-Q4_K_M");
+  assert.equal(defaults.model.baseUrl, "https://generativelanguage.googleapis.com/v1beta/openai");
+  assert.equal(defaults.model.name, "gemini-3.5-flash-lite");
+  assert.equal(defaults.model.apiKey, undefined);
   assert.equal(defaults.model.timeoutMs, 16_000);
   assert.equal(defaults.model.reasoningEffort, "none");
   assert.equal(override.model.baseUrl, "http://127.0.0.1:1234/v1");
   assert.equal(override.model.name, "local-test-model");
+  assert.equal(override.model.apiKey, "test-gemini-key");
 });
 
 test("dotenv preserves nonempty environment values and its existing literal parsing", async () => {
@@ -63,13 +66,13 @@ test("existing numeric coercion, fallback, port and proxy semantics stay unchang
 test("independent LFM, Qwen and cascade defaults match the amended settings", () => {
   const config = createGatewayConfig({});
   assert.deepEqual(config.model, {
-    baseUrl: "http://192.168.0.57:1234/v1", name: "Qwen3.8-27B-UD-Q4_K_M",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", name: "gemini-3.5-flash-lite",
     timeoutMs: 16000, maxTokens: 768, reasoningEffort: "none",
     chatTemplateKwargs: { enable_thinking: false }, outputMode: "json_schema",
     maxResponseBytes: 65536, maxConcurrentRequests: 4
   });
   assert.deepEqual(config.lfm, {
-    baseUrl: "http://192.168.0.57:1234/v1", name: "Qwen3.8-27B-UD-Q4_K_M",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", name: "gemini-3.5-flash-lite",
     timeoutMs: 6500, maxTokens: 512, maxResponseBytes: 65536,
     maxConcurrentRequests: 4, outputMode: "json_schema"
   });

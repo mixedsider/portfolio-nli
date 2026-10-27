@@ -4,8 +4,8 @@ import { isDeepStrictEqual } from "node:util";
 import { LFM_TIMEOUT_MS, QWEN_TIMEOUT_MS } from "./timeout-policy.mjs";
 
 export const PROBE_ENDPOINTS = Object.freeze({
-  lfm: Object.freeze({ baseUrl: "http://192.168.0.57:1234/v1", name: "Qwen3.8-27B-UD-Q4_K_M", timeoutMs: LFM_TIMEOUT_MS, maxTokens: 512, maxResponseBytes: 65536 }),
-  qwen: Object.freeze({ baseUrl: "http://192.168.0.57:1234/v1", name: "Qwen3.8-27B-UD-Q4_K_M", timeoutMs: QWEN_TIMEOUT_MS, maxTokens: 768, maxResponseBytes: 65536 })
+  lfm: Object.freeze({ baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", name: "gemini-3.5-flash-lite", timeoutMs: LFM_TIMEOUT_MS, maxTokens: 512, maxResponseBytes: 65536 }),
+  qwen: Object.freeze({ baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", name: "gemini-3.5-flash-lite", timeoutMs: QWEN_TIMEOUT_MS, maxTokens: 768, maxResponseBytes: 65536 })
 });
 
 export function prepareProbeCases(fixtures, context) {
