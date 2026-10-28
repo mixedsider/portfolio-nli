@@ -57,10 +57,7 @@ export function isCompatibleLocalFallback(response, context, prepared, originalM
   }).ok) return false;
   if (!prepared.coveragePossible || !prepared.obligations?.coveragePossible) return false;
   if (response.intent === "navigate") {
-    const explicitNav = typeof originalMessage === "string" &&
-      /(?:이동|보여\s*줘|보여\s*주세요|보러\s*가|가자|열어\s*줘)/u.test(originalMessage) &&
-      !/(?:요약|설명|알려|정리|목록|성과|경험|소개|비교|차이|어떻게|왜|무엇|뭐|몇)/u.test(originalMessage);
-    if ((!explicitNav && prepared.obligations.requiredSubjectIds?.length) || prepared.obligations.kind === "comparison") return false;
+    if (prepared.obligations.requiredSubjectIds?.length || prepared.obligations.kind === "comparison") return false;
     if (!prepared.obligations.allowedSourceIds.includes(response.targetId)) return false;
     return responseObligations(response, context, prepared, originalMessage) === null;
   }
