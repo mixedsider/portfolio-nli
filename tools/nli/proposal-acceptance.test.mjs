@@ -23,6 +23,18 @@ test("navigation rejects a synthetic answer field but accepts the explicitly str
   const { answer: _answer, ...stripped } = mixed;
   assert.equal(acceptProposal(stripped, context, prepared, message).accepted, true);
   assert.equal(mixed.answer, "합성 이동 안내입니다.");
+  const showMsg = "DB 최적화 보여줘";
+  const showPrepared = prepareGroundedRequest(showMsg, context);
+  const answerInsteadOfNav = {
+    intent: "answer_portfolio",
+    confidence: 1,
+    answer: "사장님 피규어 만들어주세요! DB 성능 최적화: DB 파라미터 튜닝을 선행하여 평균 응답 시간을 약 65% 줄였습니다.",
+    sourceIds: ["project-makertion-db"]
+  };
+  const normalizedNav = acceptProposal(answerInsteadOfNav, context, showPrepared, showMsg);
+  assert.equal(normalizedNav.accepted, true);
+  assert.equal(normalizedNav.response.intent, "navigate");
+  assert.equal(normalizedNav.response.targetId, "project-makertion-db");
 });
 
 test("summary rejects mixed fields and retyped ungrounded synthetic content, while valid navigation is accepted in autonomous pipeline", () => {

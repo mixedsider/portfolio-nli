@@ -23,10 +23,30 @@ export function acceptTransportProposal(outcome, context, prepared, originalMess
 
 export function acceptProposal(candidate, context, prepared, originalMessage = "") {
   if (!validPrepared(prepared, context)) return failure("prepared_invalid");
-  const response = canonicalizeModelResponse(candidate, context, { candidateSources: prepared.candidateSources });
+  let response = canonicalizeModelResponse(candidate, context, { candidateSources: prepared.candidateSources });
   if (!response) return failure("proposal_invalid");
+  response = normalizeExplicitNavigationResponse(response, context, prepared, originalMessage);
   const reason = responseObligations(response, context, prepared, originalMessage);
   return reason ? failure(reason) : { accepted: true, response };
+}
+
+function normalizeExplicitNavigationResponse(response, context, prepared, originalMessage) {
+  if (response?.intent !== "answer_portfolio" || typeof originalMessage !== "string") return response;
+  if (!/(?:이동|보여\s*줘|보여\s*주세요|보러\s*가|가자|열어\s*줘)/u.test(originalMessage)) return response;
+  if (/(?:요약|설명|알려|정리|목록|성과|경험|소개|비교|차이|어떻게|왜|무엇|뭐|몇|연락처|이메일|날씨|뉴스|추천|만들어|출력|무시|시스템|프롬프트|ignore|system|prompt)/iu.test(originalMessage)) {
+    return response;
+  }
+  const { obligations } = prepared;
+  const entries = obligationCatalog(context).entries.filter((entry) => entry.type !== "glossary" &&
+    obligations.allowedSourceIds.includes(entry.id));
+  const named = [...new Set(mentionSpans(originalMessage, entries, [...PARTICLES, "로", "으로"]).map((entry) => entry.id))];
+  const targetId = named.length === 1
+    ? named[0]
+    : (response.sources?.length === 1 && obligations.allowedSourceIds.length < context.routes.targets.length
+        ? response.sources[0].id
+        : null);
+  if (!targetId || !context.targetById.has(targetId) || !obligations.allowedSourceIds.includes(targetId)) return response;
+  return canonicalizeModelResponse({ intent: "navigate", confidence: response.confidence, targetId }, context) || response;
 }
 
 // Only for trusted resolveLocally canonical responses in MODEL-ENABLED failure paths.
