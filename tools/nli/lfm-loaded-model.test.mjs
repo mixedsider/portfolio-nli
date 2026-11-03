@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createServer } from "node:http";
@@ -9,7 +10,7 @@ import { createDetailedModelClient, getModelDecisionSchema } from "./model-trans
 import { buildProbePayload, PROBE_ENDPOINTS } from "./probe-request.mjs";
 
 test("loaded LFM ID and custom override reach HTTP unchanged and match probe payloads", async () => {
-  const context = await loadNliContext(new URL("../../", import.meta.url).pathname);
+  const context = await loadNliContext(fileURLToPath(new URL("../../", import.meta.url)));
   const message = "자기소개해줘";
   const prepared = prepareGroundedRequest(message, context);
   const bodies = [];

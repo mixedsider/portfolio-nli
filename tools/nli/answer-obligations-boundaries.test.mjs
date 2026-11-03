@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { loadNliContext } from "./context.mjs";
@@ -6,16 +7,16 @@ import { canonicalizeModelResponse } from "./validation.mjs";
 import { acceptProposal, isCompatibleLocalFallback } from "./proposal-acceptance.mjs";
 import { resolveLocally } from "./router.mjs";
 
-const context = await loadNliContext(new URL("../../", import.meta.url).pathname);
+const context = await loadNliContext(fileURLToPath(new URL("../../", import.meta.url)));
 const compareMessage = "CateQuest와 Bookking의 성능 개선을 비교해줘";
 const comparison = prepareGroundedRequest(compareMessage, context);
-const complete = "CateQuest는 DTO Projection과 JPQL 조인으로 DB 접근을 54회에서 1회로 줄였습니다. Bookking은 HTTPS 응답 지연을 200ms에서 30ms로 줄였습니다.";
-const sources = ["project-catequest-n1", "project-bookking-https"];
+const complete = "CateQuest는 SQL 실행 수를 53회에서 1회로 줄였습니다. Bookking은 Facade 적용 후 재고 불일치가 발생하지 않았습니다.";
+const sources = ["project-catequest-n1", "project-bookking-lock"];
 const candidate = (answer, sourceIds = sources) => ({ intent: "answer_portfolio", confidence: 0.01, answer, sourceIds });
 
 test("comparison cannot hide swapped metrics behind Korean compound particles or unattributed clauses", () => {
   for (const name of ["Bookking에서는", "북킹에서도", "Bookking에는", "북킹도", ""]) {
-    const answer = `${complete} ${name} DTO Projection과 JPQL 조인으로 DB 접근을 54회에서 1회로 줄였습니다.`;
+    const answer = `${complete} ${name} SQL 실행 수를 53회에서 1회로 줄였습니다.`;
     assert.equal(acceptProposal(candidate(answer), context, comparison).accepted, false, name);
   }
 });
@@ -36,8 +37,8 @@ test("ordinary project list can name several projects without inventing a compar
 
 test("ordinary scoped section and contextual glossary answers keep supported natural wording", () => {
   for (const [message, answer, sourceIds] of [
-    ["Main 홈페이지 캐싱 최적화 요약해줘", "Main 홈페이지 캐싱은 P95 응답 시간을 47.28ms에서 8.32ms로 줄이고 DB 부하를 낮춘 경험입니다.", ["project-makertion-cache"]],
-    ["CateQuest N+1을 어떻게 해결했어?", "CateQuest는 N+1 쿼리를 DTO Projection과 JPQL 조인으로 해결해 DB 접근 횟수를 54회에서 1회로 줄였습니다.", ["project-catequest-n1"]]
+    ["메인 페이지 캐시 요약해줘", "메인 페이지 캐시는 게시판 DB 실행 수를 10→0회로 줄였습니다.", ["project-makertion-cache"]],
+    ["CateQuest N+1을 어떻게 해결했어?", "CateQuest는 N+1 쿼리를 LEFT JOIN과 DiaryFlatProjection으로 조회해 SQL 실행 수를 53→1회로 줄였습니다.", ["project-catequest-n1"]]
   ]) {
     const prepared = prepareGroundedRequest(message, context);
     assert.equal(acceptProposal(candidate(answer, sourceIds), context, prepared, message).accepted, true, message);

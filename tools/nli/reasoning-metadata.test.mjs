@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { inspectModelCompletion } from "./model-outcome.mjs";
@@ -5,7 +6,7 @@ import { inspectProbeCompletion } from "./probe-result.mjs";
 import { loadNliContext } from "./context.mjs";
 import { prepareGroundedRequest } from "./evidence-selection.mjs";
 
-const context = await loadNliContext(new URL("../../", import.meta.url).pathname);
+const context = await loadNliContext(fileURLToPath(new URL("../../", import.meta.url)));
 const message = "오늘 서울 날씨를 알려줘";
 const prepared = prepareGroundedRequest(message, context);
 const item = { message, prepared, grounded: JSON.parse(prepared.groundedRequestBlock),

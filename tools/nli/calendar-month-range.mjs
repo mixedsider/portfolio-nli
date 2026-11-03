@@ -1,8 +1,8 @@
 const START = String.raw`(?<![\p{L}\p{N}_.,]|[+\p{Pd}−]\s*)`;
 // Leave whitespace-separated Korean prose untouched for lexical and quantity checks.
 const END = String.raw`(?=$|[\r\n;!?。)\]]|[.,](?:\s|$)|[ \t]+(?:[)\]]|[가-힣]{2}))`;
-const DOTTED = String.raw`\d{4}\.\d{1,2}\s*[~-]\s*\d{4}\.\d{1,2}`;
-const KOREAN = String.raw`\d{4}년[ \t]*\d{1,2}월[ \t]*(?:부터[ \t]*(?:\d{4}년[ \t]*)?\d{1,2}월[ \t]*까지|[~-][ \t]*(?:\d{4}년[ \t]*)?\d{1,2}월(?:[ \t]*까지)?)`;
+const DOTTED = String.raw`\d{4}\.\d{1,2}\s*[~–-]\s*\d{4}\.\d{1,2}`;
+const KOREAN = String.raw`\d{4}년[ \t]*\d{1,2}월[ \t]*(?:부터[ \t]*(?:\d{4}년[ \t]*)?\d{1,2}월[ \t]*까지|[~–-][ \t]*(?:\d{4}년[ \t]*)?\d{1,2}월(?:[ \t]*까지)?)`;
 const RANGE = new RegExp(`${START}(?:${DOTTED}|${KOREAN})${END}`, "uy");
 const YEAR_MONTH = String.raw`\d{4}(?:\.\p{N}+|년[ \t]*\p{N}+월)`;
 const PREFIX = String.raw`(?:[+\p{Pd}−/⁄∕]\s*|[\p{N}.,]+\s*[/⁄∕]\s*)*`;

@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import { readFile, cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
@@ -12,7 +13,7 @@ import { buildDetailedModelPayload, getModelDecisionSchema } from "./model-clien
 import { matchesJsonSchema } from "../testing/json-schema.mjs";
 
 const root = new URL("../../", import.meta.url);
-const context = await loadNliContext(root.pathname);
+const context = await loadNliContext(fileURLToPath(root));
 const fixtures = JSON.parse(await readFile(new URL("nli/model-probe-cases.json", root), "utf8"));
 const settings = createGatewayConfig({}).lfm;
 const prepare = (message, extra = {}) => prepareGroundedRequest(message, { ...context, ...extra });
@@ -129,13 +130,13 @@ test("canonical term enums and unchanged closed fieldsets reject invalid proposa
 
 test("category, profile, contextual term and navigation pools remain eligible", () => {
   for (const message of ["자기소개해줘", "이은성 이메일 알려줘", "AWS 경험 있어?", "Redis 경험 있어?",
-    "비용 최적화 경험 있어?", "P95를 어떻게 줄였어?", "이 포트폴리오에서 뭘 할 수 있어?"]) {
+    "캐시 최적화 경험 있어?", "P95를 어떻게 줄였어?", "이 포트폴리오에서 뭘 할 수 있어?"]) {
     const prepared = prepare(message);
     const schema = schemaFor(message, prepared);
     assert.deepEqual(schema.oneOf.map((branch) => branch.properties.intent.const), ["navigate", "define_term", "answer_portfolio", "reject_out_of_scope"], message);
     assert.deepEqual(schema.oneOf.find((b) => b.properties.intent.const === "answer_portfolio").properties.sourceIds.items.enum, prepared.candidateSources.map((card) => card.id), message);
   }
-  for (const message of ["N+1 보여줘", "Bookking ALB로 이동", "About으로 이동"]) {
+  for (const message of ["N+1 보여줘", "Bookking Fair Lock로 이동", "About으로 이동"]) {
     const prepared = prepare(message);
     assert.deepEqual(schemaFor(message, prepared).oneOf.find((b) => b.properties.intent.const === "navigate").properties.targetId.enum,
       prepared.groundedRequest.targets.map((target) => target.id), message);

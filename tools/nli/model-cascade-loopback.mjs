@@ -27,7 +27,7 @@ function probeCandidate(payload) {
   const sourceIds = probeFixtures.find((item) => item.message === text)?.sourceIds;
   assert.ok(sourceIds?.length && sourceIds.every((id) => available.has(id)), "Expected fixture sources must be available");
   const answer = sourceIds.map((id) => id === "project-catequest" ? `CateQuest ${context.projectByTargetId.get(id).description}` :
-    `${id.includes("catequest") ? "CateQuest N+1" : "Bookking"} ${context.sectionById.get(id).result}`).join("; ");
+    id.includes("catequest") ? "CateQuest N+1은 프로젝트 종료 후 로컬 시험에서 SQL 실행 수가 53→1회였습니다." : "Bookking은 Facade 적용 후 당시 로컬 테스트에서 재고 불일치가 발생하지 않았습니다.").join("; ");
   return { intent: "answer_portfolio", confidence: 1, sourceIds, answer };
 }
 

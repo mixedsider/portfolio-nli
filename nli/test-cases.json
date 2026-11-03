@@ -35,26 +35,26 @@
     },
     {
       "kind": "success",
-      "message": "오늘의OTT 프로젝트를 요약해줘",
+      "message": "사장님피규어 프로젝트를 요약해줘",
       "expect": {
         "intent": "summarize_project",
-        "targetId": "project-ott"
+        "targetId": "project-makertion"
       }
     },
     {
       "kind": "success",
-      "message": "오늘의 오티티 프로젝트로 이동해줘",
+      "message": "메이커션 프로젝트로 이동해줘",
       "expect": {
         "intent": "navigate",
-        "targetId": "project-ott"
+        "targetId": "project-makertion"
       }
     },
     {
       "kind": "success",
-      "message": "오티티 프로젝트로 이동해줘",
+      "message": "Makertion 프로젝트로 이동해줘",
       "expect": {
         "intent": "navigate",
-        "targetId": "project-ott"
+        "targetId": "project-makertion"
       }
     },
     {
@@ -78,7 +78,7 @@
       "message": "자기소개해줘",
       "expect": {
         "intent": "introduce_profile",
-        "answerIncludes": "Backend & Infra Developer"
+        "answerIncludes": "Java · Spring Backend Developer"
       }
     },
     {
@@ -95,7 +95,7 @@
       "expect": {
         "intent": "summarize_project",
         "targetId": "project-makertion",
-        "answerIncludes": "사장님 피규어 만들어주세요"
+        "answerIncludes": "사장님 피규어"
       }
     },
     {
@@ -105,7 +105,7 @@
       "expect": {
         "intent": "summarize_project",
         "targetId": "project-makertion",
-        "answerIncludes": "사장님 피규어 만들어주세요"
+        "answerIncludes": "사장님 피규어"
       }
     },
     {
@@ -121,7 +121,7 @@
       "message": "포트폴리오 전체를 요약해줘.",
       "expect": {
         "intent": "summarize_portfolio",
-        "answerIncludes": "Backend & Infra Developer"
+        "answerIncludes": "Java · Spring Backend Developer"
       }
     },
     {
@@ -137,7 +137,7 @@
       "message": "연락처를 알고 싶어.",
       "expect": {
         "intent": "list_contacts",
-        "answerIncludes": "mixeddev0812@gmail.com"
+        "answerIncludes": "dmstjd0812@naver.com"
       }
     },
     {
@@ -145,7 +145,7 @@
       "message": "이은성 이메일 알려줘",
       "expect": {
         "intent": "list_contacts",
-        "answerIncludes": "mixeddev0812@gmail.com"
+        "answerIncludes": "dmstjd0812@naver.com"
       }
     },
     {
@@ -153,7 +153,7 @@
       "message": "주요 성과를 알려줘.",
       "expect": {
         "intent": "list_achievements",
-        "answerIncludes": "DB 평균 응답"
+        "answerIncludes": "DB 튜닝·앱 확장"
       }
     },
     {
@@ -162,7 +162,7 @@
       "expect": {
         "intent": "list_skill_experience",
         "term": "AWS",
-        "answerIncludes": "CloudWatch"
+        "answerIncludes": "AWS"
       }
     },
     {
@@ -177,11 +177,11 @@
     },
     {
       "kind": "success",
-      "message": "데이터 모델링 경험 있어?",
+      "message": "동시성 경험 있어?",
       "expect": {
         "intent": "list_skill_experience",
-        "term": "데이터 모델링",
-        "answerIncludes": "오늘의 OTT",
+        "term": "동시성",
+        "answerIncludes": "Bookking",
         "answerExcludes": "AI 질문 생성"
       }
     },
@@ -196,10 +196,10 @@
     },
     {
       "kind": "success",
-      "message": "CloudWatch 모니터링 보여줘",
+      "message": "메인 페이지 캐시 보여줘",
       "expect": {
         "intent": "navigate",
-        "targetId": "project-makertion-observability"
+        "targetId": "project-makertion-cache"
       }
     },
     {
@@ -217,7 +217,7 @@
       "expect": {
         "intent": "summarize_section",
         "targetId": "project-catequest-n1",
-        "answerIncludes": "54회에서 1회"
+        "answerIncludes": "53→1회"
       }
     },
     {

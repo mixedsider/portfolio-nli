@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { mkdtemp, mkdir, cp, symlink, writeFile, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,7 +16,7 @@ export async function fixtureCli(t, source) {
   await mkdir(join(root, "tests"));
   await cp(new URL("../test-harness.mjs", import.meta.url), join(root, "tools/test-harness.mjs"));
   await cp(new URL("./", import.meta.url), join(root, "tools/testing"), { recursive: true });
-  await symlink(new URL("../../node_modules", import.meta.url).pathname, join(root, "node_modules"), "dir");
+  await symlink(fileURLToPath(new URL("../../node_modules", import.meta.url)), join(root, "node_modules"), "dir");
   await writeFile(join(root, "tests/fixture.test.mjs"), source);
   await writeFile(join(root, "tests/catalog.json"), JSON.stringify({ version: 1, delegates: [], tests: [
     { path: "tests/fixture.test.mjs", level: "unit", runner: "node", techniques: ["blackbox"] }

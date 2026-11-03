@@ -1,0 +1,60 @@
+{
+  "date": "2026-11-03",
+  "branch": "codex/portfolio-rev35-refresh",
+  "base": "fa099c934b0d5904dcd9c34ac59d8d5502f357af",
+  "command": "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/google-chrome pnpm test:ci",
+  "node": {
+    "tests": 1056,
+    "passed": 1056,
+    "failed": 0
+  },
+  "browser": {
+    "tests": 25,
+    "passed": 25,
+    "failed": 0
+  },
+  "summary": "test-results/run-cpLFqL/summary.json",
+  "review": "Astra independent review: no remaining Critical/Important findings after scoped fixes",
+  "not_run": [
+    "Real model inference: the local-origin preflight was rejected",
+    "Physical iOS/Safari devices",
+    "Production deployment"
+  ],
+  "screenshots": [
+    "/tmp/nli-audit-1440-open.png",
+    "/tmp/portfolio-device-qa/mobile-390-minimized.png"
+  ],
+  "content_snapshot_date": "2026-10-28",
+  "responsive_checks": {
+    "browser": "Chromium desktop and mobile touch emulation",
+    "desktop_widths": [
+      1280,
+      1440,
+      1920
+    ],
+    "tablet_widths": [
+      768,
+      1024
+    ],
+    "mobile_widths": [
+      320,
+      360,
+      390,
+      430
+    ],
+    "mobile_landscape": {
+      "width": 844,
+      "height": 390
+    },
+    "result": "Navigation, filters, images, table scrolling and helper open/resize/minimize/restore/close passed",
+    "independent_review": "Desktop/tablet review found no remaining usability issues"
+  },
+  "live_connection_probe": {
+    "health_status": 200,
+    "deployed_revision": "fa099c934b0d5904dcd9c34ac59d8d5502f357af",
+    "local_origin": "http://127.0.0.1:4173",
+    "preflight_status": 403,
+    "error_code": "ORIGIN_NOT_ALLOWED",
+    "model_answer_verified": false
+  }
+}

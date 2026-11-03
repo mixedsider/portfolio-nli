@@ -104,7 +104,7 @@ test("E2E: profile uses Qwen, exposes a real source button, and navigates", asyn
     const reply = await submit(page, "자기소개해줘");
     const request = latestPost(forwarded, staticOrigin);
     const source = page.locator(".nli-message-sources button[data-scroll-target='about']");
-    await expect(reply).toContainText("Backend & Infra Developer");
+    await expect(reply).toContainText("Java · Spring Backend Developer");
     await expect(source).toBeVisible();
     await source.click();
     await expect(page.locator("#about")).toBeInViewport();
@@ -120,8 +120,8 @@ test("E2E: comparison resolves directly through Qwen", async ({ browser }) => {
 
     const reply = await submit(page, "CateQuest와 Bookking의 성능 개선을 비교해줘");
     const request = latestPost(forwarded, staticOrigin);
-    await expect(reply).toContainText("54회에서 1회");
-    await expect(reply).toContainText("200ms에서 30ms");
+    await expect(reply).toContainText("53회에서 1회");
+    await expect(reply).toContainText("Facade");
     await expect(page.locator(".nli-message-sources button")).toHaveCount(2);
     expect(request).toMatchObject({ status: 200, body: { message: "CateQuest와 Bookking의 성능 개선을 비교해줘" } });
     expect(await app.stats()).toEqual({ lfm: 0, qwen: 1 });

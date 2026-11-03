@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { quantitiesSupported } from "./answer-obligations.mjs";
@@ -65,7 +66,7 @@ test("range boundaries preserve signed years, identifiers, units and subsequent 
   assert.equal(quantitiesSupported("2022년3월~8월 기간에 999회", `${evidence}\n3회`), false);
 });
 
-const context = await loadNliContext(new URL("../../", import.meta.url).pathname);
+const context = await loadNliContext(fileURLToPath(new URL("../../", import.meta.url)));
 const message = "CateQuest 프로젝트를 요약해줘";
 const base = prepareGroundedRequest(message, context);
 const card = { ...base.candidateSources.find((source) => source.id === "project-catequest"),

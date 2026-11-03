@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
@@ -14,23 +15,24 @@ import { runProbe } from "./probe-runner.mjs";
 import { runQwenVerification } from "./probe-verification.mjs";
 import { VERIFICATION_POLICY } from "./verification-policy.mjs";
 
-const context = await loadNliContext(new URL("../../", import.meta.url).pathname);
+const context = await loadNliContext(fileURLToPath(new URL("../../", import.meta.url)));
 const fixtures = JSON.parse(await readFile(new URL("../../nli/model-probe-cases.json", import.meta.url), "utf8"));
 const item = prepareProbeCases(fixtures, context).find((row) => row.id === "comparison");
 const scopedContext = { ...context, currentTargetId: item.currentTargetId, history: item.history };
 const prepared = prepareGroundedRequest(item.message, scopedContext);
-const formerFalseProof = "CateQuest는 DTO Projection과 JPQL 조인으로 DB 접근을 54회에서 1회로 줄였습니다. Bookking은 HTTPS 응답 지연을 200ms에서 30ms로 줄였습니다.";
+const formerFalseProof = "CateQuest는 SQL 실행 수를 53회에서 1회로 줄였습니다.";
+const completeProof = formerFalseProof + " Bookking은 Facade 적용 후 당시 로컬 테스트에서 재고 불일치가 발생하지 않았습니다.";
 
 for (const endpoint of ["lfm", "qwen"]) for (const correct of [false, true]) {
   test(`${endpoint}: probe equals production for ${correct ? "low-confidence complete comparison" : "former false comparison proof"}`, () => {
     const candidate = { intent: "answer_portfolio", confidence: 0.01, sourceIds: item.sourceIds,
-      answer: correct ? formerFalseProof.replace("DB 접근을", "N+1 DB 접근을") : formerFalseProof };
+      answer: correct ? completeProof : formerFalseProof };
     const data = { model: "fixture", choices: [{ finish_reason: "stop", message: { role: "assistant", content: JSON.stringify(candidate) } }] };
     const outcome = inspectModelCompletion(data, endpoint);
     outcome.metadata.endpoint = endpoint;
     const accepted = acceptTransportProposal(outcome, scopedContext, prepared, item.message);
     assert.equal(accepted.accepted, correct, JSON.stringify(accepted));
-    if (!correct) assert.equal(accepted.reason, "subject_clause_missing");
+    if (!correct) assert.equal(accepted.reason, "project_clause_missing");
     assert.equal(inspectProbeCompletion(data, item, context, endpoint).ok, accepted.accepted);
   });
 }
@@ -52,7 +54,7 @@ function fixtureEnvelope(payload, correct) {
   if (expected.intent === "answer_portfolio") {
     const available = JSON.parse(payload.messages[1].content).candidateSources;
     assert.ok(fixture.sourceIds.every((id) => available.some((card) => card.id === id)));
-    const answer = fixture.id === "comparison" ? (correct ? formerFalseProof.replace("DB 접근을", "N+1 DB 접근을") : formerFalseProof) :
+    const answer = fixture.id === "comparison" ? (correct ? completeProof : formerFalseProof) :
       fixture.id === "project-summary" ? `CateQuest ${context.projectByTargetId.get("project-catequest").description}` :
         `CateQuest N+1 ${context.sectionById.get("project-catequest-n1").result}`;
     candidate = { ...candidate, sourceIds: fixture.sourceIds, answer };

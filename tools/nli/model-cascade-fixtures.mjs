@@ -1,14 +1,15 @@
+import { fileURLToPath } from "node:url";
 import { loadNliContext } from "./context.mjs";
 import { createGatewayConfig } from "./config.mjs";
 import { prepareGroundedRequest } from "./evidence-selection.mjs";
 import { inspectModelCompletion, modelFailure } from "./model-outcome.mjs";
 
-export const context = await loadNliContext(new URL("../../", import.meta.url).pathname);
+export const context = await loadNliContext(fileURLToPath(new URL("../../", import.meta.url)));
 export const config = createGatewayConfig({});
 export const comparison = "CateQuest와 Bookking의 성능 개선을 비교해줘";
-export const complete = "CateQuest는 DTO Projection과 JPQL 조인으로 DB 접근을 54회에서 1회로 줄였습니다. Bookking은 HTTPS 응답 지연을 200ms에서 30ms로 줄였습니다.";
+export const complete = "CateQuest는 SQL 실행 수를 53회에서 1회로 줄였습니다. Bookking은 Facade 적용 후 당시 로컬 테스트에서 재고 불일치가 발생하지 않았습니다.";
 export const proposal = (answer = complete, confidence = 0.01) => ({ intent: "answer_portfolio", confidence,
-  answer, sourceIds: ["project-catequest-n1", "project-bookking-https"] });
+  answer, sourceIds: ["project-catequest-n1", "project-bookking-lock"] });
 export const partial = () => proposal(complete.split(". ")[0] + ".", 0.99);
 export function envelope(candidate, model = "fixture-qwen", messageFields = {}) {
   return { model, choices: [{ finish_reason: "stop", message: {

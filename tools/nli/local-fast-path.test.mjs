@@ -32,7 +32,7 @@ test("baseline: registered alias collision and broad router are not an eligibili
   const scoped = { ...context, currentTargetId: "project-makertion-db" };
   assert.equal(isCurrentProjectScopeConstrained("현재 프로젝트 보여줘", scoped), false);
   assert.equal(isCurrentProjectScopeConstrained("여기 보여줘", scoped), true);
-  assert.equal(isTargetInCurrentProjectScope("project-makertion-cost", scoped), true);
+  assert.equal(isTargetInCurrentProjectScope("project-makertion-cd", scoped), true);
   assert.equal(isTargetInCurrentProjectScope("project-catequest", scoped), false);
 });
 

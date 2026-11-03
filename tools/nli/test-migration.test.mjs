@@ -11,11 +11,11 @@ const context = await loadNliContext();
 const live = await loadTestCases("nli/live-test-cases.json");
 const cascade = await loadTestCases("nli/cascade-test-cases.json");
 
-test("all original 40 messages, order, scope and full local expectations survive migration", () => {
+test("rev35 40-case snapshot preserves order, scope and complete mode expectations", () => {
   const original = live.map(({ kind, message, currentTargetId, history, ...item }) => ({ kind, message, currentTargetId, history,
     expect: expectationFor(item, "local") }));
   assert.equal(createHash("sha256").update(JSON.stringify(original)).digest("hex"),
-    "887ed679ee15c327bca0901fa7f00cc91bdebe3a77b3e01ad1cba45797dcb527");
+    "0122fa495684ce149db90a78def0959b366aadee7e6671ada5426627ce3e5e0a");
   assert.equal(live.filter((item) => item.kind === "success").length, 26);
   for (const item of live) {
     for (const key of ["answerIncludes", "answerExcludes", "messageIncludes", "messageExcludes", "responseExcludes"]) {
@@ -76,11 +76,11 @@ test("exact IDs/order, source groups, allowed sources and exclusion checks are i
   const run = await runTestCase(fakeItem, context, { mode: "fake" });
   const check = (expect) => validateResult(run.result, expect, context, run.observations).join();
   assert.match(check({ ...fakeItem.expect, sourceIds: [...fakeItem.expect.sourceIds].reverse() }), /sourceIds/);
-  assert.equal(check({ ...fakeItem.expect, sourceIds: undefined, sourceGroups: [["project-bookking-https"], ["project-catequest-n1"]] }), "");
+  assert.equal(check({ ...fakeItem.expect, sourceIds: undefined, sourceGroups: [["project-bookking-lock"], ["project-catequest-n1"]] }), "");
   assert.match(check({ ...fakeItem.expect, sourceGroups: [["about"]] }), /sourceGroups/);
   assert.match(check({ ...fakeItem.expect, allowedSourceIds: ["project-catequest-n1"] }), /not allowed/);
   assert.match(check({ ...fakeItem.expect, answerExcludes: "Bookking" }), /should not include/);
-  assert.match(check({ ...fakeItem.expect, responseExcludes: "project-bookking-https" }), /response should not include/);
+  assert.match(check({ ...fakeItem.expect, responseExcludes: "project-bookking-lock" }), /response should not include/);
 });
 
 

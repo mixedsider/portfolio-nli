@@ -66,7 +66,10 @@ const KOREAN_UNITS = new Set(["회", "개", "번", "건", "차", "명", "가지"
 function parseQuantities(value) {
   const { text: dated, ranges } = extractCalendarMonthRanges(value);
   // Exempt whole technical identifiers, never all digits adjacent to letters/signs.
-  const text = normalizeObligationText(dated).replace(
+  // A typographic range dash between unsigned integer endpoints is not a
+  // scalar minus sign. Do not normalize signed, fractional or decimal atoms.
+  const text = normalizeObligationText(dated)
+    .replace(/(?<![\p{L}\p{N}_.,/+−–-])(\d+)–(?=\d+(?![\p{N}.,/]))/gu, "$1~").replace(
     /(?<![a-z0-9_])(?:p(?:50|90|95|99)|n\+1|1\+n)(?![a-z0-9_%٪‰‱/]|[.+−-]\d)/gu, " ");
   // Scan maximal numeric-looking atoms first. Invalid atoms remain failed obligations
   // instead of disappearing or being retried as unsigned/numeric substrings.

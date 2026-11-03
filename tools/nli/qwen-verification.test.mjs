@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { chmod, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
@@ -14,7 +15,7 @@ import { runQwenVerification } from "./probe-verification.mjs";
 import { VERIFICATION_POLICY } from "./verification-policy.mjs";
 import { sha256 } from "./qwen-verification-proof.mjs";
 
-const context = await loadNliContext(new URL("../../", import.meta.url).pathname);
+const context = await loadNliContext(fileURLToPath(new URL("../../", import.meta.url)));
 const schemaBytes = await readFile(new URL("../../nli/model-decision.schema.json", import.meta.url), "utf8");
 const schema = JSON.parse(schemaBytes);
 const fixtures = JSON.parse(await readFile(new URL("../../nli/model-probe-cases.json", import.meta.url), "utf8"));
@@ -40,7 +41,7 @@ export function fakeQwen(context, state = {}) {
       const sourceIds = fixtures.find((item) => item.message === text)?.sourceIds;
       assert.ok(sourceIds?.length && sourceIds.every((id) => available.has(id)), "Expected fixture sources must be available");
       const answer = sourceIds.map((id) => id === "project-catequest" ? `CateQuest ${context.projectByTargetId.get(id).description}` :
-        `${id.includes("catequest") ? "CateQuest N+1" : "Bookking"} ${context.sectionById.get(id).result}`).join("; ");
+        id.includes("catequest") ? "CateQuest N+1은 프로젝트 종료 후 로컬 시험에서 SQL 실행 수가 53→1회였습니다." : "Bookking은 Facade 적용 후 당시 로컬 테스트에서 재고 불일치가 발생하지 않았습니다.").join("; ");
       candidate = { intent: "answer_portfolio", confidence: 1, sourceIds, answer };
     }
     return Response.json({ model: state.model || "fixture-qwen", choices: [{ finish_reason: state.finish || "stop",

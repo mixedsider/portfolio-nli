@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createServer } from "node:http";
@@ -13,7 +14,7 @@ import { runProbe, selectProbeMode } from "./nli/probe-runner.mjs";
 import { parseProbeArgs, main } from "./nli-model-probe.mjs";
 import { prepareGroundedRequest } from "./nli/evidence-selection.mjs";
 
-const root = new URL("../", import.meta.url).pathname;
+const root = fileURLToPath(new URL("../", import.meta.url));
 const context = await loadNliContext(root);
 const fixtures = JSON.parse(await readFile(new URL("../nli/model-probe-cases.json", import.meta.url), "utf8"));
 const schema = JSON.parse(await readFile(new URL("../nli/model-decision.schema.json", import.meta.url), "utf8"));
@@ -139,7 +140,7 @@ test("strict proposal and fixture intent/scope are independently enforced", () =
     { intent: "reject_out_of_scope", confidence: 1 }]) {
     assert.equal(inspectProbeCompletion(envelope(candidate), cases[0], context, "lfm").ok, false);
   }
-  const partial = { intent: "answer_portfolio", confidence: 1, answer: "CateQuest N+1 해결", sourceIds: ["project-catequest-n1", "project-bookking-https"] };
+  const partial = { intent: "answer_portfolio", confidence: 1, answer: "CateQuest N+1 해결", sourceIds: ["project-catequest-n1", "project-bookking-lock"] };
   assert.equal(inspectProbeCompletion(envelope(partial), cases[4], context, "lfm").ok, false);
 });
 
@@ -228,7 +229,7 @@ test("runner fake baseline covers both modes without granting Qwen verification"
     const answer = item.id === "project-summary" ? `CateQuest ${context.projectByTargetId.get("project-catequest").description}` :
       item.expected.groups?.map((group) => [group.label,
         group.topic || (group.sourceId === "project-catequest-n1" ? "N+1" : ""),
-        context.sectionById.get(group.sourceId).result].filter(Boolean).join(" ")).join(" ");
+        group.sourceId.includes("catequest") ? "SQL 실행 수가 53→1회였습니다." : "Facade 적용 후 당시 로컬 테스트에서 재고 불일치가 발생하지 않았습니다."].filter(Boolean).join(" ")).join(" ");
     res.end(JSON.stringify(envelope(item.expected.intent === "navigate" ? proposal :
       item.expected.intent === "define_term" ? { intent: "define_term", confidence: 1, term: "P95" } :
         item.expected.intent === "answer_portfolio" ? { intent: "answer_portfolio", confidence: 0.01, answer, sourceIds: item.sourceIds } :

@@ -166,7 +166,26 @@ function validateAnswerSupportedBySelectedSources(answer, sourceIds, candidateSo
   if (typeof answer !== "string" || !answer.trim() || sourceIds.length === 0) return;
 
   const evidence = sourceIds.map((sourceId) => candidateSourceMap.get(sourceId)?.evidence || "").join("\n");
-  if (!isAnswerSupportedBySelectedEvidence(answer, evidence)) errors.push("answer must be supported by selected sources");
+  if (!isAnswerSupportedBySelectedEvidence(answer, evidence) || contradictsExplicitMeasurementScope(answer, evidence))
+    errors.push("answer must be supported by selected sources");
+}
+
+// Narrow guards for explicit inversions of limitations present in the selected
+// evidence. These complement lexical support; they do not infer missing facts.
+function contradictsExplicitMeasurementScope(answer, evidence) {
+  return answer.split(/[\n!?。]+|\.(?=\s|$)/u).some((clause) => {
+    if (/(?:아닙|아니|않|미실시|미배포|의미하지)/u.test(clause)) return false;
+    if (/(?:DB 튜닝과 앱 확장|DB 튜닝과 앱.*함께|종합 처리량)/u.test(evidence) &&
+      /(?:DB|데이터베이스)[^.!?\n]{0,25}(?:단독|만으로|만 적용)/u.test(clause) &&
+      /(?:처리량|p95|개선율|%|req\/s)/iu.test(clause)) return true;
+    if (/모든 요청 성공.*의미하지/u.test(evidence) &&
+      /(?:모든|전체|전부|모두)[^.!?\n]{0,35}성공/u.test(clause)) return true;
+    if (/서비스 배포와 정량 품질 평가.*진행하지/u.test(evidence) &&
+      /(?:서비스.{0,8}배포|정량.{0,8}평가)[^.!?\n]{0,25}(?:완료|진행했|실시했|수행했|운영 중|운영중)|서비스(?:에|를|로)?\s*배포(?:했|하였)/u.test(clause)) return true;
+    if (/DB 비관적 락을 우선 검토/u.test(evidence) &&
+      /DB 비관적 락[^.!?\n]{0,20}운영[^.!?\n]{0,12}도입(?:했|하였| 완료)/u.test(clause)) return true;
+    return false;
+  });
 }
 
 function validatePlainTextAnswer(answer, errors) {

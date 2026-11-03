@@ -48,10 +48,11 @@ test("scope instruction precedes navigation and forbids invented IDs", async () 
 
 test("overview guidance limits ordinary summaries to one inline label-and-purpose sentence", async () => {
   const prompt = await readFile(resolve(root, "nli/system-prompt.md"), "utf8");
-  const overview = prompt.match(/Project overview:.*?(?= Section summary)/u)?.[0];
+  const overview = prompt.match(/Project overview:[^\n]*/u)?.[0];
   assert.ok(overview);
-  assert.match(overview, /`<title>는 <copied purpose>\.`/u);
-  assert.match(overview, /no heading\/unasked dates\/tech\/implementation\/results/u);
+  assert.match(overview, /start with the supplied project title and copied purpose/u);
+  assert.match(overview, /≤60 chars/u);
+  assert.match(overview, /no unasked dates\/tech\/implementation\/results/u);
 });
 
 test("NLI schemas remain parseable and reserve answer fields for answer_portfolio", async () => {

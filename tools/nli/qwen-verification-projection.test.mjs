@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { loadNliContext } from "./context.mjs";
@@ -6,7 +7,7 @@ import { prepareGroundedRequest } from "./evidence-selection.mjs";
 import { buildDetailedModelPayload } from "./model-client.mjs";
 import { sha256, verificationInputs } from "./qwen-verification-proof.mjs";
 
-const context = await loadNliContext(new URL("../../", import.meta.url).pathname);
+const context = await loadNliContext(fileURLToPath(new URL("../../", import.meta.url)));
 const REQUEST_BYTE_CEILINGS = Object.freeze({
   navigation: 18000,
   glossary: 21000,
@@ -63,46 +64,41 @@ test("six verification fixtures retain only intent-authoritative grounding", () 
 
   const navigation = byId.get("navigation");
   assert.ok(navigation.candidateSources.length > 0);
-  assert.equal(navigation.grounded.targets.length, 21);
-  assert.equal(navigation.grounded.terms.length, 33);
+  assert.equal(navigation.grounded.targets.length, context.routes.targets.length);
+  assert.equal(navigation.grounded.terms.length, context.glossary.terms.length);
 
   const glossary = byId.get("glossary");
   assert.ok(glossary.candidateSources.length > 0);
-  assert.equal(glossary.grounded.targets.length, 21);
-  assert.equal(glossary.grounded.terms.length, 33);
+  assert.equal(glossary.grounded.targets.length, context.routes.targets.length);
+  assert.equal(glossary.grounded.terms.length, context.glossary.terms.length);
 
   const projectSummary = byId.get("project-summary");
   assert.deepEqual(new Set(projectSummary.candidateSources.map((card) => card.id)), new Set([
-    "project-catequest", "project-catequest-ci", "project-catequest-ai", "project-catequest-n1"
+    "project-catequest", "project-catequest-ai", "project-catequest-n1"
   ]));
   const overviewN1 = projectSummary.candidateSources.find((card) => card.id === "project-catequest-n1");
-  assert.ok(overviewN1.evidence.includes("54회에서 1회"));
-  assert.ok(!overviewN1.evidence.includes("263ms"));
+  assert.ok(overviewN1.evidence.includes("53→1회"));
+  assert.ok(overviewN1.evidence.includes("프로젝트 종료 후"));
   const section = byId.get("section-explanation");
   assert.deepEqual(section.candidateSources.map((card) => card.id), ["project-catequest-n1"]);
-  assert.ok(section.candidateSources[0].evidence.startsWith("N+1 쿼리: DTO Projection, JPQL.\n"));
-  for (const witness of ["DTO Projection", "JPQL", "54회에서 1회"])
+  assert.ok(section.candidateSources[0].evidence.includes("일기·태그 목록의 N+1 조회 개선"));
+  for (const witness of ["DiaryFlatProjection", "LinkedHashMap", "53→1회"])
     assert.ok(section.candidateSources[0].evidence.includes(witness), witness);
   assert.deepEqual(new Set(byId.get("comparison").candidateSources.map((card) => card.id)),
-    new Set(["project-catequest-n1", "project-bookking-https"]));
+    new Set(["project-catequest-n1", "project-bookking-lock"]));
   const comparisonCards = byId.get("comparison").candidateSources;
-  assert.equal(byId.get("comparison").grounded.targets.length, 21);
-  assert.equal(byId.get("comparison").grounded.terms.length, 33);
-  assert.deepEqual(new Set(comparisonCards.map((card) => card.label)), new Set(["N+1 쿼리", "HTTPS 지연"]));
-  assert.ok(comparisonCards.find((card) => card.id === "project-catequest-n1").evidence
-    .startsWith("CateQuest\nN+1 쿼리\n54 -> 1\n"));
-  assert.ok(comparisonCards.find((card) => card.id === "project-bookking-https").evidence
-    .startsWith("Bookking\nHTTPS 지연\n200ms에서 30ms\n"));
+  assert.equal(byId.get("comparison").grounded.targets.length, context.routes.targets.length);
+  assert.equal(byId.get("comparison").grounded.terms.length, context.glossary.terms.length);
   const comparisonEvidence = comparisonCards.map((card) => card.evidence).join("\n");
-  for (const witness of ["54회에서 1회", "200ms", "30ms"])
+  for (const witness of ["53→1회", "79,200", "52,908", "6,852", "로컬"])
     assert.ok(comparisonEvidence.includes(witness), witness);
-  assert.ok(!comparisonEvidence.includes("263ms"));
+  assert.ok(comparisonEvidence.includes("프로젝트 종료 후"));
 
   const weather = byId.get("out-of-scope");
   assert.deepEqual(weather.prepared.obligations.expectedIntents, ["navigate", "define_term", "answer_portfolio", "reject_out_of_scope"]);
   assert.ok(weather.candidateSources.length > 0);
-  assert.equal(weather.grounded.targets.length, 21);
-  assert.equal(weather.grounded.terms.length, 33);
+  assert.equal(weather.grounded.targets.length, context.routes.targets.length);
+  assert.equal(weather.grounded.terms.length, context.glossary.terms.length);
 
 });
 

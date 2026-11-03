@@ -10,7 +10,7 @@ import { distribution, observed } from "./eval-report.mjs";
 import { EVALUATION_HTTP_TIMEOUT_MS, QWEN_TIMEOUT_MS } from "./timeout-policy.mjs";
 
 const ordinaryMessages = ["CateQuest 요약해줘", "CateQuest N+1 해결 요약해줘", "자기소개해줘",
-  "연락처를 알고 싶어.", "P95가 뭐야?", "이 프로젝트에서 비용은 어떻게 줄였어?"];
+  "연락처를 알고 싶어.", "P95가 뭐야?", "이 프로젝트에서 빌드 지연은 어떻게 줄였어?"];
 
 export function ordinaryCases(cases) {
   return ordinaryMessages.map((message) => {

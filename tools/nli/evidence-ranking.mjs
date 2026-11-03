@@ -33,7 +33,7 @@ export function rankEvidenceCandidates(index, request = {}) {
     const messageScore = scoreTerms(card, messageTerms);
     const historyScore = scoreHistory(card, historyTerms);
     // Section titles identify actual cases; page outlines may repeat their words.
-    const titleScore = card.type === "section" ? scoreTerms({ evidence: card.label }, messageTerms) : 0;
+    const titleScore = card.type === "section" ? scoreTerms({ evidence: card.titleText || card.label }, messageTerms) : 0;
     return { card, order, titleScore, semanticScore: messageScore + historyScore };
   });
   const hasExplicitMetricRequest = isExplicitMetricRequest(messageTerms);
@@ -170,7 +170,7 @@ function hasOptimizationTerm(term) {
 }
 
 function hasOptimizationEvidence(card) {
-  return optimizationEvidencePattern.test(searchText(card));
+  return optimizationEvidencePattern.test(card.optimizationText ?? searchText(card));
 }
 
 function compareCandidates(left, right) {

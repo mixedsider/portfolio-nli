@@ -1,34 +1,31 @@
-import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
-import test from "node:test";
-
-const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-const portfolioDataPath = join(projectRoot, "data", "portfolio.js");
-
-test("프로필 소개가 백엔드·인프라 포지셔닝과 직접 제작·공유 강점을 함께 전달한다", async () => {
-  const source = await readFile(portfolioDataPath, "utf8");
-
-  assert.match(source, /headline:\s*"대용량 데이터 흐름과 운영 안정성을 설계하는 Java·Spring 백엔드 개발자"/);
-  assert.match(source, /백엔드·인프라·성능 최적화·CI\/CD 자동화를 연결해 병목과 장애 원인을 추적하고/);
-  assert.match(source, /필요한 문제는 직접 도구로 해결하고, 학습한 내용은 동료 및 멘티와 공유합니다/);
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import vm from 'node:vm';
+import test from 'node:test';
+const source = await readFile(new URL('../data/portfolio.js', import.meta.url), 'utf8');
+const sandbox = { window: {} }; vm.runInNewContext(source, sandbox);
+const data = JSON.parse(JSON.stringify(sandbox.window.PORTFOLIO_DATA));
+test('rev3.5: 공개 자료는 대표 프로젝트 3개와 검증된 7개 사례만 제공한다', () => {
+ assert.deepEqual(data.projects.map(p=>p.id), ['makertion','catequest','bookking']);
+ assert.equal(data.projects.flatMap(p=>p.sections).length, 7);
+ assert.ok(data.profile.contacts.some(c=>c.href==='mailto:dmstjd0812@naver.com'));
+ for(const metric of data.metrics) assert.ok(data.projects.flatMap(p=>p.sections).some(s=>s.id===metric.target));
+ assert.doesNotMatch(source, /54 -> 1|120\.45ms|결함 탐지율|1\.44%|mixeddev0812@gmail/);
 });
-
-test("접힌 포트폴리오 도우미가 프로필 헤드라인을 가리지 않는다", async () => {
-  const stylePath = join(projectRoot, "styles.css");
-  const source = await readFile(stylePath, "utf8");
-
-  assert.match(source, /\.nli-command\.is-collapsed\s+\.nli-launcher\s*\{[\s\S]*?width:\s*52px;/);
-  assert.match(source, /\.nli-command\.is-collapsed\s+\.nli-launcher\s+span\s*\{\s*display:\s*none;/);
-  assert.match(source, /\.nli-command\.is-collapsed\s*\{\s*top:\s*auto;\s*right:\s*0;/);
+test('rev3.5: 정합성과 요청 성공, 튜닝과 앱 확장을 구분한다', () => {
+ const db=data.projects[0].sections.find(s=>s.id==='project-makertion-db');
+ assert.match(db.result, /로컬/); assert.match(db.result,/앱/); assert.match(db.result,/튜닝/);
+ assert.ok(db.measurementNotes.some(n=>n.includes('30초')&&n.includes('1회')));
+ const lock=data.projects[2].sections[0];
+ for(const number of ['79,200','52,908','19,440','6,852']) assert.ok(lock.result.includes(number));
+ assert.match(lock.result,/우선 검토/);
+ assert.equal(lock.tables[0].headers.length,4);
 });
-
-test("Bookking 성능 표가 DB 비관적 락을 기준으로 Redis Fair Lock의 트레이드오프를 표시한다", async () => {
-  const source = await readFile(portfolioDataPath, "utf8");
-
-  assert.match(source, /\["평균 응답 시간", "208ms", "226ms", "\+18ms", "약 8\.65% 증가"\]/);
-  assert.match(source, /\["초당 처리량 \(TPS\)", "229\.36 req\/sec", "211\.38 req\/sec", "-17\.98 req\/sec", "약 7\.84% 감소"\]/);
-  assert.doesNotMatch(source, /약 7\.96% 증가/);
-  assert.doesNotMatch(source, /약 8\.5% 감소/);
+test('rev3.5: 학습 모델의 출력 한계와 후속 N+1 시험 조건을 유지한다',()=>{
+ const [n1,ai]=data.projects[1].sections;
+ assert.match(n1.result,/프로젝트 종료 후/); assert.match(n1.result,/PostgreSQL 17/);
+ assert.match(n1.result,/53→1/); assert.match(n1.result,/7\.785→1\.557/);
+ assert.match(ai.result,/정량 품질 평가/); assert.equal(ai.examples.length,3);
+ assert.equal(data.experience.tools.length,3);
+ assert.equal(data.experience.certifications.length,3);
 });

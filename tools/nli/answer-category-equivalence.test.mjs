@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { isAnswerSupportedBySelectedEvidence as supported } from "./answer-evidence-support.mjs";
@@ -58,11 +59,11 @@ test("preserves baseline accepted claims even where legacy thresholds are permis
   assert.equal(supported("백엔드 구성 관련 Redis 서비스 운영합니다 Kubernetes", `${evidence} Redis`), true);
 });
 
-const context = await loadNliContext(new URL("../../", import.meta.url).pathname);
+const context = await loadNliContext(fileURLToPath(new URL("../../", import.meta.url)));
 const message = "CateQuest 프로젝트를 요약해줘";
 const original = prepareGroundedRequest(message, context);
 const prepared = { ...original, candidateSources: original.candidateSources.map((card) => ({
-  ...card, evidence: `${card.evidence}\n${evidence}`
+  ...card, evidence: `CateQuest ${evidence}`
 })) };
 const proposal = (answer) => ({ intent: "answer_portfolio", confidence: 1,
   answer, sourceIds: ["project-catequest"] });

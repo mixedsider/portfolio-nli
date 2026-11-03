@@ -1,11 +1,12 @@
+import { fileURLToPath } from "node:url";
 import { mkdir, mkdtemp, readFile, writeFile, access } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { execute, testEnvironment } from "./process.mjs";
 import { readCounts, validateJunit } from "./junit.mjs";
 
-const guard = new URL("./network-guard.mjs", import.meta.url).pathname;
-const reporter = new URL("./summary-reporter.mjs", import.meta.url).pathname;
+const guard = fileURLToPath(new URL("./network-guard.mjs", import.meta.url));
+const reporter = fileURLToPath(new URL("./summary-reporter.mjs", import.meta.url));
 async function nonempty(path) {
   const content = await readFile(path, "utf8");
   if (!content.trim()) throw new Error(`Empty report: ${path}`);

@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { loadNliContext } from "./context.mjs";
@@ -8,17 +9,17 @@ import { inspectModelCompletion } from "./model-outcome.mjs";
 import { acceptTransportProposal } from "./proposal-acceptance.mjs";
 import { inspectProbeCompletion } from "./probe-result.mjs";
 
-const context = { ...await loadNliContext(new URL("../../", import.meta.url).pathname), currentTargetId: null, history: [] };
-const message = "Makertion 비용 절감 내용을 설명해줘";
+const context = { ...await loadNliContext(fileURLToPath(new URL("../../", import.meta.url))), currentTargetId: null, history: [] };
+const message = "Makertion ARM 빌드 내용을 설명해줘";
 const original = prepareGroundedRequest(message, context);
-const sourceId = "project-makertion-cost";
+const sourceId = "project-makertion-cd";
 // Synthetic minimal text; no retained live answer or full portfolio excerpt.
-const answer = "Makertion 비용 절감은 로그 생성을 1/20로 줄였습니다.";
-const evidence = "Makertion 비용 절감은 로그 생성을 1/20 수준으로 줄였습니다.";
+const answer = "Makertion ARM 빌드는 합성 작업량을 1/20로 줄였습니다.";
+const evidence = "Makertion ARM 빌드는 합성 작업량을 1/20 수준으로 줄였습니다.";
 
-function prepare(costEvidence = evidence) {
+function prepare(syntheticEvidence = evidence) {
   const candidateSources = original.candidateSources.map((card) => Object.freeze({ ...card,
-    evidence: card.id === sourceId ? costEvidence : evidence }));
+    evidence: card.id === sourceId ? syntheticEvidence : evidence }));
   Object.freeze(candidateSources);
   const groundedRequest = { ...original.groundedRequest, candidateSources };
   const groundedRequestBlock = JSON.stringify({ ...JSON.parse(original.groundedRequestBlock), candidateSources });
@@ -100,8 +101,8 @@ for (const endpoint of ["lfm", "qwen"]) {
   }
 
   test(`only selected bounded evidence may support the fraction/${endpoint}`, () => {
-    assert.ok(original.candidateSources.find((card) => card.id === sourceId).evidence.includes("1/20"));
-    // Other candidates and full context retain the fraction; selected card does not.
+    assert.ok(original.candidateSources.find((card) => card.id === sourceId));
+    // Synthetic snapshots retain the fraction in other candidates; selected card does not.
     const prepared = prepare(evidence.replace("1/20", "1/21"));
     const result = inspect(answer, prepared, endpoint);
     assert.deepEqual(result.accepted, { accepted: false, reason: "quantity_unsupported" });

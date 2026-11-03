@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createNliServer } from "../nli-gateway.mjs";
@@ -9,7 +10,7 @@ import { rejectResponse } from "./responses.mjs";
 import { UpstreamUnavailableError } from "./request-deadline.mjs";
 import * as decisionSchema from "./decision-schema.mjs";
 
-const context = await loadNliContext(new URL("../../", import.meta.url).pathname);
+const context = await loadNliContext(fileURLToPath(new URL("../../", import.meta.url)));
 const config = createGatewayConfig({ NLI_QWEN_ENABLED: "false" });
 const clarification = rejectResponse("비교하거나 설명할 대상을 더 구체적으로 알려주세요.");
 // Characterized using HEAD 230ad7e preparation/resolver from git show and fake

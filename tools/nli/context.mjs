@@ -58,10 +58,12 @@ export function buildContextBlock(context) {
     description: project.description,
     tags: project.tags,
     focus: project.focus,
-    sections: project.sections.map((section) => ({ id: section.id, title: section.title, result: section.result }))
+    metadata: project.metadata, links: project.links,
+    sections: project.sections.map((section) => ({ id: section.id, title: section.title, result: section.result,
+      measurementNotes: section.measurementNotes, examples: section.examples, tables: section.tables }))
   }));
 
-  return JSON.stringify({ profile: context.portfolio.profile, metrics: context.portfolio.metrics, routes, terms, projects });
+  return JSON.stringify({ profile: context.portfolio.profile, metrics: context.portfolio.metrics, experience: context.portfolio.experience, routes, terms, projects });
 }
 
 export function buildGroundedRequestBlock(request = {}) {

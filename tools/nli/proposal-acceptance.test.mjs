@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { loadNliContext } from "./context.mjs";
@@ -6,12 +7,12 @@ import { canonicalizeModelResponse } from "./validation.mjs";
 import { resolveLocally } from "./router.mjs";
 import { acceptProposal, acceptTransportProposal, isCompatibleLocalFallback } from "./proposal-acceptance.mjs";
 
-const context = await loadNliContext(new URL("../../", import.meta.url).pathname);
+const context = await loadNliContext(fileURLToPath(new URL("../../", import.meta.url)));
 const comparison = prepareGroundedRequest("CateQuest와 Bookking의 성능 개선을 비교해줘", {
   ...context, currentTargetId: "project-makertion-db"
 });
-const sourceIds = ["project-catequest-n1", "project-bookking-https"];
-const complete = "CateQuest는 DTO Projection과 JPQL 조인으로 DB 접근을 54회에서 1회로 줄였습니다. Bookking은 HTTPS 응답 지연을 200ms에서 30ms로 줄였습니다.";
+const sourceIds = ["project-catequest-n1", "project-bookking-lock"];
+const complete = "CateQuest는 SQL 실행 수를 53회에서 1회로 줄였습니다. Bookking은 Facade 적용 후 재고 불일치가 발생하지 않았습니다.";
 const proposal = (answer = complete, confidence = 0.01) => ({ intent: "answer_portfolio", confidence, answer, sourceIds });
 
 test("navigation rejects a synthetic answer field but accepts the explicitly stripped fixture", () => {
@@ -83,10 +84,10 @@ test("seven-sentence synthetic overview rejects an unmatched verb despite suppor
   const card = prepared.candidateSources.find((source) => source.id === "project-catequest");
   const overview = `${card.label}: ${context.projectByTargetId.get(card.id).description}.`;
   const evidence = prepared.candidateSources.map((source) => source.evidence).join("\n");
-  for (const anchor of ["PyTorch", "LLM"]) assert.ok(evidence.includes(anchor));
+  for (const anchor of ["PyTorch", "LoRA"]) assert.ok(evidence.includes(anchor));
   assert.equal(evidence.includes("구현했습니다"), false);
   const candidate = { intent: "answer_portfolio", confidence: 1,
-    answer: [...Array(5).fill(overview), "PyTorch LLM 구현했습니다.", overview].join(" "),
+    answer: [...Array(5).fill(overview), "PyTorch LoRA 구현했습니다.", overview].join(" "),
     sourceIds: prepared.candidateSources.map((source) => source.id) };
   assert.equal(candidate.answer.split(/\.\s*|\n/u).filter(Boolean).length, 7);
   assert.deepEqual(acceptProposal(candidate, context, prepared, message), { accepted: false, reason: "proposal_invalid" });
@@ -125,10 +126,10 @@ test("both stage adapters accept complete low-confidence answers without mutatin
 test("union sources cannot rescue missing clauses, swapped numbers or wrong-project facts", () => {
   for (const answer of [
     complete.split(". ")[0] + ".",
-    complete.replace("54회에서 1회", "200ms에서 30ms"),
-    "CateQuest는 HTTPS 응답 지연을 200ms에서 30ms로 줄였습니다. Bookking은 DTO Projection과 JPQL 조인으로 DB 접근을 54회에서 1회로 줄였습니다.",
-    "CateQuest와 Bookking은 DB 접근을 54회에서 1회로 줄였습니다.",
-    `${complete} Bookking은 HTTPS 응답 지연을 999ms로 줄였습니다.`
+    complete.replace("53회에서 1회", "52,908건"),
+    "CateQuest는 Facade 적용 후 재고 불일치가 발생하지 않았습니다. Bookking은 SQL 실행 수를 53회에서 1회로 줄였습니다.",
+    "CateQuest와 Bookking은 DB 접근을 53회에서 1회로 줄였습니다.",
+    `${complete} Bookking은 성공 999건을 기록했습니다.`
   ]) assert.equal(acceptProposal(proposal(answer, 0.99), context, comparison).accepted, false, answer);
 });
 
@@ -214,37 +215,37 @@ test("explicit method and before-after quantity requests require quantitative re
     answer: "N+1 쿼리: DTO Projection, JPQL.", sourceIds }, context, prepared, message).reason,
   "requested_quantity_missing");
   assert.equal(acceptProposal({ intent: "answer_portfolio", confidence: 1,
-    answer: "N+1 쿼리: DTO Projection과 JPQL로 54회에서 1회로 줄였습니다.", sourceIds }, context, prepared, message).accepted,
+    answer: "N+1 쿼리: DTO Projection과 JPQL로 53회에서 1회로 줄였습니다.", sourceIds }, context, prepared, message).accepted,
   true);
   assert.equal(acceptProposal({ intent: "answer_portfolio", confidence: 1,
-    answer: "N+1 쿼리: DTO Projection과 JPQL로 263ms에서 64ms로 줄였습니다.", sourceIds }, context, prepared, message).reason,
+    answer: "N+1 쿼리: DTO Projection과 JPQL로 7.785ms에서 1.557ms로 줄였습니다.", sourceIds }, context, prepared, message).reason,
   "requested_quantity_missing");
 
   const durationMessage = "CateQuest N+1 해결 방법과 응답 시간 전후를 설명해줘";
   const duration = prepareGroundedRequest(durationMessage, context);
   assert.equal(acceptProposal({ intent: "answer_portfolio", confidence: 1,
-    answer: "N+1 쿼리: DTO Projection과 JPQL로 54회에서 1회로 줄였습니다.", sourceIds }, context, duration, durationMessage).reason,
+    answer: "N+1 쿼리: DTO Projection과 JPQL로 53회에서 1회로 줄였습니다.", sourceIds }, context, duration, durationMessage).reason,
   "requested_quantity_missing");
   assert.equal(acceptProposal({ intent: "answer_portfolio", confidence: 1,
-    answer: "N+1 쿼리: DTO Projection과 JPQL로 263ms에서 64ms로 줄였습니다.", sourceIds }, context, duration, durationMessage).accepted,
+    answer: "N+1 쿼리: DTO Projection과 JPQL로 7.785ms에서 1.557ms로 줄였습니다.", sourceIds }, context, duration, durationMessage).accepted,
   true);
 
   for (const [message, acceptedAnswer, rejectedAnswer] of [
     ["CateQuest N+1 쿼리 응답 시간 전후를 설명해줘",
-      "N+1 쿼리: DTO Projection과 JPQL로 263ms에서 64ms로 줄였습니다.",
-      "N+1 쿼리: DTO Projection과 JPQL로 54회에서 1회로 줄였습니다."],
+      "N+1 쿼리: DTO Projection과 JPQL로 7.785ms에서 1.557ms로 줄였습니다.",
+      "N+1 쿼리: DTO Projection과 JPQL로 53회에서 1회로 줄였습니다."],
     ["CateQuest N+1 몇 번의 쿼리였어?",
-      "N+1 쿼리: DTO Projection과 JPQL로 54회에서 1회로 줄였습니다.",
-      "N+1 쿼리: DTO Projection과 JPQL로 263ms에서 64ms로 줄였습니다."],
+      "N+1 쿼리: DTO Projection과 JPQL로 53회에서 1회로 줄였습니다.",
+      "N+1 쿼리: DTO Projection과 JPQL로 7.785ms에서 1.557ms로 줄였습니다."],
     ["CateQuest N+1 응답은 몇 ms였어?",
-      "N+1 쿼리: DTO Projection과 JPQL로 263ms에서 64ms로 줄였습니다.",
-      "N+1 쿼리: DTO Projection과 JPQL로 54회에서 1회로 줄였습니다."],
+      "N+1 쿼리: DTO Projection과 JPQL로 7.785ms에서 1.557ms로 줄였습니다.",
+      "N+1 쿼리: DTO Projection과 JPQL로 53회에서 1회로 줄였습니다."],
     ["CateQuest N+1 응답은 몇 s였어?",
-      "N+1 쿼리: DTO Projection과 JPQL로 263ms에서 64ms로 줄였습니다.",
-      "N+1 쿼리: DTO Projection과 JPQL로 54회에서 1회로 줄였습니다."],
+      "N+1 쿼리: DTO Projection과 JPQL로 7.785ms에서 1.557ms로 줄였습니다.",
+      "N+1 쿼리: DTO Projection과 JPQL로 53회에서 1회로 줄였습니다."],
     ["CateQuest N+1 응답은 몇 분이었어?",
-      "N+1 쿼리: DTO Projection과 JPQL로 263ms에서 64ms로 줄였습니다.",
-      "N+1 쿼리: DTO Projection과 JPQL로 54회에서 1회로 줄였습니다."]
+      "N+1 쿼리: DTO Projection과 JPQL로 7.785ms에서 1.557ms로 줄였습니다.",
+      "N+1 쿼리: DTO Projection과 JPQL로 53회에서 1회로 줄였습니다."]
   ]) {
     const request = prepareGroundedRequest(message, context);
     assert.equal(acceptProposal({ intent: "answer_portfolio", confidence: 1,
