@@ -63,7 +63,7 @@ test("profile uses one Qwen completion with real portfolio sources", async (t) =
   assert.equal(body.intent, "answer_portfolio");
   assert.deepEqual(body.sources.map((source) => source.id), ["about"]);
   assert.ok(body.sources.every((source) => typeof source.label === "string" && source.label.length > 0));
-  assert.match(body.answer, /Backend & Infra Developer/);
+  assert.match(body.answer, /Java · Spring Backend Developer/);
   assert.deepEqual(await app.stats(), { lfm: 0, qwen: 1 });
 });
 
@@ -77,8 +77,10 @@ test("complex comparison resolves directly through Qwen", async (t) => {
   // Then both projects are grounded and one real HTTP call reached Qwen.
   assert.equal(response.status, 200);
   assert.equal(body.intent, "answer_portfolio");
-  assert.deepEqual(body.sources.map((source) => source.id).sort(), ["project-bookking-https", "project-catequest-n1"]);
+  assert.deepEqual(body.sources.map((source) => source.id).sort(), ["project-bookking-lock", "project-catequest-n1"]);
   assert.match(body.answer, /Bookking/);
+  assert.match(body.answer, /53회에서 1회/);
+  assert.match(body.answer, /Facade/);
   assert.deepEqual(await app.stats(), { lfm: 0, qwen: 1 });
 });
 

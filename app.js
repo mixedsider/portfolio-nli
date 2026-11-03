@@ -11,6 +11,27 @@ const toneMap = {
 const focusSet = ["All", ...new Set(data.projects.flatMap((project) => project.focus))];
 let currentFilter = "All";
 
+function escapeText(value = "") {
+  return String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+}
+
+function safeHref(value) {
+  if (typeof value !== "string" || !value.trim()) return "";
+  try {
+    const url = new URL(value, window.location.href);
+    return ["http:", "https:", "mailto:", "tel:"].includes(url.protocol) ? escapeText(value) : "";
+  } catch {
+    return "";
+  }
+}
+
+function renderLink(label, href, className = "") {
+  const safe = safeHref(href);
+  if (!safe) return `<span>${escapeText(label)}</span>`;
+  const external = /^https?:/i.test(href);
+  return `<a class="${className}" href="${safe}"${external ? ' target="_blank" rel="noreferrer"' : ""}>${escapeText(label)}${external ? ' <span aria-hidden="true">↗</span>' : ""}</a>`;
+}
+
 function initProfile() {
   $("[data-profile-summary]").textContent = data.profile.summary;
   $("[data-profile-role]").textContent = data.profile.role;
@@ -20,10 +41,8 @@ function initProfile() {
   const contactList = $("[data-contact-list]");
   contactList.innerHTML = data.profile.contacts
     .map((contact) => {
-      const value = contact.href
-        ? `<a href="${contact.href}" target="${contact.href.startsWith("http") ? "_blank" : "_self"}" rel="noreferrer">${contact.value}</a>`
-        : contact.value;
-      return `<div><dt>${contact.label}</dt><dd>${value}</dd></div>`;
+      const value = contact.href ? renderLink(contact.value, contact.href) : escapeText(contact.value);
+      return `<div><dt>${escapeText(contact.label)}</dt><dd>${value}</dd></div>`;
     })
     .join("");
 }
@@ -34,10 +53,11 @@ function initMetrics() {
     .map(
       (metric) => `
         <article class="metric-card" style="--accent: ${toneMap[metric.tone] || toneMap.blue}">
-          <button type="button" data-scroll-target="${metric.target}">
-            <span class="metric-label">${metric.label}</span>
-            <span class="metric-value">${metric.value}</span>
-            <span class="metric-caption">${metric.caption}</span>
+          <button type="button" data-scroll-target="${escapeText(metric.target)}">
+            <span class="metric-label">${escapeText(metric.label)}</span>
+            <span class="metric-value">${escapeText(metric.value)}</span>
+            <span class="metric-caption">${escapeText(metric.caption)}</span>
+            <span class="metric-more">사례에서 확인 <span aria-hidden="true">↗</span></span>
           </button>
         </article>
       `
@@ -50,12 +70,29 @@ function initFilters() {
   filterTabs.innerHTML = focusSet
     .map(
       (focus) => `
-        <button type="button" class="${focus === currentFilter ? "is-active" : ""}" data-filter="${focus}">
-          ${focus}
+        <button type="button" class="${focus === currentFilter ? "is-active" : ""}" data-filter="${escapeText(focus)}" aria-pressed="${focus === currentFilter}">
+          ${focus === "All" ? "전체" : escapeText(focus)}
         </button>
       `
     )
     .join("");
+}
+
+function initProjectOverview() {
+  $("[data-project-overview]").innerHTML = data.projects.map((project, index) => `
+    <article class="overview-card">
+      <div class="overview-topline"><span class="overview-number">0${index + 1}</span><span>${escapeText(project.period)}</span></div>
+      <h3>${escapeText(project.title)}</h3>
+      <p>${escapeText(project.description)}</p>
+      <div class="overview-focus">${project.focus.map((focus) => `<span>${escapeText(focus)}</span>`).join("")}</div>
+      <button type="button" data-scroll-target="project-${escapeText(project.id)}">${project.sections.length}개 문제 해결 사례 <span aria-hidden="true">↗</span></button>
+    </article>
+  `).join("");
+}
+
+function renderProjectMetadata(metadata = []) {
+  if (!metadata.length) return "";
+  return `<dl class="project-metadata">${metadata.map((item) => `<div><dt>${escapeText(item.label)}</dt><dd>${escapeText(item.value)}</dd></div>`).join("")}</dl>`;
 }
 
 function renderProjects() {
@@ -68,26 +105,28 @@ function renderProjects() {
   projectList.innerHTML = filteredProjects
     .map(
       (project) => `
-        <article class="project-card" id="project-${project.id}" data-project-card>
+        <article class="project-card" id="project-${escapeText(project.id)}" data-project-card>
           <div class="project-top">
             <div>
               <div class="project-title-row">
-                <h3>${project.title}</h3>
-                <span class="period-pill">${project.period}</span>
+                <h3>${escapeText(project.title)}</h3>
+                <span class="period-pill">${escapeText(project.period)}</span>
               </div>
-              <p class="project-description">${project.description}</p>
+              <p class="project-description">${escapeText(project.description)}</p>
+              ${renderProjectMetadata(project.metadata)}
+              <div class="project-links">${(project.links || []).map((link) => renderLink(link.label, link.href, "text-link")).join("")}</div>
               <div class="project-chip-rows">
-                <div class="tag-row" aria-label="${project.title} 기술 스택">
-                  ${project.tags.map((tag) => `<span>${tag}</span>`).join("")}
+                <div class="tag-row" aria-label="${escapeText(project.title)} 기술 스택">
+                  ${project.tags.map((tag) => `<span>${escapeText(tag)}</span>`).join("")}
                 </div>
-                <div class="focus-row" aria-label="${project.title} 주요 영역">
-                  ${project.focus.map((focus) => `<span>${focus}</span>`).join("")}
+                <div class="focus-row" aria-label="${escapeText(project.title)} 주요 영역">
+                  ${project.focus.map((focus) => `<span>${escapeText(focus)}</span>`).join("")}
                 </div>
               </div>
             </div>
           </div>
           <div class="project-sections">
-            ${project.sections.map(renderCaseBlock).join("")}
+            ${project.sections.map((section, index) => renderCaseBlock(section, index)).join("")}
           </div>
         </article>
       `
@@ -95,24 +134,29 @@ function renderProjects() {
     .join("");
 }
 
-function renderCaseBlock(section) {
+function renderCaseBlock(section, index) {
   const layoutClass = section.imageLayout === "stacked" ? "has-stacked-images" : "";
+  const resultItems = Array.isArray(section.resultDetails) ? section.resultDetails : section.resultDetails ? [section.resultDetails] : [];
+  const additionalResults = resultItems.filter((item) => !String(section.result || "").includes(String(item).trim()));
 
   return `
-    <section class="case-block ${layoutClass}" id="${section.id}" data-case-block>
-      <div>
-        <h4>${section.title}</h4>
+    <section class="case-block ${layoutClass}" id="${escapeText(section.id)}" data-case-block>
+      <div class="case-heading">
+        <p class="case-number">CASE 0${index + 1}</p>
+        <h4>${escapeText(section.title)}</h4>
       </div>
       <div>
-        <p class="case-result">${section.result}</p>
+        <p class="case-result"><span class="case-result-label">결과</span>${escapeText(section.result)}</p>
         <div class="case-copy">
-          ${renderCaseStep("Problem", section.problem)}
-          ${renderCaseStep("Analyze", section.analyze)}
-          ${renderCaseStep("Action", section.action)}
-          ${renderCaseStep("Result", section.resultDetails)}
+          ${renderCaseStep("문제", section.problem)}
+          ${renderCaseStep("분석", section.analyze)}
+          ${renderCaseStep("행동", section.action)}
+          ${renderCaseStep("결과", additionalResults)}
         </div>
         ${renderCaseTables(section.tables)}
         ${renderCaseImages(section.images, section.imageLayout)}
+        ${renderCaseExamples(section.examples)}
+        ${renderMeasurementNotes(section.measurementNotes)}
       </div>
     </section>
   `;
@@ -126,10 +170,20 @@ function renderCaseStep(label, content) {
     <div class="case-step">
       <strong>${label}</strong>
       <ul>
-        ${items.map((item) => `<li>${item}</li>`).join("")}
+        ${items.map((item) => `<li>${escapeText(item)}</li>`).join("")}
       </ul>
     </div>
   `;
+}
+
+function renderMeasurementNotes(notes = []) {
+  if (!notes.length) return "";
+  return `<aside class="measurement-notes" aria-label="검증 조건과 한계"><h5>검증 조건과 한계</h5><ul>${notes.map((note) => `<li>${escapeText(note)}</li>`).join("")}</ul></aside>`;
+}
+
+function renderCaseExamples(examples = []) {
+  if (!examples.length) return "";
+  return `<div class="case-examples"><h5>실제 출력 예시</h5><ol>${examples.map((example) => `<li>${escapeText(example)}</li>`).join("")}</ol></div>`;
 }
 
 function renderCaseTables(tables = []) {
@@ -141,12 +195,12 @@ function renderCaseTables(tables = []) {
         .map(
           (table) => `
             <figure class="case-table">
-              <figcaption>${table.caption}</figcaption>
-              <div class="table-scroll">
+              <figcaption>${escapeText(table.caption)}</figcaption>
+              <div class="table-scroll" tabindex="0" role="region" aria-label="${escapeText(table.caption)} · 가로 스크롤 가능">
                 <table>
                   <thead>
                     <tr>
-                      ${table.headers.map((header) => `<th scope="col">${header}</th>`).join("")}
+                      ${table.headers.map((header) => `<th scope="col">${escapeText(header)}</th>`).join("")}
                     </tr>
                   </thead>
                   <tbody>
@@ -154,7 +208,7 @@ function renderCaseTables(tables = []) {
                       .map(
                         (row) => `
                           <tr>
-                            ${row.map((cell) => `<td>${cell}</td>`).join("")}
+                            ${row.map((cell) => `<td>${escapeText(cell)}</td>`).join("")}
                           </tr>
                         `
                       )
@@ -179,13 +233,31 @@ function renderCaseImages(images = [], layout = "grid") {
         .map(
           (image) => `
             <figure>
-              <img src="${image.src}" alt="${image.alt}" loading="lazy" />
-              <figcaption>${image.alt}</figcaption>
+              <img src="${safeHref(image.src)}" alt="${escapeText(image.alt)}" ${Number.isSafeInteger(image.width) && image.width > 0 && Number.isSafeInteger(image.height) && image.height > 0 ? `width="${image.width}" height="${image.height}"` : ""} loading="lazy" />
+              <figcaption>${escapeText(image.alt)}</figcaption>
             </figure>
           `
         )
         .join("")}
     </div>
+  `;
+}
+
+function initExperience() {
+  const experience = data.experience;
+  if (!experience) return;
+  const mentoring = experience.mentoring;
+  const lists = [
+    ["학력·교육", experience.education],
+    ["수상", experience.awards],
+    ["자격", experience.certifications]
+  ];
+  $("[data-experience]").innerHTML = `
+    <div class="experience-grid">
+      ${mentoring ? `<article class="experience-card"><p class="eyebrow">Mentoring</p><h3>${escapeText(mentoring.title)}</h3><p class="experience-period">${escapeText(mentoring.period)}</p><p>${escapeText(mentoring.summary)}</p>${mentoring.href ? renderLink("멘토링 자료", mentoring.href, "text-link") : ""}</article>` : ""}
+      <article class="experience-card"><p class="eyebrow">Personal Tools</p><h3>필요한 도구를 직접 만듭니다</h3><ul class="tool-list">${(experience.tools || []).map((tool) => `<li><h4>${renderLink(tool.title, tool.href, "text-link")}</h4><p>${escapeText(tool.summary)}</p></li>`).join("")}</ul></article>
+    </div>
+    <div class="credential-grid">${lists.filter(([, items]) => items?.length).map(([title, items]) => `<article class="credential-card"><h3>${title}</h3><ul>${items.map((item) => `<li><strong>${escapeText(item.title)}</strong><span>${escapeText(item.period)}</span>${item.href ? renderLink("관련 자료", item.href, "text-link") : ""}</li>`).join("")}</ul></article>`).join("")}</div>
   `;
 }
 
@@ -257,8 +329,10 @@ function bindEvents() {
 function init() {
   initProfile();
   initMetrics();
+  initProjectOverview();
   initFilters();
   renderProjects();
+  initExperience();
   nliWidget.init();
   bindEvents();
 }

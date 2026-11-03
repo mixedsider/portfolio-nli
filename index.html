@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="이은성 백엔드 및 인프라 개발자 포트폴리오. CI/CD, 성능 최적화, 관측성, 백엔드 프로젝트를 소개합니다."
+      content="Java·Spring 백엔드 개발자 이은성의 포트폴리오. 직접 구현하고 검증한 프로젝트와 문제 해결 과정을 소개합니다."
     />
-    <title>이은성 | Backend & Infra Portfolio</title>
+    <title>이은성 | Java·Spring 백엔드 개발자</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -19,15 +19,15 @@
           <span class="brand-symbol">LE</span>
           <span>
             <strong>Lee EunSung</strong>
-            <small>Backend & Infra</small>
+            <small>Java · Spring Backend</small>
           </span>
         </a>
         <div class="nav-links">
-          <a href="#projects">Projects</a>
-          <a href="#metrics">Metrics</a>
-          <a href="#about">About</a>
+          <a href="#projects">프로젝트</a>
+          <a href="#metrics">핵심 결과</a>
+          <a href="#about">경험·교육</a>
         </div>
-        <a class="nav-contact" href="mailto:mixeddev0812@gmail.com">Contact</a>
+        <a class="nav-contact" href="mailto:dmstjd0812@naver.com">연락하기 ↗</a>
       </nav>
     </header>
 
@@ -35,15 +35,15 @@
       <section id="top" class="hero-section" aria-labelledby="hero-title">
         <div class="hero-grid">
           <div class="hero-copy">
-            <p class="eyebrow">Backend · Infra · Performance · Automation</p>
+            <p class="eyebrow">Lee EunSung · Backend Developer</p>
             <h1 id="hero-title">
-              <span class="hero-title-line">문제의 흐름을 읽고,</span>
-              <span class="hero-title-line">운영 가능한 구조로 바꾸는 개발자</span>
+              <span class="hero-title-line">Java·Spring 백엔드 개발자,</span>
+              <span class="hero-title-line">이은성입니다.</span>
             </h1>
             <p class="hero-summary" data-profile-summary></p>
             <div class="hero-actions">
-              <a class="primary-action" href="#projects">프로젝트 보기</a>
-              <a class="secondary-action" href="#metrics">성과 지표 보기</a>
+              <a class="primary-action" href="#project-overview">대표 프로젝트 보기 <span aria-hidden="true">↓</span></a>
+              <a class="secondary-action" href="https://github.com/mixedsider" target="_blank" rel="noreferrer">GitHub ↗</a>
             </div>
           </div>
           <aside class="hero-panel" aria-label="프로필 요약">
@@ -60,10 +60,20 @@
         </div>
       </section>
 
+      <section id="project-overview" class="section-shell overview-section" aria-labelledby="overview-title">
+        <div class="section-heading">
+          <p class="eyebrow">Selected Projects</p>
+          <h2 id="overview-title">직접 만든 서비스, 해결한 문제</h2>
+          <p>프로젝트의 맥락부터 구현 과정과 검증 결과까지 소개합니다.</p>
+        </div>
+        <div class="overview-grid" data-project-overview></div>
+      </section>
+
       <section id="metrics" class="section-shell metric-section" aria-labelledby="metrics-title">
         <div class="section-heading">
-          <p class="eyebrow">Measured Impact</p>
-          <h2 id="metrics-title">숫자로 검증한 개선</h2>
+          <p class="eyebrow">Results & Scope</p>
+          <h2 id="metrics-title">조건과 함께 보는 핵심 결과</h2>
+          <p>수치의 의미와 측정 범위는 각 사례에서 자세히 확인할 수 있습니다.</p>
         </div>
         <div class="metric-grid" data-metric-grid></div>
       </section>
@@ -72,7 +82,7 @@
         <div class="section-heading split-heading">
           <div>
             <p class="eyebrow">Project Cases</p>
-            <h2 id="projects-title">문제, 판단, 결과 중심의 프로젝트</h2>
+            <h2 id="projects-title">문제를 좁히고, 결과를 검증한 과정</h2>
           </div>
           <div class="filter-tabs" data-filter-tabs aria-label="프로젝트 필터"></div>
         </div>
@@ -80,26 +90,11 @@
       </section>
 
       <section id="about" class="section-shell about-section" aria-labelledby="about-title">
-        <div class="about-grid">
-          <div>
-            <p class="eyebrow">About Me</p>
-            <h2 id="about-title">직접 만들고, 검증하고, 공유합니다</h2>
-          </div>
-          <div class="about-columns">
-            <article>
-              <h3>직접 만드는 태도</h3>
-              <p>Claude Code Proxy, VoiceLog처럼 필요한 도구를 직접 만들어 생산성 문제를 풀어갑니다.</p>
-            </article>
-            <article>
-              <h3>근본 원인 중심</h3>
-              <p>장애와 병목을 단편 증상으로 보지 않고 시스템 흐름, 지표, 테스트로 원인을 좁혀갑니다.</p>
-            </article>
-            <article>
-              <h3>학습 공유</h3>
-              <p>한라 LLM 동아리 백엔드 멘토링을 진행하며 배운 내용을 팀과 커뮤니티에 공유합니다.</p>
-            </article>
-          </div>
+        <div class="section-heading">
+          <p class="eyebrow">Beyond Projects</p>
+          <h2 id="about-title">직접 만들고, 배우고, 공유합니다</h2>
         </div>
+        <div class="experience-content" data-experience></div>
       </section>
     </main>
 
@@ -158,7 +153,7 @@
     </aside>
 
     <footer class="site-footer">
-      <p>© 2026 Lee EunSung. Backend & Infra Portfolio.</p>
+      <p>© 2026 Lee EunSung · Backend Developer</p>
       <a href="#top">맨 위로</a>
     </footer>
 

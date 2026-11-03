@@ -1,10 +1,11 @@
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { loadNliContext } from "./context.mjs";
 import { buildEvidenceIndex } from "./evidence-cards.mjs";
 import { analyzeRequestObligations, getObligationSourceGroups } from "./request-obligations.mjs";
 
-const context = await loadNliContext(new URL("../../", import.meta.url).pathname);
+const context = await loadNliContext(fileURLToPath(new URL("../../", import.meta.url)));
 const index = buildEvidenceIndex(context);
 const analyze = (message, extra = {}, evidence = index) => analyzeRequestObligations(message, { ...context, ...extra }, evidence);
 
@@ -27,7 +28,7 @@ test("comparison overrides incidental current project and supports every particl
 });
 
 test("longest mentions and word boundaries never fabricate contained projects", () => {
-  assert.deepEqual(analyze("CateQuest CI 요약해줘").requiredSubjectIds, ["project-catequest-ci"]);
+  assert.deepEqual(analyze("CateQuest 질문 생성 요약해줘").requiredSubjectIds, ["project-catequest-ai"]);
   assert.deepEqual(analyze("SuperCateQuest와 Bookkingish 비교").requiredProjectIds, []);
   assert.equal(analyze("CateQuest Bookking 비교적 좋아").kind, "ordinary");
   assert.equal(analyze("CateQuest Bookking differenceMaker").kind, "ordinary");
@@ -69,8 +70,13 @@ test("grounded ambiguity requires alternative targets, not retrieved cards", () 
   assert.deepEqual(analyze("소개로 이동").ambiguousTargetIds, ["top", "about"]);
   assert.equal(analyze("소개로 이동", {}, []).kind, "ordinary");
   assert.equal(analyze("성능 개선 사례 목록").kind, "ordinary");
-  assert.equal(analyze("ALB로 이동").kind, "ambiguity");
-  assert.deepEqual(analyze("Bookking ALB로 이동").ambiguousTargetIds, []);
+  const targets = context.routes.targets.map(target => ["project-makertion-db", "project-catequest-n1"].includes(target.id)
+    ? { ...target, aliases: [...target.aliases, "중복 사례"] } : target);
+  const collisionContext = { ...context, routes: { ...context.routes, targets }, targetById: new Map(targets.map(t => [t.id, t])) };
+  const collision = analyzeRequestObligations("중복 사례로 이동", collisionContext, buildEvidenceIndex(collisionContext));
+  assert.equal(collision.kind, "ambiguity");
+  assert.deepEqual(collision.ambiguousTargetIds, ["project-makertion-db", "project-catequest-n1"]);
+  assert.deepEqual(analyze("Bookking Fair Lock로 이동").ambiguousTargetIds, []);
 });
 
 test("unanchored requests fail closed; missing evidence cannot cover named requests", () => {
@@ -138,9 +144,9 @@ test("one shared glossary alias cannot manufacture two resolved subjects", () =>
 
 test("fix1: independent cross-project sections survive either mention order", () => {
   for (const [message, sectionId] of [
-    ["Bookking과 CateQuest CI 비교해줘", "project-catequest-ci"],
-    ["CateQuest CI와 Bookking 비교해줘", "project-catequest-ci"],
-    ["CateQuest와 HTTPS 아키텍처 개선 비교해줘", "project-bookking-https"]
+    ["Bookking과 CateQuest 질문 생성 비교해줘", "project-catequest-ai"],
+    ["CateQuest 질문 생성와 Bookking 비교해줘", "project-catequest-ai"],
+    ["CateQuest와 락·트랜잭션 경계 개선과 세 가지 락 비교 비교해줘", "project-bookking-lock"]
   ]) {
     const result = analyze(message, { currentTargetId: "project-makertion" });
     assert.equal(result.kind, "comparison", message);
@@ -154,14 +160,14 @@ test("fix1: independent cross-project sections survive either mention order", ()
     const missingSection = index.filter((card) => card.targetId !== sectionId);
     assert.equal(analyze(message, {}, missingSection).coveragePossible, false);
   }
-  const scopedAlias = analyze("Bookking ALB로 이동");
+  const scopedAlias = analyze("Bookking Fair Lock로 이동");
   assert.deepEqual(scopedAlias.requiredProjectIds, ["project-bookking"]);
   assert.deepEqual(scopedAlias.ambiguousTargetIds, []);
 });
 
 test("fix1: bounded user navigation history resolves attached suffixes before incidental location", () => {
   for (const currentTargetId of [undefined, "project-makertion"]) {
-    for (const text of ["CateQuest로 이동", "CateQuest으로 이동", "CateQuest 로 이동", "CateQuest CI로 이동"]) {
+    for (const text of ["CateQuest로 이동", "CateQuest으로 이동", "CateQuest 로 이동", "CateQuest 질문 생성로 이동"]) {
       const result = analyze("그 프로젝트 요약해줘", { currentTargetId, history: [{ role: "user", text }] });
       assert.deepEqual(result.requiredProjectIds, ["project-catequest"], text);
       assert.equal(result.scopeSource, "user_history");
@@ -187,13 +193,13 @@ test("fix1: broad registered category experience is not an implicit named sectio
     assert.deepEqual(result.expectedIntents, ["answer_portfolio"]);
     assert.equal(result.scopeSource, "none");
     assert.ok(result.allowedSourceIds.includes("project-catequest-n1"));
-    assert.ok(result.allowedSourceIds.includes("project-bookking-https"));
+    assert.ok(result.allowedSourceIds.includes("project-bookking-lock"));
   }
   const named = analyze("CateQuest 성능 최적화 경험 설명해줘");
   assert.deepEqual(named.requiredProjectIds, ["project-catequest"]);
   assert.deepEqual(named.requiredSubjectIds, []);
   assert.ok(named.allowedSourceIds.every((id) => id.startsWith("project-catequest")));
-  for (const message of ["DB 성능 최적화 경험 설명해줘", "성능 최적화 섹션 경험 설명해줘", "성능 최적화 요약해줘", "성능 최적화로 이동"]) {
+  for (const message of ["DB 성능 최적화 경험 설명해줘", "PostgreSQL 튜닝·앱 확장 성능 개선 섹션 경험 설명해줘", "DB 튜닝 요약해줘", "DB 튜닝으로 이동"]) {
     assert.deepEqual(analyze(message).requiredSubjectIds, ["project-makertion-db"], message);
   }
 });

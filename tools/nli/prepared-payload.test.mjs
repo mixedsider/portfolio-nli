@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
@@ -16,9 +17,9 @@ import { buildPreparedCoverageBlock } from "./decision-schema.mjs";
 import { acceptProposal } from "./proposal-acceptance.mjs";
 import { matchesJsonSchema } from "../testing/json-schema.mjs";
 
-const context = await loadNliContext(new URL("../../", import.meta.url).pathname);
+const context = await loadNliContext(fileURLToPath(new URL("../../", import.meta.url)));
 const settings = createGatewayConfig({}).model;
-const comparison = "CateQuest N+1 해결과 Bookking HTTPS 성능 개선을 비교해줘";
+const comparison = "CateQuest N+1 해결과 Bookking 분산 락 성능 개선을 비교해줘";
 
 test("comparison assembly exposes trusted project/subject labels, matching source groups and clause obligation", () => {
   const prepared = prepareGroundedRequest(comparison, context);
@@ -57,8 +58,8 @@ test("ordered subject pattern prevents omitted comparison labels without weakeni
   const schema = payload.response_format.json_schema.schema;
   const coverage = JSON.parse(buildPreparedCoverageBlock(prepared.groundedRequest).split("\nTrusted coverage: ")[1].split("\n")[0]);
   const [first, second] = coverage.requiredSubjects.map((entry) => entry.label);
-  const clauses = [`CateQuest ${first}: DTO Projection과 JPQL 조인으로 DB 접근을 54회에서 1회로 줄였습니다.`,
-    `Bookking ${second}: HTTPS 응답 지연을 200ms에서 30ms로 줄였습니다.`];
+  const clauses = [`CateQuest ${first}: SQL 실행 수를 53회에서 1회로 줄였습니다.`,
+    `Bookking ${second}: Facade 적용 후 재고 불일치가 발생하지 않았습니다.`];
   const candidate = { intent: "answer_portfolio", confidence: 1, answer: clauses.join(" "),
     sourceIds: prepared.candidateSources.map((card) => card.id) };
   const omitted = { ...candidate, answer: candidate.answer.replace(first, "DB 조회") };
@@ -73,7 +74,7 @@ test("ordered subject pattern prevents omitted comparison labels without weakeni
   assert.equal(matchesJsonSchema(schema, { ...candidate, answer: [...clauses].reverse().join(" ") }), false);
   assert.equal(matchesJsonSchema(schema, { ...candidate, answer: clauses.join("\n") }), false);
   for (const answer of [`${first}; ${second}`, `Fake${first}Alias Fake${second}Alias`,
-    `Bookking ${first}: DTO Projection과 JPQL 조인으로 DB 접근을 54회에서 1회로 줄였습니다. CateQuest ${second}: HTTPS 응답 지연을 200ms에서 30ms로 줄였습니다.`]) {
+    `Bookking ${first}: SQL 실행 수를 53회에서 1회로 줄였습니다. CateQuest ${second}: Facade 적용 후 재고 불일치가 발생하지 않았습니다.`]) {
     const invalid = { ...candidate, answer };
     assert.equal(matchesJsonSchema(schema, invalid), true, "pattern is not evidence entailment");
     assert.equal(acceptProposal(invalid, context, prepared, comparison).accepted, false, answer);

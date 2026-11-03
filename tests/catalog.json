@@ -41,6 +41,7 @@
     { "path": "tools/nli/eval-report.test.mjs", "level": "integration", "techniques": ["blackbox", "whitebox"], "runner": "node" },
     { "path": "tools/nli/eval-routing.test.mjs", "level": "integration", "techniques": ["blackbox", "whitebox"], "runner": "node" },
     { "path": "tools/nli/evidence-selection.test.mjs", "level": "integration", "techniques": ["whitebox"], "runner": "node" },
+    { "path": "tools/nli/rev35-evidence.test.mjs", "level": "integration", "techniques": ["whitebox"], "runner": "node" },
     { "path": "tools/nli/evidence.test.mjs", "level": "unit", "techniques": ["whitebox"], "runner": "node" },
     { "path": "tools/nli/grounded-bounds.test.mjs", "level": "unit", "techniques": ["whitebox"], "runner": "node" },
     { "path": "tools/nli/grounded-projection.test.mjs", "level": "unit", "techniques": ["whitebox"], "runner": "node" },
@@ -78,6 +79,7 @@
     { "path": "tests/support/app-fixture.test.mjs", "level": "integration", "techniques": ["blackbox", "whitebox"], "runner": "node" },
     { "path": "tests/blackbox/gateway.test.mjs", "level": "integration", "techniques": ["blackbox"], "runner": "node" },
     { "path": "tests/browser/widget.spec.mjs", "level": "integration", "techniques": ["blackbox"], "runner": "playwright" },
+    { "path": "tests/e2e/portfolio-rendering.spec.mjs", "level": "e2e", "techniques": ["blackbox"], "runner": "playwright" },
     { "path": "tests/e2e/portfolio.spec.mjs", "level": "e2e", "techniques": ["blackbox"], "runner": "playwright" }
   ],
   "delegates": [

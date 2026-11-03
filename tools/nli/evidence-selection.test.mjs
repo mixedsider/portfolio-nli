@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
@@ -14,7 +15,7 @@ import { resolveLocalFastPath } from "./local-fast-path.mjs";
 import { MAX_GROUNDED_CARD_EVIDENCE_BYTES } from "./grounded-bounds.mjs";
 import { acceptProposal } from "./proposal-acceptance.mjs";
 
-const context = await loadNliContext(new URL("../../", import.meta.url).pathname);
+const context = await loadNliContext(fileURLToPath(new URL("../../", import.meta.url)));
 const prepare = (message, extra = {}) => prepareGroundedRequest(message, { ...context, ...extra });
 const ids = (prepared) => prepared.candidateSources.map((card) => card.id);
 
@@ -22,7 +23,7 @@ test("shared assistant identity wording retains bounded top evidence without unr
   const messages = [...assistantIdentityWords, "너는 누구야?", "넌 누구야?", "정체를 알려줘",
     "포트폴리오 도우미 소개해줘", "NLI 소개해줘", "ＮＬＩ는 누구야?"];
   for (const message of messages) {
-    for (const extra of [{}, { currentTargetId: "project-ott", history: [
+    for (const extra of [{}, { currentTargetId: "project-makertion", history: [
       { role: "user", text: "CateQuest로 이동" }, { role: "assistant", text: "Bookking 설명해줘" }
     ] }]) {
       const prepared = prepare(message, extra);
@@ -71,16 +72,17 @@ test("authoritative page evidence uses display facts, shared text and registered
     for (const section of project.sections) assert.ok(cards.get("projects").includes(section.title));
   }
   assert.ok(![...cards.values()].join("\n").includes("mailto:"));
-  assert.ok(!cards.get("about").includes("https://github.com"));
+  for (const tool of context.portfolio.experience.tools) assert.ok(cards.get("about").includes(tool.href));
+  assert.ok(cards.get("project-bookking").includes(context.projectByTargetId.get("project-bookking").links[0].href));
 });
 
 test("email and project summary use exact bounded prompt candidates despite unrelated location", () => {
   for (const message of ["이은성 이메일 알려줘", "CateQuest 요약해줘"]) {
-    const prepared = prepare(message, { currentTargetId: "project-ott" });
+    const prepared = prepare(message, { currentTargetId: "project-makertion" });
     assert.deepEqual(JSON.parse(prepared.groundedRequestBlock).candidateSources, prepared.candidateSources);
     assert.equal(buildGroundedRequestBlock(prepared.groundedRequest), prepared.groundedRequestBlock);
     assert.ok(prepared.candidateSources.every((card) => Buffer.byteLength(card.evidence) <= MAX_GROUNDED_CARD_EVIDENCE_BYTES));
-    if (message.includes("이메일")) assert.ok(prepared.candidateSources.some((card) => card.id === "about" && card.evidence.includes("mixeddev0812@gmail.com")));
+    if (message.includes("이메일")) assert.ok(prepared.candidateSources.some((card) => card.id === "about" && card.evidence.includes("dmstjd0812@naver.com")));
     else assert.ok(ids(prepared).every((id) => id.startsWith("project-catequest")));
   }
 });
@@ -97,16 +99,16 @@ test("comparison reserves both named groups before cap and excludes incidental t
 });
 
 test("current project resolves section parent while section summary stays exact", () => {
-  const extra = { currentTargetId: "project-makertion-cost" };
+  const extra = { currentTargetId: "project-makertion-cd" };
   assert.ok(ids(prepare("현재 프로젝트 요약해줘", extra)).every((id) => id.startsWith("project-makertion")));
-  assert.deepEqual(ids(prepare("현재 보고 있는 섹션 요약해줘", extra)), ["project-makertion-cost"]);
+  assert.deepEqual(ids(prepare("현재 보고 있는 섹션 요약해줘", extra)), ["project-makertion-cd"]);
   assert.deepEqual(ids(prepare("CateQuest N+1 해결 요약해줘", extra)), ["project-catequest-n1"]);
 });
 
 test("English project alias summaries retain section results, not only the alias root", () => {
   const prepared = prepare("Makertion 프로젝트 설명해줘", { currentTargetId: "project-catequest" });
   assert.ok(ids(prepared).includes("project-makertion-db"));
-  assert.ok(prepared.candidateSources.some((card) => card.evidence.includes("120.45ms")));
+  assert.ok(prepared.candidateSources.some((card) => card.evidence.includes("101.36")));
   assert.ok(ids(prepared).every((id) => id.startsWith("project-makertion")));
 });
 
@@ -114,14 +116,14 @@ test("consumer rejects fake contacts, fake sources and facts removed from bounde
   const prepared = prepare("이은성 이메일 알려줘");
   for (const proposal of [
     { answer: "Email: impostor999@example.test", sourceIds: ["about"] },
-    { answer: "Email: mixeddev0812@gmail.com", sourceIds: ["fake-contact"] }
+    { answer: "Email: dmstjd0812@naver.com", sourceIds: ["fake-contact"] }
   ]) {
     const errors = [];
     validatePortfolioAnswerCandidateShape(proposal, context, prepared.candidateSources, errors);
     assert.ok(errors.length > 0);
   }
   const errors = [];
-  validatePortfolioAnswerCandidateShape({ answer: "Email: mixeddev0812@gmail.com", sourceIds: ["about"] }, context, prepared.candidateSources, errors);
+  validatePortfolioAnswerCandidateShape({ answer: "이메일: dmstjd0812@naver.com", sourceIds: ["about"] }, context, prepared.candidateSources, errors);
   assert.deepEqual(errors, []);
   const longContext = { ...context, portfolio: { ...context.portfolio,
     profile: { ...context.portfolio.profile, summary: "한".repeat(1500) + " Tailmarker987 99991ms" } } };
@@ -177,7 +179,7 @@ test("prepared obligations fail closed when a required subject survives only in 
 
 test("bounded history is identical for transport; only user referents establish scope", () => {
   const history = [{ role: "user", text: "CateQuest 요약해줘" }, { role: "assistant", text: "Bookking 요약해줘" }];
-  const prepared = prepare("그 프로젝트 요약해줘", { history, currentTargetId: "project-ott" });
+  const prepared = prepare("그 프로젝트 요약해줘", { history, currentTargetId: "project-makertion" });
   assert.ok(ids(prepared).every((id) => id.startsWith("project-catequest")));
   assert.deepEqual(prepared.groundedRequest.history, JSON.parse(prepared.groundedRequestBlock).conversation);
   assert.strictEqual(prepared.candidateSources, prepared.groundedRequest.candidateSources);
@@ -201,25 +203,19 @@ test("migrated live fixtures retain requested facts within the actual prompt bud
 test("compact section cards retain quantitative, implementation and project-summary witnesses", () => {
   const cache = prepare("현재 프로젝트에서 캐싱을 어떻게 개선했어?", { currentTargetId: "project-makertion-db" })
     .candidateSources.find((card) => card.id === "project-makertion-cache");
-  assert.ok(cache.evidence.includes("+6.4%"));
-  assert.ok(cache.evidence.includes("340.95/s"));
-  assert.ok(cache.evidence.includes("362.80/s"));
-
-  const cost = prepare("Makertion 비용 절감 내용을 설명해줘")
-    .candidateSources.find((card) => card.id === "project-makertion-cost");
-  assert.ok(cost.evidence.includes("1/20"));
-  assert.ok(cost.evidence.includes("NAT Gateway를 제거"));
-
+  for (const witness of ["10→0회", "1→0회", "로컬", "108.8", "620.3"]) assert.ok(cache.evidence.includes(witness), witness);
+  const build = prepare("Makertion ARM 빌드 내용을 설명해줘")
+    .candidateSources.find((card) => card.id === "project-makertion-cd");
+  for (const witness of ["33분", "1–10분", "동일 변경의 개선율", "ARM native"]) assert.ok(build.evidence.includes(witness), witness);
   const catequest = prepare("CateQuest 프로젝트를 요약해줘");
   const summaryEvidence = catequest.candidateSources.map((card) => card.evidence).join("\n");
-  for (const witness of ["2025.06 ~ 2025.11", "Spring Boot", "Query Tuning", "EleutherAI/polyglot-ko-1.3b"])
+  for (const witness of ["2025.06–2025.11", "Spring Boot", "MySQL", "polyglot-ko-1.3b"])
     assert.ok(summaryEvidence.includes(witness), witness);
-  assert.ok(catequest.candidateSources.every((card) => Buffer.byteLength(card.evidence) <= 600));
-
-  const currentMessage = "이 프로젝트에서 비용은 어떻게 줄였어?";
+  assert.ok(catequest.candidateSources.every((card) => Buffer.byteLength(card.evidence) <= MAX_GROUNDED_CARD_EVIDENCE_BYTES));
+  const currentMessage = "이 프로젝트에서 빌드 지연은 어떻게 줄였어?";
   const current = prepare(currentMessage, { currentTargetId: "project-makertion" });
   const response = { intent: "answer_portfolio", confidence: 0.01,
-    answer: "NAT Gateway를 제거하고 EC2 인스턴스 네트워크를 Public IP 기반으로 변경했습니다. CloudWatch 로그 수집 정책을 수정해 일일 서버 비용을 약 31% 절감했습니다.",
-    sourceIds: ["project-makertion-cost"] };
+    answer: "ARM native self-hosted runner를 구성하고 GitHub Actions와 Docker 빌드 캐시를 활용해 ECS 배포를 자동화했습니다.",
+    sourceIds: ["project-makertion-cd"] };
   assert.equal(acceptProposal(response, context, current, currentMessage).accepted, true);
 });

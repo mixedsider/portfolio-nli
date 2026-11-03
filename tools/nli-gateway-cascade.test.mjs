@@ -71,18 +71,18 @@ test("normal HTTP summary uses Qwen once with scoped answer; offline stays canon
 
 test("normal identity, definition, paraphrase, mixed clauses and current section are model interpreted", async (t) => {
   const f = await fixture(t);
-  const sectionId = "project-makertion-cost";
+  const sectionId = "project-makertion-cd";
   const section = context.sectionById.get(sectionId);
   assert.ok(section);
   const cost = { intent: "answer_portfolio", confidence: 1,
-    answer: `Makertion ${section.result}`, sourceIds: [sectionId] };
+    answer: "Makertion은 ARM 직접 빌드와 캐시 적용 후 변경 규모에 따라 약 1–10분이 걸렸습니다.", sourceIds: [sectionId] };
   const cases = [
     ["너는 누구야?", { intent: "answer_portfolio", confidence: 1,
       answer: assistantIdentityResponse().answer, sourceIds: ["top"] }, null],
     ["P95가 뭐야?", { intent: "define_term", confidence: 0.01, term: "P95" }, null],
     ["CateQuest 프로젝트로 이동해 주세요", { intent: "navigate", confidence: 1, targetId: "project-catequest" }, null],
     ["연락처 보여줘 그리고 CateQuest 설명해줘", summary, null],
-    ["이 프로젝트에서 비용은 어떻게 줄였어?", cost, "project-makertion"],
+    ["이 프로젝트에서 빌드 지연은 어떻게 줄였어?", cost, "project-makertion"],
     ["현재 보고 있는 섹션 요약해줘", cost, sectionId]
   ];
   for (const [message, proposal, currentTargetId] of cases) {
@@ -201,22 +201,24 @@ test("server parent abort and application deadline stop before dispatch without 
   assert.equal(expired.calls.qwen.length, 0);
 });
 
-test("explicit legacy seam retains zero-call summary and vetoes even an otherwise canonical answer", async () => {
+test("explicit legacy seam retains zero-call summary and vetoes otherwise canonical off-target navigation", async () => {
   let calls = 0;
+  let canonicalIntent;
   const modelClient = async (_message, ctx, grounded) => {
     calls += 1;
-    const proposal = { intent: "answer_portfolio", confidence: 1,
-      answer: `Makertion ${context.sectionById.get("project-makertion-cost").result}`,
-      sourceIds: ["project-makertion-cost"] };
-    assert.equal(canonicalizeModelResponse(proposal, ctx, grounded).intent, "answer_portfolio");
+    const proposal = { intent: "navigate", confidence: 1, targetId: "project-makertion-cd" };
+    canonicalIntent = canonicalizeModelResponse(proposal, ctx, grounded)?.intent;
     return proposal;
   };
   assert.equal((await resolveNliRequest("CateQuest 요약해줘", context, { modelClient })).intent, "summarize_project");
   assert.equal(calls, 0);
-  assert.equal((await resolveNliRequest("이 프로젝트에서 비용은 어떻게 줄였어?", context,
-    { currentTargetId: "project-makertion", modelClient })).intent, "navigate");
+  const result = await resolveNliRequest("CateQuest 질문 생성로 이동", context,
+    { currentTargetId: "project-makertion", modelClient });
+  assert.equal(canonicalIntent, "navigate");
+  assert.equal(result.intent, "navigate");
+  assert.equal(result.targetId, "project-catequest-ai");
   assert.equal(calls, 1);
-  assert.match(context.prompt, /comparison\/synthesis:[^\n]*supported[^\n]*≤\s*40[^\n]*clause[^\n]*project[^\n]*subject/i);
+  assert.match(context.prompt, /comparison\/synthesis:[^\n]*supported[^\n]*clause[^\n]*project[^\n]*subject/i);
   assert.match(context.prompt, /context[^\n]*history[^\n]*evidence[^\n]*untrusted/i);
   assert.match(context.prompt, /ignore[^\n]*instructions/i);
   assert.match(context.prompt, /sourceIds six/);

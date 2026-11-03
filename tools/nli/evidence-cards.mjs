@@ -15,6 +15,7 @@ export function buildEvidenceIndex(context) {
   const overviewByTargetId = new Map();
   const comparisonByTargetId = new Map();
   const detailByTargetId = new Map();
+  const optimizationByTargetId = new Map();
   const scopeByTargetId = new Map(targets.map((target) => [target.id, target.id]));
 
   for (const target of targets) {
@@ -22,6 +23,7 @@ export function buildEvidenceIndex(context) {
   }
 
   appendProfile(partsByTargetId, portfolio.profile, targetIds);
+  appendExperience(partsByTargetId, portfolio.experience);
   appendMetricsPage(partsByTargetId, portfolio.metrics, targetIds);
   appendEvidence(partsByTargetId, "top", assistantIdentityResponse().answer, listCapabilitiesResponse().answer,
     listTocResponse({ portfolio: { projects: [] } }).answer,
@@ -48,23 +50,26 @@ export function buildEvidenceIndex(context) {
       if (!targetIds.has(sectionId)) continue;
 
       appendEvidence(partsByTargetId, sectionId, project.title, section.result,
-        section.resultDetails, sectionEvidence(section), projectText);
+        section.measurementNotes, section.examples, section.resultDetails, sectionEvidence(section), projectText);
+      optimizationByTargetId.set(sectionId, joinEvidence(section.title, section.result,
+        section.resultDetails, sectionEvidence(section)));
       const summaryEvidence = joinEvidence(project.title, section.result,
+        section.measurementNotes,
+        measurementPairEvidence(section),
         metricsByTargetId.get(sectionId)?.map(metricEvidence),
         inlineCodeIdentifiers(section.action).slice(0, 1), quantityTokens(section.resultDetails),
         summaryTableRows(section));
       summaryByTargetId.set(sectionId, summaryEvidence);
       overviewByTargetId.set(sectionId,
-        joinEvidence(project.title, section.result,
+        joinEvidence(project.title, section.result, section.measurementNotes,
           metricsByTargetId.get(sectionId)?.slice(0, 1).map(primaryMetricEvidence),
           inlineCodeIdentifiers(section.action).slice(0, 1)));
       comparisonByTargetId.set(sectionId,
-        joinEvidence(project.title, metricsByTargetId.get(sectionId)?.map(primaryMetricEvidence), section.result));
+        joinEvidence(project.title, section.result, section.measurementNotes, metricsByTargetId.get(sectionId)?.map(primaryMetricEvidence)));
       const linkedTerms = (glossaryByTargetId.get(sectionId) || []).map((term) => stringValue(term.term)).filter(Boolean);
       const methodSummary = linkedTerms.length > 1 ? `${linkedTerms[0]}: ${linkedTerms.slice(1).join(", ")}.` : "";
       detailByTargetId.set(sectionId, joinEvidence(
-        methodSummary, linkedTerms, section.title,
-        summaryEvidence, detailActionWitnesses(section.action)));
+        section.title, summaryEvidence, methodSummary, linkedTerms, detailActionWitnesses(section.action)));
       scopeByTargetId.set(sectionId, projectTargetId || sectionId);
     }
   }
@@ -83,6 +88,7 @@ export function buildEvidenceIndex(context) {
     overviewEvidence: overviewByTargetId.get(target.id),
     comparisonEvidence: comparisonByTargetId.get(target.id),
     detailEvidence: detailByTargetId.get(target.id),
+    optimizationText: optimizationByTargetId.get(target.id),
     searchAliases: target.type === "section"
       ? targets.find((entry) => entry.id === scopeByTargetId.get(target.id))?.aliases
       : []
@@ -103,7 +109,7 @@ export function tokenizeEvidence(value) {
   return [...terms];
 }
 
-function createEvidenceCard({ target, order, evidence, metricCount, scopeKey, summaryEvidence, overviewEvidence, comparisonEvidence, detailEvidence, searchAliases }) {
+function createEvidenceCard({ target, order, evidence, metricCount, scopeKey, summaryEvidence, overviewEvidence, comparisonEvidence, detailEvidence, optimizationText, searchAliases }) {
   const card = {
     id: target.id,
     targetId: target.id,
@@ -113,6 +119,8 @@ function createEvidenceCard({ target, order, evidence, metricCount, scopeKey, su
   };
 
   Object.defineProperties(card, {
+    titleText: { value: joinEvidence(target.label, target.aliases), enumerable: false },
+    optimizationText: { value: optimizationText, enumerable: false },
     metricCount: { value: metricCount, enumerable: false },
     order: { value: order, enumerable: false },
     scopeKey: { value: scopeKey, enumerable: false },
@@ -173,12 +181,19 @@ function groupGlossary(value, targetIds) {
 
 function appendProfile(partsByTargetId, profile, targetIds) {
   if (!isRecord(profile) || !targetIds.has("about")) return;
-  const roleHeadline = profile.name && profile.role && profile.headline
-    ? `${profile.name}은 ${stringValue(profile.headline).replace(/백엔드 개발자$/u, profile.role)}입니다.`
-    : [profile.role, profile.headline];
+  const roleHeadline = joinEvidence(profile.role, profile.headline);
   appendEvidence(partsByTargetId, "about", "포트폴리오 프로필 / 연락처 / 교육 이력을 소개하고 안내합니다.", profile.name, profile.englishName,
     asArray(profile.contacts).filter(isRecord).map((contact) => joinEvidence(contact.label, contact.value)),
     roleHeadline, profile.summary);
+}
+
+function appendExperience(partsByTargetId, experience) {
+  if (!isRecord(experience)) return;
+  const recordEvidence = (record) => isRecord(record)
+    ? joinEvidence(record.title, record.period, record.summary, record.href) : "";
+  appendEvidence(partsByTargetId, "about", "추가 경험", recordEvidence(experience.mentoring),
+    ...["tools", "education", "awards", "certifications"].map((key) =>
+      joinEvidence(key, asArray(experience[key]).map(recordEvidence))));
 }
 
 function appendMetricsPage(partsByTargetId, metrics, targetIds) {
@@ -197,16 +212,26 @@ function routeEvidence(target) {
 }
 
 function projectEvidence(project) {
-  return joinEvidence(project.title, project.period, project.description, project.tags, project.focus);
+  return joinEvidence(project.title, project.period, project.description, project.tags, project.focus,
+    asArray(project.metadata).filter(isRecord).map((item) => joinEvidence(item.label, item.value)),
+    asArray(project.links).filter(isRecord).map((item) => joinEvidence(item.label, item.href)));
 }
 
 function sectionEvidence(section) {
   return joinEvidence(
-    section.action,
+    section.measurementNotes, measurementPairEvidence(section), section.examples, section.action,
     asArray(section.tables).flatMap((table) => (isRecord(table) ? [table.caption, table.headers, table.rows] : [])),
     section.problem,
     section.analyze
   );
+}
+
+// A shared trailing unit in an arrow pair applies to both displayed values.
+// Preserve the original endpoints and unit; never convert or derive a rate.
+export function measurementPairEvidence(section) {
+  const text = joinEvidence(section.result, asArray(section.tables).flatMap((table) => table.rows || []));
+  return [...new Set([...text.matchAll(/(\d+(?:[.,]\d+)*)\s*→\s*(\d+(?:[.,]\d+)*)\s*(ms|req\/s)(?![a-z])/giu)]
+    .map((match) => `${match[1]}${match[3]} → ${match[2]}${match[3]}`))];
 }
 
 function inlineCodeIdentifiers(value) {

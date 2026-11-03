@@ -115,7 +115,7 @@ test("answer_portfolio rejects model-controlled metadata, markup, URLs, malforme
   const candidateSources = [
     "project-catequest",
     "project-bookking",
-    "project-ott",
+    "project-makertion",
     "project-makertion",
     "project-makertion-db",
     "project-bookking-lock"

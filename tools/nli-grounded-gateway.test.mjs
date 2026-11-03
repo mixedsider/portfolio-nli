@@ -105,12 +105,12 @@ test("CloudWatch experience wording uses grounded portfolio answer rather than g
   let modelCalls = 0;
   const modelClient = async (_message, _nliContext, groundedRequest) => {
     modelCalls += 1;
-    assert.ok(groundedRequest.candidateSources.some((source) => source.id === "project-makertion-observability"));
+    assert.ok(groundedRequest.candidateSources.some((source) => source.id === "project-makertion-cache"));
     return {
       intent: "answer_portfolio",
       confidence: 0.88,
-      answer: "CloudWatch 모니터링 구축으로 API 지표와 오류율, 지연 시간을 운영에서 확인했습니다.",
-      sourceIds: ["project-makertion-observability"]
+      answer: "메인 페이지 캐시 구축으로 API 지표와 오류율, 지연 시간을 운영에서 확인했습니다.",
+      sourceIds: ["project-makertion-cache"]
     };
   };
 
@@ -118,7 +118,7 @@ test("CloudWatch experience wording uses grounded portfolio answer rather than g
 
   assert.equal(modelCalls, 1);
   assert.equal(result.intent, "answer_portfolio");
-  assert.deepEqual(result.sources.map((source) => source.id), ["project-makertion-observability"]);
+  assert.deepEqual(result.sources.map((source) => source.id), ["project-makertion-cache"]);
 });
 
 test("explicit CloudWatch monitoring navigation falls back safely after one unavailable proposal", async () => {
@@ -128,11 +128,11 @@ test("explicit CloudWatch monitoring navigation falls back safely after one unav
     return null;
   };
 
-  const result = await resolveNliRequest("CloudWatch 모니터링 보고 싶어", context, { history: [], modelClient });
+  const result = await resolveNliRequest("메인 페이지 캐시 보고 싶어", context, { history: [], modelClient });
 
   assert.equal(modelCalls, 1);
   assert.equal(result.intent, "navigate");
-  assert.equal(result.targetId, "project-makertion-observability");
+  assert.equal(result.targetId, "project-makertion-cache");
 });
 
 test("target-like requests use validated model navigation while known local navigation stays authoritative", async () => {

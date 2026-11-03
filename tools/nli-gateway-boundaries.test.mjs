@@ -55,13 +55,13 @@ test("single-target show requests use one model proposal before gateway-owned na
     return {
       intent: "navigate",
       confidence: 0.9,
-      targetId: message.includes("CloudWatch") ? "project-makertion-observability" : "project-makertion-db"
+      targetId: message.includes("CloudWatch") ? "project-makertion-cache" : "project-makertion-db"
     };
   };
 
   for (const [message, targetId] of [
     ["DB 최적화 보여줘", "project-makertion-db"],
-    ["CloudWatch 모니터링 보여줘", "project-makertion-observability"]
+    ["메인 페이지 캐시 보여줘", "project-makertion-cache"]
   ]) {
     const result = await resolveNliRequest(message, context, { modelClient });
 
@@ -78,9 +78,9 @@ test("known project aliases resolve to their deterministic project response", as
     ["카테 퀘스트 프로젝트를 요약해줘", "summarize_project", "project-catequest"],
     ["카테 퀘 스트 프로젝트로 이동해줘", "navigate", "project-catequest"],
     ["북 킹 프로젝트를 요약해줘", "summarize_project", "project-bookking"],
-    ["오늘의OTT 프로젝트를 요약해줘", "summarize_project", "project-ott"],
-    ["오늘의 오티티 프로젝트로 이동해줘", "navigate", "project-ott"],
-    ["오티티 프로젝트로 이동해줘", "navigate", "project-ott"],
+    ["사장님피규어 프로젝트를 요약해줘", "summarize_project", "project-makertion"],
+    ["메이커션 프로젝트로 이동해줘", "navigate", "project-makertion"],
+    ["메이커션 프로젝트로 이동해줘", "navigate", "project-makertion"],
     ["메이커션 프로젝트 설명해줘", "summarize_project", "project-makertion"]
   ]) {
     const result = await resolveNliRequest(message, context, { useModel: false });
@@ -149,8 +149,8 @@ test("category examples with show wording preserve deterministic local navigatio
       {
         intent: "answer_portfolio",
         confidence: 0.92,
-        answer: "DB 파라미터 튜닝과 부하 테스트로 평균 응답과 P95 지연을 줄인 사례입니다. 메인 페이지 읽기 API에 캐싱을 적용해 P95와 DB 부하를 줄인 사례입니다. DTO Projection과 JPQL 조인으로 DB 접근을 54회에서 1회로 줄인 사례입니다. Cloudflare 경유 구조를 AWS Native 구조로 전환해 응답 지연을 줄인 사례입니다.",
-        sourceIds: ["project-makertion-db", "project-makertion-cache", "project-catequest-n1", "project-bookking-https"]
+        answer: "DB 파라미터 튜닝과 부하 테스트로 평균 응답과 P95 지연을 줄인 사례입니다. 메인 페이지 읽기 API에 캐싱을 적용해 P95와 DB 부하를 줄인 사례입니다. DTO Projection과 JPQL 조인으로 DB 접근을 53회에서 1회로 줄인 사례입니다. Cloudflare 경유 구조를 AWS Native 구조로 전환해 응답 지연을 줄인 사례입니다.",
+        sourceIds: ["project-makertion-db", "project-makertion-cache", "project-catequest-n1", "project-bookking-lock"]
       }
     ],
     [
@@ -158,8 +158,8 @@ test("category examples with show wording preserve deterministic local navigatio
       {
         intent: "answer_portfolio",
         confidence: 0.9,
-        answer: "AWS 기반 CloudWatch 모니터링과 AWS Native HTTPS 아키텍처를 운영했습니다.",
-        sourceIds: ["project-makertion-db", "project-bookking-https"]
+        answer: "AWS 기반 메인 페이지 캐시과 AWS Native HTTPS 아키텍처를 운영했습니다.",
+        sourceIds: ["project-makertion-db", "project-bookking-lock"]
       }
     ]
   ]);

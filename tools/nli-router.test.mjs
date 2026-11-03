@@ -36,8 +36,8 @@ test("explicit project and section phrases retain their targets", () => {
   for (const [message, intent, targetId] of [
     ["CateQuest 프로젝트 요약해줘", "summarize_project", "project-catequest"],
     ["Bookking 프로젝트로 이동해줘", "navigate", "project-bookking"],
-    ["오늘의 OTT 프로젝트 요약해줘", "summarize_project", "project-ott"],
-    ["오늘의 OTT 통합 API를 설명해줘", "summarize_section", "project-ott-api"]
+    ["사장님 피규어 프로젝트 요약해줘", "summarize_project", "project-makertion"],
+    ["사장님 피규어 메인 페이지 캐시 요약해줘", "summarize_section", "project-makertion-cache"]
   ]) {
     const result = resolveLocally(message, fullContext);
     assert.equal(result.intent, intent);
@@ -71,7 +71,7 @@ test("Korean project aliases resolve locally and OTT root wording wins over chil
   for (const [message, targetId] of [
     ["케이트퀘스트 프로젝트를 요약해줘", "project-catequest"],
     ["부킹 프로젝트를 요약해줘", "project-bookking"],
-    ["오늘의 OTT 요약해줘", "project-ott"]
+    ["사장님 피규어 요약해줘", "project-makertion"]
   ]) {
     const result = resolveLocally(message, fullContext);
 

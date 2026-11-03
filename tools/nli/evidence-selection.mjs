@@ -1,4 +1,4 @@
-import { buildEvidenceIndex, tokenizeEvidence } from "./evidence-cards.mjs";
+import { buildEvidenceIndex, tokenizeEvidence, measurementPairEvidence } from "./evidence-cards.mjs";
 import { rankEvidenceCandidates } from "./evidence-ranking.mjs";
 import { analyzeRequestObligations, getObligationSourceGroups } from "./request-obligations.mjs";
 import { buildGroundedRequestBlock } from "./context.mjs";
@@ -9,7 +9,7 @@ import { assistantIdentityResponse } from "./responses.mjs";
 import { registerPreparedDecision } from "./decision-schema.mjs";
 import { mentionSpans, PARTICLES, requestedQuantityCount } from "./obligation-vocabulary.mjs";
 import { boundEvidenceCard, boundedConversation, boundedUtf8String, MAX_GROUNDED_CANDIDATES,
-  MAX_GROUNDED_SOURCES } from "./grounded-bounds.mjs";
+  MAX_GROUNDED_SOURCES, MAX_GROUNDED_CARD_EVIDENCE_BYTES } from "./grounded-bounds.mjs";
 
 const MAX_PROJECT_SUMMARY_EVIDENCE_BYTES = 1_100;
 
@@ -49,12 +49,12 @@ const CORE_CARD_IDS = Object.freeze([
   "about",
   "project-makertion",
   "project-catequest",
-  "project-bookking",
-  "project-ott"
+  "project-bookking"
 ]);
 
 function projectCandidateSources(selection, obligations, context, message) {
-  const candidates = selection.candidateSources;
+  const candidates = selection.candidateSources.map((card) => card.id === "about"
+    ? { ...card, evidence: experienceEvidence(message, context) || card.evidence } : card);
   const byId = new Map(candidates.map((card) => [card.id, card]));
   const reserved = selection.reservedSourceIds.map((id) => byId.get(id)).filter(Boolean);
   const groups = getObligationSourceGroups(obligations, context);
@@ -69,20 +69,70 @@ function projectCandidateSources(selection, obligations, context, message) {
       evidence: boundedUtf8String(evidence, MAX_PROJECT_SUMMARY_EVIDENCE_BYTES) };
   });
   if (explicitSection) return reserved.map((card) => {
-    const detail = card.detailEvidence || card.summaryEvidence || card.evidence;
+    const detail = sectionRequestEvidence(card, message, context) || card.detailEvidence || card.summaryEvidence || card.evidence;
     const requested = requestedIdentifierEvidence(message, card.evidence, context);
-    return { ...card, evidence: boundedUtf8String([detail, requested].filter(Boolean).join("\n"), MAX_PROJECT_SUMMARY_EVIDENCE_BYTES) };
+    return { ...card, evidence: boundedUtf8String([detail, requested].filter(Boolean).join("\n"), MAX_GROUNDED_CARD_EVIDENCE_BYTES) };
   });
   if (obligations.requiredProjectIds.length === 1 && obligations.requiredSubjectIds.length === 0) {
     const root = byId.get(obligations.requiredProjectIds[0]);
     const projectCards = root ? [root, ...candidates.filter((card) => card.id !== root.id)] : candidates;
     return projectCards.map((card) => {
-      const overview = card.overviewEvidence || card.summaryEvidence || card.evidence;
+      const overview = sectionRequestEvidence(card, message, context) || card.overviewEvidence || card.summaryEvidence || card.evidence;
       const requested = requestedIdentifierEvidence(message, card.evidence, context);
-      return { ...card, evidence: boundedUtf8String([overview, requested].filter(Boolean).join("\n"), MAX_PROJECT_SUMMARY_EVIDENCE_BYTES) };
+      return { ...card, evidence: boundedUtf8String([overview, requested].filter(Boolean).join("\n"), card.type === "section" ? MAX_GROUNDED_CARD_EVIDENCE_BYTES : MAX_PROJECT_SUMMARY_EVIDENCE_BYTES) };
     });
   }
   return candidates;
+}
+
+// Choose complete repository-owned records before applying the existing byte
+// bound. A late experience record must not disappear behind the profile text.
+function experienceEvidence(message, context) {
+  const experience = context.portfolio?.experience;
+  if (!experience) return "";
+  const groups = [
+    [/(?:멘토|mentoring)/iu, [experience.mentoring]],
+    [/(?:학력|교육|졸업|대학|KDT)/iu, experience.education],
+    [/(?:수상|상장|경진대회|우수상)/iu, experience.awards],
+    [/(?:자격|SQLD|정보처리|네트워크관리)/iu, experience.certifications],
+    [/(?:도구|tools|개인 개발)/iu, experience.tools]
+  ];
+  const toolMatches = (experience.tools || []).filter((tool) =>
+    [tool.title, tool.title.replace(/ 수정$/u, "")].some((title) => normalize(message).includes(normalize(title))));
+  const groupMatches = groups.filter(([pattern]) => pattern.test(message) &&
+    (!toolMatches.length || pattern.source !== "(?:도구|tools|개인 개발)")).flatMap(([, records]) => records || []);
+  const records = [...new Set([...toolMatches, ...groupMatches])];
+  if (!records.length) return "";
+  return completeLines([context.portfolio.profile?.name, "추가 경험", ...records.flatMap((record) =>
+    record ? [record.title, record.period, record.summary, record.href] : [])], MAX_GROUNDED_CARD_EVIDENCE_BYTES);
+}
+
+function sectionRequestEvidence(card, message, context) {
+  const section = context.sectionById?.get(card.id);
+  if (!section) return "";
+  const tables = (section.tables || []).flatMap((table) => [table.caption, table.headers?.join(" · "),
+    ...(table.rows || []).map((row) => row.join(" · "))]);
+  const examples = section.examples || [];
+  const wantsExamples = /(?:예시|예제|출력|생성한 질문)/u.test(message);
+  const wantsTables = /(?:표|비교|조건|처리량|수치|지표|결과)/u.test(message);
+  const identifiers = message.match(/[A-Za-z][A-Za-z0-9_$+.-]{1,}/g) || [];
+  const requestedActions = (section.action || []).flatMap((line) => line.split(/(?<=[.!?])\s+/u))
+    .filter((line) => identifiers.some((identifier) => line.toLowerCase().includes(identifier.toLowerCase())));
+  const route = context.targetById.get(card.id);
+  const requestedRoute = identifiers.some((identifier) => route?.description?.toLowerCase().includes(identifier.toLowerCase()))
+    ? route.description : "";
+  return completeLines([section.projectTitle, section.title, section.result, ...(section.measurementNotes || []), ...measurementPairEvidence(section), requestedRoute, ...requestedActions,
+    ...(wantsExamples ? examples : []), ...(wantsTables ? tables : []), ...(section.action || []),
+    ...(!wantsExamples ? examples : []), ...(!wantsTables ? tables : [])], MAX_GROUNDED_CARD_EVIDENCE_BYTES);
+}
+
+function completeLines(lines, maxBytes) {
+  let result = "";
+  for (const line of lines.filter((line) => typeof line === "string" && line.trim())) {
+    const next = result ? `${result}\n${line.trim()}` : line.trim();
+    if (Buffer.byteLength(next, "utf8") <= maxBytes) result = next;
+  }
+  return result;
 }
 
 function requestedIdentifierEvidence(message, evidence, context) {
@@ -132,12 +182,14 @@ export function selectEvidenceCandidates(index, request, obligations, context) {
     const target = registered.get(id);
     if (!target || !allowed.has(id) || seen.has(id)) continue;
     // Rank only what will actually reach the model, not removed tail text.
-    const card = boundEvidenceCard({ ...original, targetId: id, label: target.label, type: target.type });
+    const projected = target.type === "section" ? sectionRequestEvidence({ id }, request.message, context) : "";
+    const card = boundEvidenceCard({ ...original, evidence: projected || original.evidence, targetId: id, label: target.label, type: target.type });
     if (!card?.evidence || card.id !== id) continue;
     seen.add(id);
-    const searchEvidence = `${card.evidence}\n${original.searchAliases || ""}`;
+    const searchEvidence = `${card.evidence}\n${target.label}\n${(target.aliases || []).join("\n")}\n${original.searchAliases || ""}`;
     Object.defineProperties(card, {
       metricCount: { value: original.metricCount }, scopeKey: { value: original.scopeKey },
+      titleText: { value: `${target.label}\n${(target.aliases || []).join("\n")}` },
       summaryEvidence: { value: original.summaryEvidence },
       overviewEvidence: { value: original.overviewEvidence },
       comparisonEvidence: { value: original.comparisonEvidence },
@@ -154,8 +206,12 @@ export function selectEvidenceCandidates(index, request, obligations, context) {
   const skill = match && mentionSpans(request.message, [{ names: match.matchedKeys }]).length ? match : null;
   const keys = skill?.entryKeys || skill?.matchedKeys || [];
   const allowedSkillTypes = skill && !skill.entryKeys ? ["section"] : ["project", "section"];
-  const relevant = keys.length ? cards.filter((card) => allowedSkillTypes.includes(card.type) &&
+  const matchedSkillCards = keys.length ? cards.filter((card) => allowedSkillTypes.includes(card.type) &&
     keys.some((key) => includesKeyword(normalize(card.evidence), key))) : cards;
+  // Project tags remain authoritative stack evidence when no specific case
+  // names that technology. Never substitute a generic page outline.
+  const relevant = keys.length && !matchedSkillCards.length ? cards.filter((card) => card.type === "project" &&
+    keys.some((key) => includesKeyword(normalize(card.evidence), key))) : matchedSkillCards;
   // Identity questions need semantic vocabulary, not overlap with their answer.
   // Select evidence only: never create a local response or widen resolved scope.
   const identity = obligations.scopeSource === "none" &&

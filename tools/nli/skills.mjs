@@ -46,12 +46,18 @@ export function findSkillExperienceEntries(context, skillMatch) {
     const sectionEntries = [];
 
     for (const section of project.sections) {
+      const route = context.routes.targets.find((target) => target.id === section.id);
       const sectionText = searchableText(
         section.title,
         section.result,
         section.problem,
         section.analyze,
         section.action,
+        section.resultDetails,
+        section.measurementNotes,
+        section.examples,
+        route?.aliases,
+        route?.description,
         section.impact
       );
 

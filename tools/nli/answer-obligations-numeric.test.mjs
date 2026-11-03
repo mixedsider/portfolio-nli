@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { loadNliContext } from "./context.mjs";
@@ -6,13 +7,13 @@ import { inspectModelCompletion } from "./model-outcome.mjs";
 import { acceptTransportProposal } from "./proposal-acceptance.mjs";
 import { quantitiesSupported } from "./answer-obligations.mjs";
 
-const context = await loadNliContext(new URL("../../", import.meta.url).pathname);
+const context = await loadNliContext(fileURLToPath(new URL("../../", import.meta.url)));
 const message = "CateQuest와 Bookking의 성능 개선을 비교해줘";
 const prepared = prepareGroundedRequest(message, { ...context, currentTargetId: "project-makertion-db" });
-const full = "CateQuest는 DTO Projection과 JPQL 조인으로 DB 접근을 54회에서 1회로 줄였습니다. Bookking은 HTTPS 응답 지연을 200ms에서 30ms로 줄였습니다.";
+const full = "CateQuest는 SQL 실행 수를 53회에서 1회로 줄였습니다. Bookking은 Facade 적용 후 재고 불일치가 발생하지 않았습니다.";
 function inspect(answer, endpoint) {
   const candidate = { intent: "answer_portfolio", confidence: 0.99, answer,
-    sourceIds: ["project-catequest-n1", "project-bookking-https"] };
+    sourceIds: ["project-catequest-n1", "project-bookking-lock"] };
   const result = inspectModelCompletion({ model: "numeric-regression-fixture", choices: [{
     finish_reason: "stop", message: { role: "assistant", content: JSON.stringify(candidate) }
   }] }, endpoint);
@@ -21,9 +22,9 @@ function inspect(answer, endpoint) {
 }
 
 // All seven failures from the retained independent suite, now product regressions.
-for (const [name, answer] of [["plus-prefixed-fabrication", full.replace("30ms", "+999ms")],
-  ["negative-latency", full.replace("30ms", "-30ms")],
-  ["korean-adjacent-fabrication", full.replace("200ms에서 30ms", "응답시간999ms")]]) {
+for (const [name, answer] of [["plus-prefixed-fabrication", full.replace("53회", "+999회")],
+  ["negative-query-count", full.replace("53회", "-53회")],
+  ["korean-adjacent-fabrication", full.replace("53회에서 1회", "접근999회")]]) {
   for (const endpoint of ["lfm", "qwen"]) test(`REGRESSION:${name}/${endpoint}`, () => {
     const before = JSON.stringify(prepared);
     assert.ok(Object.isFrozen(prepared));
@@ -210,15 +211,15 @@ test("fraction slash boundary malformations fail even against themselves", () =>
 });
 
 for (const endpoint of ["lfm", "qwen"]) test(`actual bounded positive signed rate improvement/${endpoint}`, () => {
-  const request = "현재 프로젝트에서 캐싱을 어떻게 개선했어?";
+  const request = "주요 성과 알려줘";
   const preparation = prepareGroundedRequest(request, { ...context, currentTargetId: "project-makertion-db" });
-  const sourceId = "project-makertion-cache";
-  assert.ok(preparation.candidateSources.find((card) => card.id === sourceId).evidence.includes("+6.4%"));
-  const answer = "Main 홈페이지 캐싱은 RPS 초당 처리량을 약 +6.4% 개선했습니다.";
+  const sourceId = "metrics";
+  assert.ok(preparation.candidateSources.find((card) => card.id === sourceId).evidence.includes("+72.8%"));
+  const answer = "DB 튜닝·앱 확장 종합 처리량은 로컬 8.6GB 시험에서 +72.8%입니다.";
   const outcome = inspect(answer, endpoint);
   outcome.candidate.sourceIds = [sourceId];
   assert.equal(acceptTransportProposal(outcome, context, preparation, request).accepted, true);
-  outcome.candidate.answer = answer.replace("+6.4%", "-6.4%");
+  outcome.candidate.answer = answer.replace("+72.8%", "-72.8%");
   assert.equal(acceptTransportProposal(outcome, context, preparation, request).accepted, false);
 });
 

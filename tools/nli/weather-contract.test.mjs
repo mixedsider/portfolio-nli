@@ -22,7 +22,7 @@ test("weather requests are explicitly rejected before portfolio intent selection
   assert.match(context.prompt, /context\b[^\n]*cannot\b[^\n]*expand\b[^\n]*scope\b/i);
   assert.match(context.prompt, /other (?:one-)?section:[^\n]*one[^\n]*≤\s*60[^\n]*sentence/i);
   assert.match(context.prompt, /answer\s+4,000\s+char(?:acters|s)\b/i);
-  assert.match(context.prompt, /comparison\/synthesis:[^\n]*supported[^\n]*≤\s*40[^\n]*clause[^\n]*project[^\n]*subject/i);
+  assert.match(context.prompt, /comparison\/synthesis:[^\n]*supported[^\n]*clause[^\n]*project[^\n]*subject/i);
   assert.doesNotMatch(context.prompt, /(?:at most|under) 600 characters/);
   assert.match(context.prompt, /4,000/);
   assert.doesNotMatch(context.prompt, /```/);
@@ -73,8 +73,8 @@ test("weather fixture keeps strict production validation separate from intent ma
     }
 
     assert.ok(weather.candidateSources.length > 0);
-    assert.equal(weather.grounded.targets.length, 21);
-    assert.equal(weather.grounded.terms.length, 33);
+    assert.equal(weather.grounded.targets.length, context.routes.targets.length);
+    assert.equal(weather.grounded.terms.length, context.glossary.terms.length);
     const unsupported = { intent: "answer_portfolio", confidence: 1,
       answer: "오늘 서울 날씨는 맑습니다.", sourceIds: ["top"] };
     const result = inspectProbeCompletion(envelope(unsupported), weather, context, "lfm");

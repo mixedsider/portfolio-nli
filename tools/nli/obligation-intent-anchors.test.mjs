@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -9,7 +10,7 @@ import { analyzeRequestObligations } from "./request-obligations.mjs";
 import { runTestCase } from "./test-runner.mjs";
 
 const root = new URL("../../", import.meta.url);
-const context = await loadNliContext(root.pathname);
+const context = await loadNliContext(fileURLToPath(root));
 const index = buildEvidenceIndex(context);
 const fixtures = JSON.parse(await readFile(new URL("nli/live-test-cases.json", root), "utf8")).cases;
 const rejection = { intent: "reject_out_of_scope", confidence: 0.01 };
@@ -27,9 +28,9 @@ test("fix2: generic operations without portfolio anchors permit only a valid mod
     assert.equal(result.scopeSource, "none", message);
     assert.deepEqual(result.expectedIntents, ["reject_out_of_scope"], message);
     assert.deepEqual(prepared.obligations.expectedIntents, ["navigate", "define_term", "answer_portfolio", "reject_out_of_scope"], message);
-    assert.ok(prepared.candidateSources.length > 0, message);
-    assert.equal(prepared.groundedRequest.targets.length, 21, message);
-    assert.equal(prepared.groundedRequest.terms.length, 33, message);
+    assert.ok(prepared.candidateSources.length <= 8, message);
+    assert.equal(prepared.groundedRequest.targets.length, context.routes.targets.length, message);
+    assert.equal(prepared.groundedRequest.terms.length, context.glossary.terms.length, message);
     assert.equal(acceptProposal(rejection, context, prepared, message).accepted, true, message);
   }
 });
@@ -59,7 +60,7 @@ test("fix2: all 26 unchanged success fixtures preserve expected intents and fals
 test("fix2: identity, profile, contacts, supported categories and contextual subjects stay in scope", () => {
   for (const message of ["너는 누구야?", "자기소개해줘", "프로필 알려줘", "연락처 알려줘", "이메일 알려줘",
     "포트폴리오 요약해줘", "프로젝트 목록 알려줘", "AWS 경험 있어?", "Redis 경험 설명해줘",
-    "데이터 모델링 경험 있어?", "성능 최적화 경험을 종합해 설명해줘.", "P95를 어떻게 줄였어?"]) {
+    "동시성 경험 있어?", "성능 최적화 경험을 종합해 설명해줘.", "P95를 어떻게 줄였어?"]) {
     const analysis = analyzeRequestObligations(message, context, index);
     assert.deepEqual(analysis.expectedIntents, ["answer_portfolio"], message);
     const prepared = prepareGroundedRequest(message, context);

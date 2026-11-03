@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, writeFile, rm, readFile } from "node:fs/promises";
@@ -9,7 +10,7 @@ import { execute, testEnvironment } from "../../tools/testing/process.mjs";
 import { fixtureCli, fixtureDirectory, syntheticReports } from "../../tools/testing/harness-fixture.mjs";
 import { cancellationFixture } from "../../tools/testing/cancellation-fixture.mjs";
 
-const cli = new URL("../../tools/test-harness.mjs", import.meta.url).pathname;
+const cli = fileURLToPath(new URL("../../tools/test-harness.mjs", import.meta.url));
 for (const args of [["run", "--unknown"], ["run", "--all", "--runner", "node"],
   ["run", "--level", "unit", "--runner", "playwright"]]) {
   test(`CLI rejects ${args.join(" ")} with a nonzero process exit`, () => {

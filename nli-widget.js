@@ -128,20 +128,27 @@ export function createNliWidget({
     if (!widget || !handle) return;
 
     let activePointerId = null;
+    let preferredWidth = 440;
 
     function getBounds() {
-      const viewportWidth = windowRef.innerWidth || 0;
+      const viewportWidth = documentRoot.documentElement?.clientWidth || windowRef.innerWidth || 0;
+      // Reserve space only when both the page and helper remain readable.
+      const minimumContentWidth = 720;
+      const minimumSidebarWidth = 320;
+      const canDock = viewportWidth >= minimumContentWidth + minimumSidebarWidth;
       const edgeGap = viewportWidth <= 480 ? 28 : 44;
-      const maximum = Math.max(0, viewportWidth - edgeGap);
-      const minimum = Math.min(viewportWidth <= 480 ? 280 : 320, maximum);
-      return { minimum, maximum };
+      const maximum = Math.max(0, viewportWidth - (canDock ? minimumContentWidth : edgeGap));
+      const minimum = Math.min(viewportWidth <= 480 ? 280 : minimumSidebarWidth, maximum);
+      return { minimum, maximum, canDock, viewportWidth };
     }
 
-    function setWidth(width) {
-      const { minimum, maximum } = getBounds();
+    function setWidth(width, remember = true) {
+      const { minimum, maximum, canDock } = getBounds();
       const nextWidth = Math.round(Math.min(Math.max(width, minimum), maximum));
+      if (remember) preferredWidth = nextWidth;
       widget.style.setProperty("--nli-sidebar-width", `${nextWidth}px`);
       documentRoot.body?.style.setProperty("--nli-sidebar-width", `${nextWidth}px`);
+      documentRoot.body?.style.setProperty("--nli-page-inset", canDock ? `${nextWidth}px` : "0px");
       handle.setAttribute("aria-valuemin", String(minimum));
       handle.setAttribute("aria-valuemax", String(maximum));
       handle.setAttribute("aria-valuenow", String(nextWidth));
@@ -157,7 +164,7 @@ export function createNliWidget({
 
     function resizeFromPointer(event) {
       if (event.pointerId !== activePointerId) return;
-      setWidth(windowRef.innerWidth - event.clientX);
+      setWidth(getBounds().viewportWidth - event.clientX);
     }
 
     handle.addEventListener("pointerdown", (event) => {
@@ -188,10 +195,10 @@ export function createNliWidget({
     });
 
     windowRef.addEventListener("resize", () => {
-      if (!widget.classList.contains("is-collapsed")) setWidth(widget.getBoundingClientRect().width);
+      setWidth(preferredWidth, false);
     });
 
-    setWidth(440);
+    setWidth(preferredWidth, false);
   }
 
   async function request(message, history) {
